@@ -66,11 +66,11 @@ writecsv(
 
 def parse(site, scope, scope_string):
 
-#    if -8 < event_dictionary["object_galactic_lat"].value < 8:
-#        sys.exit("too close to the Galactic plane")
+    if -8 < event_dictionary["object_galactic_lat"].value < 8:
+        sys.exit("too close to the Galactic plane")
 
-#    if event_dictionary["dist_galactic_center"].value < 15:
-#        sys.exit("too close to the Galactic centre")
+    if event_dictionary["dist_galactic_center"].value < 15:
+        sys.exit("too close to the Galactic centre")
 
     if site["alt_observable"] == False:
         print("Target does not rise above alt 40 at " +scope_string)
@@ -128,6 +128,7 @@ def parse(site, scope, scope_string):
                 site["observation_end"],
                 event_dictionary["dist_galactic_center"],
                 event_dictionary["object_galactic_lat"],
+                site["is_safe_from_moon"]
                 )
 
 
@@ -158,16 +159,18 @@ def parse(site, scope, scope_string):
                 file_path3+"recent_ten.html"
                 )
 
-#                slackmessage(
-#                name,
-#                str(event_dictionary["event_time"])[:22],
-#                str(event_dictionary["ra_dec"].ra.deg) ,
-#                str(event_dictionary["ra_dec"].dec.deg),
-#                file_name
-#                )
+                if scope_string == "goto_north":
+                    print("sent message to slack")
+                    
+                    slackmessage(
+                    name,
+                    str(event_dictionary["event_time"])[:22],
+                    str(event_dictionary["ra_dec"].ra.deg),
+                    str(event_dictionary["ra_dec"].dec.deg),
+                    file_name
+                    )
 
                 main()
-
 
 parse(goto_north_dictionary, goto_north, "goto_north")
 parse(goto_south_dictionary, goto_south, "goto_south")
