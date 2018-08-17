@@ -43,4 +43,4 @@ run the system live with this terminal command. (it will probably need some adju
 
 /opt/local/bin/python3.6 /opt/local/bin/twistd --pidfile=/home/obrads/logs/twistd-comet.pid --umask=0002
 --logfile=/home/obrads/logs/4pisky.log comet --local-ivo=ivo://org.goto-observatory/hwo
---remote=voevent.4pisky.org:8099 --cmd=/home/obrads/script/runscript.bash --eventdb=/home/obrads/.cometdb --verbose
+--remote=voevent.4pisky.org:8099 --cmd=/home/obrads/runscript.bash --eventdb=/home/obrads/.cometdb --verbose
