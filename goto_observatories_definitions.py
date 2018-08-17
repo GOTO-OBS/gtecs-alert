@@ -100,9 +100,11 @@ def observing_definitions(time, length, alt, telescope, ra_dec_formatted):
 
     if str(moon_observable) == "[ True]":
         moon_observable_adjusted = str(moon_observable)[2:6]
+        is_safe_from_moon = "Flase"
 
     else:
         moon_observable_adjusted = str(moon_observable)[1:6]
+        is_safe_from_moon = "True"
 
     Data = {
     "midnight_iso": midnight_iso,
@@ -128,7 +130,8 @@ def observing_definitions(time, length, alt, telescope, ra_dec_formatted):
     "alt_observable_adjusted": alt_observable_adjusted,
     "moon_observable_adjusted": moon_observable_adjusted,
     "time_range_obs": time_range_obs,
-    "final_constraint": final_constraint
+    "final_constraint": final_constraint,
+    "is_safe_from_moon": is_safe_from_moon
     }
 
     return Data
