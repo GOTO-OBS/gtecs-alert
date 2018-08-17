@@ -108,6 +108,7 @@ def htmlwrite(
     observation_end,
     dist,
     object_galactic_lat,
+    moon
     ):
 
     text_file = open(file_path3+file_name+".html", 'w')
@@ -128,6 +129,7 @@ def htmlwrite(
     text_file.write('<p>'+'Observations End:  '+str((observation_end.iso))[:19]+'</p>')
     text_file.write('<p>'+'Galactic Distance:   '+str(dist.value)[:6]+" degrees"'</p>')
     text_file.write('<p>'+'Galactic Lat:    '+str(object_galactic_lat.value)[:6]+" degrees"'</p>')
+    text_file.write("<p>"+"Target within 5 degrees of the moon? "+moon+"</p>")
     text_file.write("<img src=finder_charts/"+file_name+"_FINDER.png>")
     text_file.write("<img src=airmass_plots/"+file_name+"_AIRMASS.png>")
     text_file.write('</body></html>')
