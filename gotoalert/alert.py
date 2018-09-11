@@ -5,8 +5,12 @@ import voeventparse as vp
 from voeventparse import get_toplevel_params, get_event_time_as_utc
 import numpy as np
 
-from .goto_observatories_definitions import telescope, params, top_params, event_definitions, observing_definitions
-from .coms import alert_dictionary, writecsv, create_graphs, htmlwrite, sendemail, topten
+from . import goto_observatories_definitions
+from .goto_observatories_definitions import telescope, observing_definitions
+
+from . import coms
+from .coms import writecsv, create_graphs, htmlwrite, sendemail, topten
+
 from .slack_message import slackmessage
 from .csv2htmltable import main
 
@@ -19,11 +23,10 @@ def event_handler(v):
     if role == "test" or role == "utility":
         sys.exit()
 
-
-    params = params(v)
-    top_params = top_params(v)
-    event_dictionary = event_definitions(v)
-    alert_dictionary = alert_dictionary()
+    params = goto_observatories_definitions.params(v)
+    top_params = goto_observatories_definitions.top_params(v)
+    event_dictionary = goto_observatories_definitions.event_definitions(v)
+    alert_dictionary = coms.alert_dictionary()
 
     goto_north = telescope('goto north', +37, 145, 10, 'UTC')
     goto_south = telescope('goto south', -37, 145, 10, 'UTC')
