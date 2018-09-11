@@ -22,7 +22,7 @@ with open(testdata_path, "rb") as f:
 path = "./www"
 
 
-def main(v):
+def event_handler(v):
     role = v.attrib['role']
 
     if role == "test" or role == "utility":
@@ -187,4 +187,4 @@ if __name__ == '__main__':
     #use this when live parsing is working
     #v = vp.loads(sys.stdin.buffer.read())
 
-    main(v)
+    event_handler(v)

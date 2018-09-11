@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-from gotoalert.alert import main, TEST_DATA
+from gotoalert.alert import event_handler, TEST_DATA
 
 
-main(TEST_DATA)
+event_handler(TEST_DATA)
