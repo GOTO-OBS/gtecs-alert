@@ -1,14 +1,14 @@
 #! /opt/local/bin/python3.6
 import sys
 import os
-from goto_observatories_definitions import *
-from coms import *
 import voeventparse as vp
 from voeventparse import get_toplevel_params, get_event_time_as_utc
-from set_up import *
-from coms import *
-from slack_message import *
-from csv2htmltable import main
+
+from .goto_observatories_definitions import *
+from .coms import *
+from .set_up import *
+from .slack_message import *
+from .csv2htmltable import main
 
 
 path = "./www"
@@ -161,7 +161,7 @@ def parse(site, scope, scope_string):
 
                 if scope_string == "goto_north":
                     print("sent message to slack")
-                    
+
                     slackmessage(
                     name,
                     str(event_dictionary["event_time"])[:22],
