@@ -7,3 +7,7 @@
 
 #Ignore web directory
 *www*
+
+#Ignore comet files
+*comet.log
+*twistd.pid
