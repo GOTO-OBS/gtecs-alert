@@ -26,7 +26,7 @@ Run the system live with this terminal command (it may need some adjusting for y
 
 ```
 twistd -n comet \
-  --cmd=runscript.bash \
+  --cmd=gotoalert.sh \
   --local-ivo=ivo://org.goto-observatory/test \
   --remote=voevent.4pisky.org:8099 \
   --verbose >> comet.log 2>&1 &
