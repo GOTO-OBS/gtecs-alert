@@ -1,9 +1,13 @@
-#! /opt/local/bin/python3.6
+#!/usr/bin/env python
 
 import sys
 import os
 import csv
+import pkg_resources
+import shutil
 
+
+# create directories
 d = "./www"
 d1 = "./www/goto_north_transients"
 d2 = "./www/goto_north_transients/airmass_plots"
@@ -21,10 +25,19 @@ try:
         if not os.path.exists(folder):
             os.makedirs(folder)
 except OSError:
-    print ("Error: Creating directory.")
+    print("Error: Creating directory.")
 
+# copy data files
+data_dir = pkg_resources.resource_filename('gotoalert', 'data')
 
+shutil.copy(os.path.join(data_dir, 'index.html'), os.path.join(d, 'index.html'))
 
+for direc in [d1, d4]:
+    shutil.copy(os.path.join(data_dir, 'index2.html'), os.path.join(direc, 'index.html'))
+    shutil.copy(os.path.join(data_dir, 'recent_ten.html'), os.path.join(direc, 'recent_ten.html'))
+    shutil.copy(os.path.join(data_dir, 'template.html'), os.path.join(direc, 'template.html'))
+
+# create csv files
 FIELDNAMES = [
     'trigger',
     'date',
