@@ -1,0 +1,6 @@
+#Ignore compiled python files
+*.pyc
+
+#Ignore Visual Studio Code files
+*.browse*
+*.vscode*
