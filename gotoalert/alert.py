@@ -3,11 +3,11 @@ import sys
 import os
 import voeventparse as vp
 from voeventparse import get_toplevel_params, get_event_time_as_utc
+import numpy as np
 
-from .goto_observatories_definitions import *
-from .coms import *
-from .set_up import *
-from .slack_message import *
+from .goto_observatories_definitions import telescope, params, top_params, event_definitions, observing_definitions
+from .coms import alert_dictionary, writecsv, create_graphs, htmlwrite, sendemail, topten
+from .slack_message import slackmessage
 from .csv2htmltable import main
 
 
