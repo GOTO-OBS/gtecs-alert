@@ -4,20 +4,11 @@ import os
 import voeventparse as vp
 from voeventparse import get_toplevel_params, get_event_time_as_utc
 import numpy as np
-import pkg_resources
 
 from .goto_observatories_definitions import telescope, params, top_params, event_definitions, observing_definitions
 from .coms import alert_dictionary, writecsv, create_graphs, htmlwrite, sendemail, topten
 from .slack_message import slackmessage
 from .csv2htmltable import main
-
-
-#used for local testing
-data_dir = pkg_resources.resource_filename('gotoalert', 'data')
-testdata_path = os.path.join(data_dir, 'ivo__nasa.gsfc.gcn_SWIFTBAT_GRB_Pos_813449030')
-
-with open(testdata_path, "rb") as f:
-    TEST_DATA = vp.load(f)
 
 path = "./www"
 
@@ -180,11 +171,3 @@ def event_handler(v):
 
 
     print("done")
-
-
-if __name__ == '__main__':
-    v = TEST_DATA
-    #use this when live parsing is working
-    #v = vp.loads(sys.stdin.buffer.read())
-
-    event_handler(v)
