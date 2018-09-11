@@ -9,16 +9,5 @@ from gotoalert.alert import event_handler
 
 
 if __name__ == '__main__':
-    testing = True  # Force testing for now
-
-    if testing:
-        # used for local testing
-        data_dir = pkg_resources.resource_filename('gotoalert', 'data')
-        testdata_path = os.path.join(data_dir, 'ivo__nasa.gsfc.gcn_SWIFTBAT_GRB_Pos_813449030')
-        with open(testdata_path, "rb") as f:
-            v = vp.load(f)
-    else:
-        # use this when live parsing is working
-        v = vp.loads(sys.stdin.buffer.read())
-
+    v = vp.loads(sys.stdin.buffer.read())
     event_handler(v)
