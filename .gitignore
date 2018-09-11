@@ -4,3 +4,6 @@
 #Ignore Visual Studio Code files
 *.browse*
 *.vscode*
+
+#Ignore web directory
+*www*
