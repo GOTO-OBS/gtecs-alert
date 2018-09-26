@@ -115,12 +115,31 @@ def event_handler(v):
     if role == "utility":
         print('Event is marked as "utility"')
         return
+    print('Event is marked as "{}"'.format(role))
 
     top_params = vp.get_toplevel_params(v)
     trigger_id = top_params['TrigID']['value']
 
     current_time = Time.now().utc
     event_dictionary = event_definitions(v, current_time)
+
+    # Get alert name
+    ivorn = event_dictionary["ivorn"]
+    alert_dictionary = coms.alert_dictionary()
+    if ivorn.startswith(alert_dictionary["Swift_XRT_POS"]):
+        name = "Swift_XRT_POS_"
+        event_type = str("swift")
+    elif ivorn.startswith(alert_dictionary["Swift_BAT_GRB_POS"]):
+        name = "Swift_BAT_GRB_POS_"
+        event_type = str("swift")
+    elif ivorn.startswith(alert_dictionary["Fermi_GMB_GND_POS"]):
+        name = "Fermi_GMB_GND_POS_"
+        event_type = str("fermi")
+    else:
+        # Something we don't care about
+        print('unrecognised event: {}'.format(ivorn))
+        return
+    print('recognised event: {} ({})'.format(name, event_type))
 
     goto_north = telescope('goto north', +37, 145, 10, 'UTC')
     goto_south = telescope('goto south', -37, 145, 10, 'UTC')
@@ -131,21 +150,6 @@ def event_handler(v):
                                                        event_dictionary)
     site_dictionaries['south'] = observing_definitions(goto_south, '11:59:59', 30,
                                                        event_dictionary)
-
-    # Get alert name
-    alert_dictionary = coms.alert_dictionary()
-    if event_dictionary["ivorn"].startswith(alert_dictionary["Swift_XRT_POS"]):
-        name = "Swift_XRT_POS_"
-        event_type = str("swift")
-    elif event_dictionary["ivorn"].startswith(alert_dictionary["Swift_BAT_GRB_POS"]):
-        name = "Swift_BAT_GRB_POS_"
-        event_type = str("swift")
-    elif event_dictionary["ivorn"].startswith(alert_dictionary["Fermi_GMB_GND_POS"]):
-        name = "Fermi_GMB_GND_POS_"
-        event_type = str("fermi")
-    else:
-        # No name found
-        return
 
     # write master csv file
     coms.write_csv(os.path.join(path, "master.csv"),
