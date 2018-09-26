@@ -1,173 +1,137 @@
 #! /opt/local/bin/python3.6
-import os
+
 import csv
-from astroplan.plots import dark_style_sheet, plot_airmass, plot_finder_image
-import matplotlib
-matplotlib.use('Agg')
-import matplotlib.pyplot as plt
-import astropy.units as u
-from decimal import Decimal
+import os
 import smtplib
+from decimal import Decimal
+from email import encoders
+from email.mime.base import MIMEBase
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from email.mime.base import MIMEBase
-from email import encoders
+
+from astroplan.plots import dark_style_sheet, plot_airmass, plot_finder_image
+
+import astropy.units as u
+
+import matplotlib
+import matplotlib.pyplot as plt
+
 import pandas as pd
 
+# Set backend
+matplotlib.use('Agg')
+
+
 def alert_dictionary():
-    data = {
-    "gaia": "ivo://gaia.cam.uk/alerts#",
-    "Swift_XRT_POS": "ivo://nasa.gsfc.gcn/SWIFT#XRT_Pos",
-    "Swift_BAT_GRB_POS": "ivo://nasa.gsfc.gcn/SWIFT#BAT_GRB_Pos",
-    "Fermi_GMB_GND_POS": "ivo://nasa.gsfc.gcn/Fermi#GBM_Gnd_Pos_"
-    }
+    """Convert between alert names and IVO strings."""
+    data = {"gaia": "ivo://gaia.cam.uk/alerts#",
+            "Swift_XRT_POS": "ivo://nasa.gsfc.gcn/SWIFT#XRT_Pos",
+            "Swift_BAT_GRB_POS": "ivo://nasa.gsfc.gcn/SWIFT#BAT_GRB_Pos",
+            "Fermi_GMB_GND_POS": "ivo://nasa.gsfc.gcn/Fermi#GBM_Gnd_Pos_",
+            }
     return data
 
-def writecsv(
-    filename,
-    ivorn,
-    trigger,
-    date,
-    ra,
-    dec,
-    gal_dis,
-    gal_lat,
-    obs_north,
-    obs_south,
-    ):
 
-    FIELDNAMES = [
-        'trigger',
-        'date',
-        'ra',
-        'dec',
-        'Galactic Distance',
-        'Galactic Lat',
-        'goto north',
-        'goto south',
-        ]
+def write_csv(filename, trigger, event_dictionary, site_dictionaries):
+    """Write the CSV file."""
+    data = {'trigger': trigger,
+            'date': event_dictionary["event_time"],
+            'ra': event_dictionary["event_coord"].ra.deg,
+            'dec': event_dictionary["event_coord"].dec.deg,
+            'Galactic Distance': event_dictionary["dist_galactic_center"],
+            'Galactic Lat': event_dictionary["object_galactic_lat"],
+            'goto north': site_dictionaries['north']["alt_observable"],
+            'goto south': site_dictionaries['south']["alt_observable"],
+            }
+    fieldnames = list(data.keys())
 
-    data = {
-        'trigger': trigger,
-        'date': date,
-        'ra': ra,
-        'dec': dec,
-        'Galactic Distance': gal_dis,
-        'Galactic Lat': gal_lat,
-        'goto north': obs_north,
-        'goto south': obs_south,
-    }
-
+    # Write the data
     if not os.path.exists(filename):
-        with open(filename, 'w') as fp:
-            writer = csv.DictWriter(fp, fieldnames=FIELDNAMES)
+        with open(filename, 'w') as f:
+            writer = csv.DictWriter(f, fieldnames)
             writer.writeheader()
             writer.writerow(data)
     else:
-        with open(filename, 'a') as fp:
-            writer = csv.DictWriter(fp, fieldnames=FIELDNAMES)
+        with open(filename, 'a') as f:
+            writer = csv.DictWriter(f, fieldnames)
             writer.writerow(data)
 
 
-
-def create_graphs(
-    coord,
-    telescope,
-    airmass_time,
-    file_path1,
-    file_path2,
-    file_name,
-    deg,
-    eventcoord
-    ):
-
-    plot_airmass(coord, telescope, airmass_time, altitude_yaxis=True,  style_sheet=dark_style_sheet)
-    plt.savefig(file_path1+file_name+"_AIRMASS.png")
+def create_graphs(coord, telescope, airmass_time, file_path, file_name, fov, eventcoord):
+    """Create airmass and finder plots."""
+    plot_airmass(coord, telescope, airmass_time, altitude_yaxis=True, style_sheet=dark_style_sheet)
+    airmass_path = file_path + "airmass_plots/"
+    airmass_file = file_name + "_AIRMASS.png"
+    plt.savefig(airmass_path + airmass_file)
     plt.clf()
 
-    ax, hdu = plot_finder_image(eventcoord, fov_radius=deg*u.arcmin, grid=False, reticle=True)
-    plt.savefig(file_path2+file_name+"_FINDER.png")
+    ax, hdu = plot_finder_image(eventcoord, fov_radius=fov * u.arcmin, grid=False, reticle=True)
+    finder_path = file_path + "finder_charts/"
+    finders_file = file_name + "_FINDER.png"
+    plt.savefig(finder_path + finders_file)
     plt.clf()
 
 
-def htmlwrite(
-    file_path3,
-    file_name,
-    title,
-    id,
-    type,
-    eventtime,
-    coord,
-    error,
-    email,
-    target_rise,
-    target_set,
-    dark_sunset_tonight,
-    dark_sunrise_tonight,
-    observation_start,
-    observation_end,
-    dist,
-    object_galactic_lat,
-    moon
-    ):
+def write_html(file_path, file_name, title, trigger_id, event_type, event_dictionary, site, email):
+    """Write the HTML page."""
+    eventtime = event_dictionary["event_time"]
+    coord = event_dictionary["event_coord"]
+    error = event_dictionary["event_coord_error"]
+    dist = event_dictionary["dist_galactic_center"],
+    object_galactic_lat = event_dictionary["object_galactic_lat"]
 
-    text_file = open(file_path3+file_name+".html", 'w')
-    text_file.write('<!DOCTYPE html><html lang="en"><head>'+title+'</head><body>')
-    text_file.write('<p>'+"https://gcn.gsfc.nasa.gov/other/"+id+"."+type+'</p>')
-    text_file.write('<p>'+'Event ID:'+"  "+id+'</p>')
-    text_file.write('<p>'+"Time of event (UTC): "+str(eventtime)[:21]+'</p>')
-    text_file.write('<p>'+'RA:  '+str(coord.ra.deg)+" degrees"'</p>')
-    text_file.write('<p>'+"DEC: "+str(coord.dec.deg)+" degrees"'</p>')
-    text_file.write('<p>'+'RA, DEC Error:   '+str('%.10f'%Decimal(error))[:5]+'</p>')
-    text_file.write('<p>'+"Contact: "+email+'</p>')
-    text_file.write('<p>'+'Observation Details: Time in UTC'+'</p>')
-    text_file.write('<p>'+"Target Rise: "+str((target_rise.iso))[:19]+'</p>')
-    text_file.write('<p>'+'Target Set:  '+str((target_set.iso))[:19]+'</p>')
-    text_file.write('<p>'+'Start of night:  '+str((dark_sunset_tonight.iso))[:19]+'</p>')
-    text_file.write('<p>'+'End of night:    '+str((dark_sunrise_tonight.iso))[:19]+'</p>')
-    text_file.write('<p>'+'Observations Start:   '+str((observation_start.iso))[:19]+'</p>')
-    text_file.write('<p>'+'Observations End:  '+str((observation_end.iso))[:19]+'</p>')
-    text_file.write('<p>'+'Galactic Distance:   '+str(dist.value)[:6]+" degrees"'</p>')
-    text_file.write('<p>'+'Galactic Lat:    '+str(object_galactic_lat.value)[:6]+" degrees"'</p>')
-    text_file.write("<p>"+"Target within 5 degrees of the moon? "+moon+"</p>")
-    text_file.write("<img src=finder_charts/"+file_name+"_FINDER.png>")
-    text_file.write("<img src=airmass_plots/"+file_name+"_AIRMASS.png>")
-    text_file.write('</body></html>')
-    text_file.close()
+    target_rise = site["target_rise"]
+    target_set = site["target_set"]
+    dark_sunset_tonight = site["dark_sunset_tonight"]
+    dark_sunrise_tonight = site["dark_sunrise_tonight"]
+    observation_start = site["observation_start"]
+    observation_end = site["observation_end"]
+    moon = site["moon_observable"]
+
+    html_file = file_name + '.html'
+    with open(file_path + html_file, 'w') as f:
+        f.write('<!DOCTYPE html><html lang="en"><head>{}</head><body>'.format(title))
+        f.write('<p>https://gcn.gsfc.nasa.gov/other/{}.{}</p>'.format(trigger_id, event_type))
+        f.write('<p>Event ID:  {}</p>'.format(trigger_id))
+        f.write('<p>Time of event (UTC): {}</p>'.format(str(eventtime)[:21]))
+        f.write('<p>RA:  {} degrees</p>'.format(str(coord.ra.deg)))
+        f.write('<p>DEC: {} degrees</p>'.format(str(coord.dec.deg)))
+        f.write('<p>RA, DEC Error:   {}</p>'.format(str('{:.10f}'.format(Decimal(error))[:5])))
+        f.write('<p>Contact: {}</p>'.format(email))
+        f.write('<p>Observation Details: Time in UTC</p>')
+        f.write('<p>Target Rise: {}</p>'.format(str((target_rise.iso))[:19]))
+        f.write('<p>Target Set:  {}</p>'.format(str((target_set.iso))[:19]))
+        f.write('<p>Start of night:  {}</p>'.format(str((dark_sunset_tonight.iso))[:19]))
+        f.write('<p>End of night:    {}</p>'.format(str((dark_sunrise_tonight.iso))[:19]))
+        f.write('<p>Observations Start:   {}</p>'.format(str((observation_start.iso))[:19]))
+        f.write('<p>Observations End:  {}</p>'.format(str((observation_end.iso))[:19]))
+        f.write('<p>Galactic Distance:   {} degrees</p>'.format(str(dist.value)[:6]))
+        f.write('<p>Galactic Lat:    {} degrees</p>'.format(str(object_galactic_lat.value)[:6]))
+        f.write('<p>Target within 5 degrees of the moon? {}</p>'.format(str(not moon)))
+        f.write('<img src=finder_charts/{}_FINDER.png>'.format(file_name))
+        f.write('<img src=airmass_plots/{}_AIRMASS.png>'.format(file_name))
+        f.write('</body></html>')
 
 
-def sendemail(
-    fromemail,
-    toaddress,
-    subject,
-    bodymessage,
-    password,
-    file_path,
-    file_name
-    ):
-
-    fromaddr = fromemail
-    toaddr = toaddress
-
+def send_email(fromaddr, toaddr, subject, body, password, file_path, file_name):
+    """Send an email when an event is detected."""
+    # Create message
     msg = MIMEMultipart()
-
     msg['From'] = fromaddr
     msg['To'] = toaddr
     msg['Subject'] = subject
-
-    body = bodymessage
-
     msg.attach(MIMEText(body, 'plain'))
 
-    attachment = open(file_path+file_name+".html", "rb")
-
-    part = MIMEBase('application', 'octet-stream')
-    part.set_payload((attachment).read())
-    encoders.encode_base64(part)
-    part.add_header('Content-Disposition', "attachment; filename= %s" % file_name+".html")
-
+    # Attach HTML file
+    html_file = file_name + '.html'
+    with open(file_path + html_file, "rb") as attachment:
+        part = MIMEBase('application', 'octet-stream')
+        part.set_payload((attachment).read())
+        encoders.encode_base64(part)
+        part.add_header('Content-Disposition', 'attachment; filename={}'.format(html_file))
     msg.attach(part)
 
+    # Connect to server and send
     server = smtplib.SMTP('smtp.gmail.com', 587)
     server.starttls()
     server.login(fromaddr, password)
@@ -176,22 +140,15 @@ def sendemail(
     server.quit()
 
 
-def topten(
-    path1,
-    path2
-    ):
+def write_topten(file_path, csv_file, topten_file):
+    """Write the latest 10 events page."""
+    csv_path = os.path.expanduser(file_path + csv_file)
+    df = pd.read_csv(csv_path)
 
-    path5 = os.path.expanduser(path1)
-
-    df = pd.read_csv(path5)
-    # sort by date
-    df = df.sort_values('date')
-    # pick the last 10
-    df = df[-10:]
-    # write the dataframe to a HTML table string
+    # sort by date, pick the latest 10 and write to HTML
+    df = df.sort_values('date')[-10:]
     html_table = df.to_html()
 
-    text_file = open(path2, 'w')
-    text_file.write('<!DOCTYPE html><html lang="en"><head>'+"Recent Events"+'</head><body>')
-    text_file.write('<p>'+html_table+'</p>')
-    text_file.close()
+    with open(file_path + topten_file, 'w') as f:
+        f.write('<!DOCTYPE html><html lang="en"><head>Recent Events</head><body>')
+        f.write('<p>{}</p>'.format(html_table))

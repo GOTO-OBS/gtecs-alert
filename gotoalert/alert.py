@@ -1,176 +1,162 @@
 #! /opt/local/bin/python3.6
-import sys
+"""Event handlers for VOEvents."""
+
 import os
-import voeventparse as vp
-from voeventparse import get_toplevel_params, get_event_time_as_utc
+
+from astropy.time import Time
+
 import numpy as np
 
-from . import goto_observatories_definitions
-from .goto_observatories_definitions import telescope, observing_definitions
+import voeventparse as vp
 
 from . import coms
-from .coms import writecsv, create_graphs, htmlwrite, sendemail, topten
-
+from .csv2htmltable import write_table
+from .goto_observatories_definitions import event_definitions, observing_definitions, telescope
 from .slack_message import slackmessage
-from .csv2htmltable import main
 
 path = "./www"
+send_email = False
+
+
+def parse(trigger_id, contact, event_dictionary, name, event_type, site_dictionaries,
+          scope, scope_string):
+    """Parse an event for a given telescope."""
+    # Check if the event is too close to the galaxy
+    if -8 < event_dictionary["object_galactic_lat"].value < 8:
+        raise ValueError("too close to the Galactic plane")
+    if event_dictionary["dist_galactic_center"].value < 15:
+        raise ValueError("too close to the Galactic centre")
+
+    if scope_string == 'goto_north':
+        site = site_dictionaries['north']
+    elif scope_string == 'goto_south':
+        site = site_dictionaries['south']
+
+    # Check if the target rises above the horizon
+    if site["alt_observable"] is False:
+        print("Target does not rise above alt 40 at {}".format(scope_string))
+        return
+    else:
+        print("Target does rise above alt 40 at {}".format(scope_string))
+
+    # Check if the target is visible for enough time
+    if np.sum(scope.target_is_up(site["night_time"], event_dictionary["event_target"])) < 6:
+        print("Target is not up longer then 1:30 at {} during the night".format(scope_string))
+        return
+    else:
+        print("Target is up longer then 1:30 at {} during the night".format(scope_string))
+
+    # Check final constraint??
+    if site["final_constraint"] is False:
+        print("Target does not rise above alt 40 at {} during observation peroid".format(
+              scope_string))
+        return
+    else:
+        print("Target does rise above alt 40 at {} during observation peroid".format(scope_string))
+
+    # Find file paths
+    file_name = name + trigger_id
+    file_path = "./www/{}_transients/".format(scope_string)
+
+    # Create graphs
+    coms.create_graphs(event_dictionary["event_coord"], scope, site["airmass_time"],
+                       file_path, file_name, 30, event_dictionary["event_target"])
+
+    # Write HTML
+    title = "New transient for {} from {}".format(scope_string, name)
+    coms.write_html(file_path, file_name, title, trigger_id, event_type,
+                    event_dictionary, site, contact)
+
+    # Send email if enabled
+    email_subject = "Detection from {}".format(scope_string)
+    email_body = "{} Detection: See more at http://118.138.235.166/~obrads".format(name)
+    if send_email:
+        coms.send_email(fromaddr="lapalmaobservatory@gmail.com",
+                        toaddr="aobr10@student.monash.edu",
+                        subject=email_subject,
+                        body=email_body,
+                        password="lapalmaobservatory1",
+                        file_path=file_path,
+                        file_name=file_name)
+
+    # Write CSV
+    csv_file = scope_string + ".csv"
+    coms.write_csv(os.path.join(file_path, csv_file),
+                   file_name,
+                   event_dictionary,
+                   site_dictionaries)
+
+    # Write latest 10 page
+    topten_file = "recent_ten.html"
+    coms.write_topten(file_path, csv_file, topten_file)
+
+    # Send message to Slack
+    if scope_string == "goto_north":
+        print("sent message to slack")
+        slackmessage(name,
+                     str(event_dictionary["event_time"])[:22],
+                     str(event_dictionary["event_coord"].ra.deg),
+                     str(event_dictionary["event_coord"].dec.deg),
+                     file_name)
+
+    # Convert CSVs to HTML
+    write_table(file_path, csv_file, 20)
 
 
 def event_handler(v):
+    """Handle a VOEvent payload."""
+    contact = v.Who.Author.contactEmail
+
+    # First check role
     role = v.attrib['role']
+    if role == "test":
+        print('Event is marked as "test"')
+        return
+    if role == "utility":
+        print('Event is marked as "utility"')
+        return
 
-    if role == "test" or role == "utility":
-        sys.exit()
+    top_params = vp.get_toplevel_params(v)
+    trigger_id = top_params['TrigID']['value']
 
-    params = goto_observatories_definitions.params(v)
-    top_params = goto_observatories_definitions.top_params(v)
-    event_dictionary = goto_observatories_definitions.event_definitions(v)
-    alert_dictionary = coms.alert_dictionary()
+    current_time = Time.now().utc
+    event_dictionary = event_definitions(v, current_time)
 
     goto_north = telescope('goto north', +37, 145, 10, 'UTC')
     goto_south = telescope('goto south', -37, 145, 10, 'UTC')
 
-    goto_north_dictionary = observing_definitions('23:59:59', 4, 30, goto_north, event_dictionary["ra_dec_formatted"])
-    goto_south_dictionary = observing_definitions('11:59:59', 4, 30, goto_south, event_dictionary["ra_dec_formatted"])
-    #defines ra_dec, ra_dec_formatted and ra_dec_error and how to read xml file
+    # get telescope definitions
+    site_dictionaries = {}
+    site_dictionaries['north'] = observing_definitions(goto_north, '23:59:59', 30,
+                                                       event_dictionary)
+    site_dictionaries['south'] = observing_definitions(goto_south, '11:59:59', 30,
+                                                       event_dictionary)
 
-
+    # Get alert name
+    alert_dictionary = coms.alert_dictionary()
     if event_dictionary["ivorn"].startswith(alert_dictionary["Swift_XRT_POS"]):
         name = "Swift_XRT_POS_"
-        name1 = str("swift")
-
-    if event_dictionary["ivorn"].startswith(alert_dictionary["Swift_BAT_GRB_POS"]):
+        event_type = str("swift")
+    elif event_dictionary["ivorn"].startswith(alert_dictionary["Swift_BAT_GRB_POS"]):
         name = "Swift_BAT_GRB_POS_"
-        name1 = str("swift")
+        event_type = str("swift")
+    elif event_dictionary["ivorn"].startswith(alert_dictionary["Fermi_GMB_GND_POS"]):
+        name = "Fermi_GMB_GND_POS_"
+        event_type = str("fermi")
+    else:
+        # No name found
+        return
 
-    if event_dictionary["ivorn"].startswith(alert_dictionary["Fermi_GMB_GND_POS"]):
-        name =  "Fermi_GMB_GND_POS_"
-        name1 = str("fermi")
+    # write master csv file
+    coms.write_csv(os.path.join(path, "master.csv"),
+                   name + trigger_id,
+                   event_dictionary,
+                   site_dictionaries)
 
-
-    writecsv(
-        os.path.join(path, "master.csv"),
-        event_dictionary["ivorn"],
-        name+top_params['TrigID']['value'],
-        event_dictionary["event_time"], event_dictionary["ra_dec"].ra.deg,
-        event_dictionary["ra_dec"].dec.deg, event_dictionary["dist_galactic_center"],
-        event_dictionary["object_galactic_lat"],
-        goto_north_dictionary["alt_observable_adjusted"],
-        goto_south_dictionary["alt_observable_adjusted"],
-        )
-
-
-    def parse(site, scope, scope_string):
-
-        if -8 < event_dictionary["object_galactic_lat"].value < 8:
-            sys.exit("too close to the Galactic plane")
-
-        if event_dictionary["dist_galactic_center"].value < 15:
-            sys.exit("too close to the Galactic centre")
-
-        if site["alt_observable"] == False:
-            print("Target does not rise above alt 40 at " +scope_string)
-
-        if site["alt_observable"] == True:
-
-            print("Target does rise above alt 40 at " +scope_string)
-
-            if np.sum(scope.target_is_up(site["night_time"], event_dictionary["ra_dec_formatted"])) <6 :
-                print("Target is not up longer then 1:30 at " +scope_string+ " during the night")
-
-            if np.sum(scope.target_is_up(site["night_time"], event_dictionary["ra_dec_formatted"])) >6 :
-                print("Target is up longer then 1:30 at " +scope_string+ " during the night")
-
-                if site["final_constraint"] == False:
-                    print("Target does not rise above alt 40 at " +scope_string+ " during observation peroid")
-
-                if site["final_constraint"] == True:
-                    print("Target does rise above alt 40 at " +scope_string+ " during observation peroid")
-
-
-                    file_name = name+top_params['TrigID']['value']
-                    file_path1 = "./www/"+scope_string+"_transients/airmass_plots/"
-                    file_path2 = "./www/"+scope_string+"_transients/finder_charts/"
-                    file_path3 = "./www/"+scope_string+"_transients/"
-
-
-
-                    create_graphs(
-                    event_dictionary["ra_dec"],
-                    scope,
-                    site["airmass_time"],
-                    file_path1,
-                    file_path2,
-                    file_name,
-                    30,
-                    event_dictionary["ra_dec_formatted"]
-                    )
-
-                    htmlwrite(
-                    file_path3,
-                    file_name,
-                    "New transient for "+scope_string+" from "+name,
-                    top_params['TrigID']['value'],
-                    name1,
-                    event_dictionary["event_time"],
-                    event_dictionary["ra_dec"],
-                    event_dictionary["ra_dec_error"],
-                    v.Who.Author.contactEmail,
-                    site["target_rise"],
-                    site["target_set"],
-                    site["dark_sunset_tonight"],
-                    site["dark_sunrise_tonight"],
-                    site["observation_start"],
-                    site["observation_end"],
-                    event_dictionary["dist_galactic_center"],
-                    event_dictionary["object_galactic_lat"],
-                    site["is_safe_from_moon"]
-                    )
-
-
-    #                sendemail(
-    #                "lapalmaobservatory@gmail.com",
-    #                "aobr10@student.monash.edu",
-    #                "Detection from "+scope_string,
-    #                name+" Detection: See more at  http://118.138.235.166/~obrads",
-    #                "lapalmaobservatory1",
-    #                file_path3,
-    #                file_name
-    #                )
-
-
-                    writecsv(
-                        os.path.join(file_path3, scope_string+".csv"),
-                        event_dictionary["ivorn"],
-                        name+top_params['TrigID']['value'],
-                        event_dictionary["event_time"], event_dictionary["ra_dec"].ra.deg,
-                        event_dictionary["ra_dec"].dec.deg, event_dictionary["dist_galactic_center"],
-                        event_dictionary["object_galactic_lat"],
-                        goto_north_dictionary["alt_observable_adjusted"],
-                        goto_south_dictionary["alt_observable_adjusted"],
-                        )
-
-                    topten(
-                    file_path3+scope_string+".csv",
-                    file_path3+"recent_ten.html"
-                    )
-
-                    if scope_string == "goto_north":
-                        print("sent message to slack")
-
-                        slackmessage(
-                        name,
-                        str(event_dictionary["event_time"])[:22],
-                        str(event_dictionary["ra_dec"].ra.deg),
-                        str(event_dictionary["ra_dec"].dec.deg),
-                        file_name
-                        )
-
-                    main()
-
-    parse(goto_north_dictionary, goto_north, "goto_north")
-    parse(goto_south_dictionary, goto_south, "goto_south")
-
+    # parse the event for each site
+    parse(trigger_id, contact, event_dictionary, name, event_type,
+          site_dictionaries, goto_north, "goto_north")
+    parse(trigger_id, contact, event_dictionary, name, event_type,
+          site_dictionaries, goto_south, "goto_south")
 
     print("done")

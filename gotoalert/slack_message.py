@@ -1,12 +1,14 @@
 #! /opt/local/bin/python3.6
 
 from slacker import Slacker
-from slackclient import SlackClient
 
 
-def slackmessage(text, time, ra, dec, file):
-    slackClient = Slacker("xoxb-132218163666-416316276000-iueLeJ9b6JKToTTMGDvK5XaN")
+def slackmessage(text, time, ra, dec, file_name):
+    slack_client = Slacker("xoxb-132218163666-416316276000-iueLeJ9b6JKToTTMGDvK5XaN")
 
-    messageToChannel = text+"  (Time = "+time+")"+"  (RA = "+ra+")"+"  (DEC = "+dec+") See more at http://118.138.235.166/~obrads/Transients_For_La_Palma_Observatory/"+file+".html"
+    message = '{}  (Time = {})  (RA = {})  (DEC = {}) '.format(text, time, ra, dec)
+    html_file = file_name + '.html'
+    link = 'http://118.138.235.166/~obrads/Transients_For_La_Palma_Observatory/' + html_file
+    message += 'See more at ' + link
 
-    slackClient.chat.post_message("#grb-alerts",messageToChannel)
+    slack_client.chat.post_message('#grb-alerts', message)
