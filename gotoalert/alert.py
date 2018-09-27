@@ -14,8 +14,8 @@ path = "./www"
 send_email = False
 
 
-def parse_event_type(event_data):
-    """Parse an event and check if it's something we want to process."""
+def check_event_type(event_data):
+    """Check if the event is something we want to process."""
     # Check role
     print('Event is marked as "{}"'.format(event_data['role']))
     if event_data['role'] in ['test', 'utility']:
@@ -27,19 +27,27 @@ def parse_event_type(event_data):
     print('Recognised event type: {} ({})'.format(event_data['name'], event_data['type']))
 
 
+def check_event_position(event_data):
+    """Check if the event position is too close to the galaxy ."""
+    # Check galactic latitude
+    if -8 < event_data['object_galactic_lat'].value < 8:
+        raise ValueError('Event too close to the Galactic plane (Lat {})'.format(
+                         event_data['object_galactic_lat'].value
+                         ))
+
+    # Check distance from galactic center
+    if event_data['dist_galactic_center'].value < 15:
+        raise ValueError(' Event too close to the Galactic centre (Dist {})'.format(
+                         event_data['dist_galactic_center'].value
+                         ))
+
+
 def parse(event_data, all_obs_data, scope):
     """Parse an event for a given telescope."""
     name = event_data['name']
     event_type = event_data['type']
     trigger_id = event_data['trigger_id']
     contact = event_data['contact']
-
-
-    # Check if the event is too close to the galaxy
-    if -8 < event_data["object_galactic_lat"].value < 8:
-        raise ValueError("too close to the Galactic plane")
-    if event_data["dist_galactic_center"].value < 15:
-        raise ValueError("too close to the Galactic centre")
 
     scope_string = scope.name
     if scope_string == 'goto_north':
@@ -126,7 +134,8 @@ def event_handler(v):
 
     # Check if it's an event we want to process
     try:
-        parse_event_type(event_data)
+        check_event_type(event_data)
+        check_event_position(event_data)
     except Exception as err:
         print(err)
         return
@@ -141,7 +150,7 @@ def event_handler(v):
     # write master csv file
     coms.write_csv(os.path.join(path, "master.csv"), event_data, all_obs_data)
 
-    # parse the event for each site
+    # Parse the event for each site
     for telescope in telescopes:
         parse(event_data, all_obs_data, telescope)
         parse(event_data, all_obs_data, telescope)
