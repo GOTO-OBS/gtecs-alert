@@ -9,21 +9,32 @@ import astropy.units as u
 from astropy.coordinates import EarthLocation, SkyCoord
 from astropy.time import Time
 
-import numpy as np
-
-from pytz import timezone
-
 import voeventparse as vp
 
 
 def telescope(name, latitude, longitude, elevation, time_zone):
-    """Create an Astroplan observer for the given site."""
+    """Create an Astroplan observer for the given telescope."""
     location = EarthLocation.from_geodetic(longitude, latitude, elevation * u.m)
-    telescope = Observer(name=name, location=location, timezone=timezone(time_zone))
+    telescope = Observer(name=name, location=location, timezone=time_zone)
+    return telescope
+
+
+def goto_north():
+    """Observer for GOTO-North on La Palma."""
+    lapalma = EarthLocation.from_geodetic(28.7636, -17.8947, 2396 * u.m)
+    telescope = Observer(name='goto_north', location=lapalma, timezone='Atlantic/Canary')
+    return telescope
+
+
+def goto_south():
+    """Observer for a (theoretical) GOTO-South in Melbourne."""
+    clayton = EarthLocation.from_geodetic(-37.910556, 145.131389, 50 * u.m)
+    telescope = Observer(name='goto_south', location=clayton, timezone='Australia/Melbourne')
     return telescope
 
 
 def event_definitions(v, current_time):
+    """Fetch infomation about the event."""
 
     # Get IVORN
     ivorn = v.attrib['ivorn']
@@ -58,7 +69,7 @@ def event_definitions(v, current_time):
 
 
 def observing_definitions(site, target, current_time, alt_limit=30):
-
+    """Compile infomation about the target's visibility from the given site."""
     # Get midnight and astronomicla twilight times
     midnight = site.midnight(current_time, which='next')
     sun_set = site.twilight_evening_astronomical(midnight, which='previous')
@@ -103,7 +114,8 @@ def observing_definitions(site, target, current_time, alt_limit=30):
     moon_constraint = MoonSeparationConstraint(min=min_moon, max=None)
     moon_observable = is_observable(moon_constraint, site, target, time_range=time_range)[0]
 
-    data = {'midnight': midnight,
+    data = {'site': site,
+            'midnight': midnight,
             'sun_set': sun_set,
             'sun_rise': sun_rise,
             'target_rise': target_rise,

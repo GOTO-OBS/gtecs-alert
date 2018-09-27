@@ -12,7 +12,7 @@ import voeventparse as vp
 
 from . import coms
 from .csv2htmltable import write_table
-from .goto_observatories_definitions import event_definitions, observing_definitions, telescope
+from .definitions import event_definitions, goto_north, goto_south, observing_definitions
 from .slack_message import slackmessage
 
 path = "./www"
@@ -122,10 +122,10 @@ def event_handler(v):
     trigger_id = top_params['TrigID']['value']
 
     current_time = Time.now().utc
-    event_dictionary = event_definitions(v, current_time)
+    event_data = event_definitions(v, current_time)
 
     # Get alert name
-    ivorn = event_dictionary["ivorn"]
+    ivorn = event_data["ivorn"]
     alert_dictionary = coms.alert_dictionary()
     if ivorn.startswith(alert_dictionary["Swift_XRT_POS"]):
         name = "Swift_XRT_POS_"
@@ -143,25 +143,21 @@ def event_handler(v):
     print('recognised event: {} ({})'.format(name, event_type))
 
     # get observing parameters
-    target = event_dictionary['event_target']
-    site_dictionaries = {}
-
-    goto_north = telescope('goto north', +37, 145, 10, 'UTC')
-    site_dictionaries['north'] = observing_definitions(goto_north, target, current_time)
-
-    goto_south = telescope('goto south', -37, 145, 10, 'UTC')
-    site_dictionaries['south'] = observing_definitions(goto_south, target, current_time)
+    target = event_data['event_target']
+    obs_data = {}
+    obs_data['north'] = observing_definitions(goto_north, target, current_time)
+    obs_data['south'] = observing_definitions(goto_south, target, current_time)
 
     # write master csv file
     coms.write_csv(os.path.join(path, "master.csv"),
                    name + trigger_id,
-                   event_dictionary,
-                   site_dictionaries)
+                   event_data,
+                   obs_data)
 
     # parse the event for each site
-    parse(trigger_id, contact, event_dictionary, name, event_type,
-          site_dictionaries, goto_north, "goto_north")
-    parse(trigger_id, contact, event_dictionary, name, event_type,
-          site_dictionaries, goto_south, "goto_south")
+    parse(trigger_id, contact, event_data, name, event_type,
+          obs_data, goto_north, "goto_north")
+    parse(trigger_id, contact, event_data, name, event_type,
+          obs_data, goto_south, "goto_south")
 
     print("done")
