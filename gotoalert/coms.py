@@ -21,7 +21,7 @@ import pandas as pd
 # Set backend
 matplotlib.use('Agg')
 
-def write_csv(filename, event_data, site_data):
+def write_csv(filename, event_data, obs_data):
     """Write the CSV file."""
     data = {'trigger': event_data['name'] + event_data['trigger_id'],
             'date': event_data["event_time"],
@@ -29,8 +29,8 @@ def write_csv(filename, event_data, site_data):
             'dec': event_data["event_coord"].dec.deg,
             'Galactic Distance': event_data["dist_galactic_center"],
             'Galactic Lat': event_data["object_galactic_lat"],
-            'goto north': site_data['north']["alt_observable"],
-            'goto south': site_data['south']["alt_observable"],
+            'goto north': obs_data['north']["alt_observable"],
+            'goto south': obs_data['south']["alt_observable"],
             }
     fieldnames = list(data.keys())
 
@@ -61,7 +61,7 @@ def create_graphs(coord, telescope, airmass_time, file_path, file_name, fov, eve
     plt.clf()
 
 
-def write_html(file_path, file_name, title, trigger_id, event_type, event_data, site, email):
+def write_html(file_path, file_name, title, trigger_id, event_type, event_data, obs_data, email):
     """Write the HTML page."""
     eventtime = event_data["event_time"]
     coord = event_data["event_coord"]
@@ -69,13 +69,13 @@ def write_html(file_path, file_name, title, trigger_id, event_type, event_data, 
     dist = event_data["dist_galactic_center"],
     object_galactic_lat = event_data["object_galactic_lat"]
 
-    target_rise = site["target_rise"]
-    target_set = site["target_set"]
-    dark_sunset_tonight = site["dark_sunset_tonight"]
-    dark_sunrise_tonight = site["dark_sunrise_tonight"]
-    observation_start = site["observation_start"]
-    observation_end = site["observation_end"]
-    moon = site["moon_observable"]
+    target_rise = obs_data["target_rise"]
+    target_set = obs_data["target_set"]
+    dark_sunset_tonight = obs_data["dark_sunset_tonight"]
+    dark_sunrise_tonight = obs_data["dark_sunrise_tonight"]
+    observation_start = obs_data["observation_start"]
+    observation_end = obs_data["observation_end"]
+    moon = obs_data["moon_observable"]
 
     html_file = file_name + '.html'
     with open(file_path + html_file, 'w') as f:

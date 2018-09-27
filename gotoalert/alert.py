@@ -19,43 +19,43 @@ path = "./www"
 send_email = False
 
 
-def parse(event_dictionary, site_dictionaries, scope):
+def parse(event_data, all_obs_dict, scope):
     """Parse an event for a given telescope."""
 
-    name = event_dictionary['name']
-    event_type = event_dictionary['type']
-    trigger_id = event_dictionary['trigger_id']
-    contact = event_dictionary['contact']
+    name = event_data['name']
+    event_type = event_data['type']
+    trigger_id = event_data['trigger_id']
+    contact = event_data['contact']
 
 
     # Check if the event is too close to the galaxy
-    if -8 < event_dictionary["object_galactic_lat"].value < 8:
+    if -8 < event_data["object_galactic_lat"].value < 8:
         raise ValueError("too close to the Galactic plane")
-    if event_dictionary["dist_galactic_center"].value < 15:
+    if event_data["dist_galactic_center"].value < 15:
         raise ValueError("too close to the Galactic centre")
 
     scope_string = scope.name
     if scope_string == 'goto_north':
-        site = site_dictionaries['north']
+        obs_data = all_obs_dict['north']
     elif scope_string == 'goto_south':
-        site = site_dictionaries['south']
+        obs_data = all_obs_dict['south']
 
     # Check if the target rises above the horizon
-    if site["alt_observable"] is False:
+    if obs_data["alt_observable"] is False:
         print("Target does not rise above alt 40 at {}".format(scope_string))
         return
     else:
         print("Target does rise above alt 40 at {}".format(scope_string))
 
     # Check if the target is visible for enough time
-    if event_dictionary["observation_end"] - event_dictionary["observation_start"] < 1.5 * u.hour:
+    if event_data["observation_end"] - event_data["observation_start"] < 1.5 * u.hour:
         print("Target is not up longer then 1:30 at {} during the night".format(scope_string))
         return
     else:
         print("Target is up longer then 1:30 at {} during the night".format(scope_string))
 
     # Check final constraint??
-    if site["final_constraint"] is False:
+    if obs_data["final_constraint"] is False:
         print("Target does not rise above alt 40 at {} during observation peroid".format(
               scope_string))
         return
@@ -67,13 +67,13 @@ def parse(event_dictionary, site_dictionaries, scope):
     file_path = "./www/{}_transients/".format(scope_string)
 
     # Create graphs
-    coms.create_graphs(event_dictionary["event_coord"], scope, site["airmass_time"],
-                       file_path, file_name, 30, event_dictionary["event_target"])
+    coms.create_graphs(event_data["event_coord"], scope, obs_data["airmass_time"],
+                       file_path, file_name, 30, event_data["event_target"])
 
     # Write HTML
     title = "New transient for {} from {}".format(scope_string, name)
     coms.write_html(file_path, file_name, title, trigger_id, event_type,
-                    event_dictionary, site, contact)
+                    event_data, obs_data, contact)
 
     # Send email if enabled
     email_subject = "Detection from {}".format(scope_string)
@@ -91,8 +91,8 @@ def parse(event_dictionary, site_dictionaries, scope):
     csv_file = scope_string + ".csv"
     coms.write_csv(os.path.join(file_path, csv_file),
                    file_name,
-                   event_dictionary,
-                   site_dictionaries)
+                   event_data,
+                   all_obs_dict)
 
     # Write latest 10 page
     topten_file = "recent_ten.html"
@@ -102,9 +102,9 @@ def parse(event_dictionary, site_dictionaries, scope):
     if scope_string == "goto_north":
         print("sent message to slack")
         slackmessage(name,
-                     str(event_dictionary["event_time"])[:22],
-                     str(event_dictionary["event_coord"].ra.deg),
-                     str(event_dictionary["event_coord"].dec.deg),
+                     str(event_data["event_time"])[:22],
+                     str(event_data["event_coord"].ra.deg),
+                     str(event_data["event_coord"].dec.deg),
                      file_name)
 
     # Convert CSVs to HTML
@@ -132,17 +132,17 @@ def event_handler(v):
 
     # Get observing data
     telescopes = [goto_north(), goto_south()]
-    obs_data = {}
+    all_obs_dict = {}
     for telescope in telescopes:
-        obs_data['north'] = observing_definitions(telescope, event_data)
-        obs_data['south'] = observing_definitions(telescope, event_data)
+        all_obs_dict['north'] = observing_definitions(telescope, event_data)
+        all_obs_dict['south'] = observing_definitions(telescope, event_data)
 
     # write master csv file
-    coms.write_csv(os.path.join(path, "master.csv"), event_data, obs_data)
+    coms.write_csv(os.path.join(path, "master.csv"), event_data, all_obs_dict)
 
     # parse the event for each site
     for telescope in telescopes:
-        parse(event_data, obs_data, telescope)
-        parse(event_data, obs_data, telescope)
+        parse(event_data, all_obs_dict, telescope)
+        parse(event_data, all_obs_dict, telescope)
 
     print("done")

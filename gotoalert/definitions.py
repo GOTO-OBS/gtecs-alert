@@ -103,31 +103,33 @@ def event_definitions(v, current_time):
     return data
 
 
-def observing_definitions(site, event_data, alt_limit=30):
-    """Compile infomation about the target's visibility from the given site."""
+def observing_definitions(observer, event_data, alt_limit=30):
+    """Compile infomation about the target's visibility from the given observer."""
 
     # Get event info
     target = event_data['event_target']
     current_time = event_data['current_time']
 
     # Get midnight and astronomicla twilight times
-    midnight = site.midnight(current_time, which='next')
-    sun_set = site.twilight_evening_astronomical(midnight, which='previous')
-    sun_rise = site.twilight_morning_astronomical(midnight, which='next')
+    midnight = observer.midnight(current_time, which='next')
+    sun_set = observer.twilight_evening_astronomical(midnight, which='previous')
+    sun_rise = observer.twilight_morning_astronomical(midnight, which='next')
 
     time_range = Time([sun_set, sun_rise])
 
     # Apply a constraint on altitude
     min_alt = alt_limit * u.deg
     alt_constraint = AltitudeConstraint(min=min_alt, max=None)
-    alt_observable = is_observable(alt_constraint, site, target, time_range=time_range)[0]
+    alt_observable = is_observable(alt_constraint, observer, target, time_range=time_range)[0]
 
     # Get target rise and set times
     if alt_observable:
         with warnings.catch_warnings():
             warnings.simplefilter('ignore')
-            target_rise = site.target_rise_time(midnight, target, which='nearest', horizon=min_alt)
-            target_set = site.target_set_time(target_rise, target, which='next', horizon=min_alt)
+            target_rise = observer.target_rise_time(midnight, target,
+                                                    which='nearest', horizon=min_alt)
+            target_set = observer.target_set_time(target_rise, target,
+                                                  which='next', horizon=min_alt)
 
         # Get observation times
         observation_start = target_rise
@@ -152,9 +154,9 @@ def observing_definitions(site, event_data, alt_limit=30):
     # Apply a constraint on distance from the Moon
     min_moon = 5 * u.deg
     moon_constraint = MoonSeparationConstraint(min=min_moon, max=None)
-    moon_observable = is_observable(moon_constraint, site, target, time_range=time_range)[0]
+    moon_observable = is_observable(moon_constraint, observer, target, time_range=time_range)[0]
 
-    data = {'site': site,
+    data = {'observer': observer,
             'midnight': midnight,
             'sun_set': sun_set,
             'sun_rise': sun_rise,
