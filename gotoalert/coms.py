@@ -16,6 +16,8 @@ import astropy.units as u
 
 import matplotlib.pyplot as plt
 
+import numpy as np
+
 import pandas as pd
 
 
@@ -47,18 +49,28 @@ def write_csv(filename, event_data, all_obs_data):
             writer.writerow(data)
 
 
-def create_graphs(coord, telescope, airmass_time, file_path, file_name, fov, eventcoord):
+def create_graphs(file_path, event_data, obs_data, fov=30):
     """Create airmass and finder plots."""
-    plot_airmass(coord, telescope, airmass_time, altitude_yaxis=True, style_sheet=dark_style_sheet)
-    airmass_path = file_path + "airmass_plots/"
-    airmass_file = file_name + "_AIRMASS.png"
-    plt.savefig(airmass_path + airmass_file)
+
+    # Get data
+    name = event_data['name']
+    trigger_id = event_data['trigger_id']
+    coord = event_data['event_coord']
+    target = event_data['event_target']
+    observer = obs_data['observer']
+
+    # Plot airmass during the night
+    delta_t = obs_data['sun_rise'] - obs_data['sun_set']
+    time_range = obs_data['sun_set'] + delta_t * np.linspace(0, 1, 75)
+    plot_airmass(coord, observer, time_range, altitude_yaxis=True, style_sheet=dark_style_sheet)
+    airmass_file = "{}{}_AIRMASS.png".format(name, trigger_id)
+    plt.savefig(os.path.join(file_path, 'airmass_plots', airmass_file))
     plt.clf()
 
-    ax, hdu = plot_finder_image(eventcoord, fov_radius=fov * u.arcmin, grid=False, reticle=True)
-    finder_path = file_path + "finder_charts/"
-    finders_file = file_name + "_FINDER.png"
-    plt.savefig(finder_path + finders_file)
+    # Plot finder chart
+    plot_finder_image(target, fov_radius=fov * u.arcmin, grid=False, reticle=True)
+    airmass_file = "{}{}_FINDER.png".format(name, trigger_id)
+    plt.savefig(os.path.join(file_path, 'finder_charts', airmass_file))
     plt.clf()
 
 

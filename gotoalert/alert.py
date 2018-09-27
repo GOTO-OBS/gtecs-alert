@@ -70,8 +70,7 @@ def parse(event_data, all_obs_data, telescope):
     file_path = "./www/{}_transients/".format(telescope.name)
 
     # Create graphs
-    coms.create_graphs(event_data["event_coord"], telescope, obs_data["airmass_time"],
-                       file_path, file_name, 30, event_data["event_target"])
+    coms.create_graphs(file_path, event_data, obs_data)
 
     # Write HTML
     title = "New transient for {} from {}".format(telescope.name, name)
