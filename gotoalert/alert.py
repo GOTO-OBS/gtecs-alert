@@ -42,6 +42,20 @@ def check_event_position(event_data):
                          ))
 
 
+def check_obs_params(obs_data):
+    """Check if the event is observable from a paticular telescope."""
+    telescope = obs_data['observer']
+    name = telescope.name
+
+    # Check if the target rises above the horizon
+    if not obs_data['alt_observable']:
+        raise ValueError('Target does not rise above minimum altitude at {}'.format(name))
+
+    # Check if the target is visible for enough time
+    if (obs_data['observation_end'] - obs_data['observation_start']) < 1.5 * u.hour:
+        raise ValueError('Target is not up longer then 1:30 at {} during the night'.format(name))
+
+
 def parse(event_data, all_obs_data, scope):
     """Parse an event for a given telescope."""
     name = event_data['name']
@@ -54,28 +68,6 @@ def parse(event_data, all_obs_data, scope):
         obs_data = all_obs_data['north']
     elif scope_string == 'goto_south':
         obs_data = all_obs_data['south']
-
-    # Check if the target rises above the horizon
-    if obs_data["alt_observable"] is False:
-        print("Target does not rise above alt 40 at {}".format(scope_string))
-        return
-    else:
-        print("Target does rise above alt 40 at {}".format(scope_string))
-
-    # Check if the target is visible for enough time
-    if event_data["observation_end"] - event_data["observation_start"] < 1.5 * u.hour:
-        print("Target is not up longer then 1:30 at {} during the night".format(scope_string))
-        return
-    else:
-        print("Target is up longer then 1:30 at {} during the night".format(scope_string))
-
-    # Check final constraint??
-    if obs_data["final_constraint"] is False:
-        print("Target does not rise above alt 40 at {} during observation peroid".format(
-              scope_string))
-        return
-    else:
-        print("Target does rise above alt 40 at {} during observation peroid".format(scope_string))
 
     # Find file paths
     file_name = name + trigger_id
@@ -128,7 +120,6 @@ def parse(event_data, all_obs_data, scope):
 
 def event_handler(v):
     """Handle a VOEvent payload."""
-
     # Get event data from the payload
     event_data = get_event_data(v)
 
@@ -152,7 +143,16 @@ def event_handler(v):
 
     # Parse the event for each site
     for telescope in telescopes:
-        parse(event_data, all_obs_data, telescope)
+        obs_data = all_obs_data[telescope.name]
+
+        # Check if it's observable
+        try:
+            check_obs_params(obs_data)
+        except Exception as err:
+            print(err)
+            continue
+
+        # Parse the event
         parse(event_data, all_obs_data, telescope)
 
     print("done")
