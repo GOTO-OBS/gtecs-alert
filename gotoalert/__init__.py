@@ -1,1 +1,1 @@
-from . import alert, coms, csv2htmltable, goto_observatories_definitions, slack_message
+from . import alert, coms, csv2htmltable, definitions, slack_message
