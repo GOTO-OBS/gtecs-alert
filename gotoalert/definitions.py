@@ -40,7 +40,7 @@ ALERT_DICTIONARY = {"gaia": "ivo://gaia.cam.uk/alerts#",
                     }
 
 
-def get_event_data(v, current_time):
+def get_event_data(v):
     """Fetch infomation about the event."""
 
     # Get attributes
@@ -86,8 +86,7 @@ def get_event_data(v, current_time):
     galactic_center = SkyCoord(l=0, b=0, unit='deg,deg', frame='galactic')
     dist_galactic_center = object_galactic_pos.separation(galactic_center)
 
-    data = {'current_time': current_time,
-            'name': name,
+    data = {'name': name,
             'type': event_type,
             'ivorn': ivorn,
             'role': role,
@@ -103,14 +102,11 @@ def get_event_data(v, current_time):
     return data
 
 
-def get_obs_data(observer, event_data, alt_limit=30):
+def get_obs_data(observer, target, alt_limit=30):
     """Compile infomation about the target's visibility from the given observer."""
 
-    # Get event info
-    target = event_data['event_target']
-    current_time = event_data['current_time']
-
     # Get midnight and astronomicla twilight times
+    current_time = Time.now()
     midnight = observer.midnight(current_time, which='next')
     sun_set = observer.twilight_evening_astronomical(midnight, which='previous')
     sun_rise = observer.twilight_morning_astronomical(midnight, which='next')
@@ -157,6 +153,7 @@ def get_obs_data(observer, event_data, alt_limit=30):
     moon_observable = is_observable(moon_constraint, observer, target, time_range=time_range)[0]
 
     data = {'observer': observer,
+            'current_time': current_time,
             'midnight': midnight,
             'sun_set': sun_set,
             'sun_rise': sun_rise,

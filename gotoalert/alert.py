@@ -4,11 +4,6 @@
 import os
 
 import astropy.units as u
-from astropy.time import Time
-
-import numpy as np
-
-import voeventparse as vp
 
 from . import coms
 from .csv2htmltable import write_table
@@ -125,10 +120,9 @@ def parse(event_data, all_obs_data, scope):
 
 def event_handler(v):
     """Handle a VOEvent payload."""
-    current_time = Time.now()
 
     # Get event data from the payload
-    event_data = get_event_data(v, current_time)
+    event_data = get_event_data(v)
 
     # Check if it's an event we want to process
     try:
@@ -138,10 +132,11 @@ def event_handler(v):
         return
 
     # Get observing data for the event with each telescope
+    target = event_data['event_target']
     telescopes = [goto_north(), goto_south()]
     all_obs_data = {}
     for telescope in telescopes:
-        all_obs_data[telescope.name] = get_obs_data(telescope, event_data)
+        all_obs_data[telescope.name] = get_obs_data(telescope, target)
 
     # write master csv file
     coms.write_csv(os.path.join(path, "master.csv"), event_data, all_obs_data)
