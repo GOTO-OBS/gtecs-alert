@@ -19,9 +19,21 @@ path = "./www"
 send_email = False
 
 
+def parse_event_type(event_data):
+    """Parse an event and check if it's something we want to process."""
+    # Check role
+    print('Event is marked as "{}"'.format(event_data['role']))
+    if event_data['role'] in ['test', 'utility']:
+        raise ValueError('Ignoring {} event'.format(event_data['role']))
+
+    # Get alert name
+    if event_data['type'] is None:
+        raise ValueError('Ignoring unrecognised event type: {}'.format(event_data['ivorn']))
+    print('Recognised event type: {} ({})'.format(event_data['name'], event_data['type']))
+
+
 def parse(event_data, all_obs_data, scope):
     """Parse an event for a given telescope."""
-
     name = event_data['name']
     event_type = event_data['type']
     trigger_id = event_data['trigger_id']
@@ -118,19 +130,14 @@ def event_handler(v):
     # Get event data from the payload
     event_data = get_event_data(v, current_time)
 
-    # Check role
-    print('Event is marked as "{}"'.format(event_data['role']))
-    if event_data['role'] in ['test', 'utility']:
-        print('Ignoring {} event'.format(event_data['role']))
+    # Check if it's an event we want to process
+    try:
+        parse_event_type(event_data)
+    except Exception as err:
+        print(err)
         return
 
-    # Get alert name
-    if event_data['type'] is None:
-        print('Ignoring unrecognised event type: {}'.format(event_data['ivorn']))
-        return
-    print('Recognised event type: {} ({})'.format(event_data['name'], event_data['type']))
-
-    # Get observing data
+    # Get observing data for the event with each telescope
     telescopes = [goto_north(), goto_south()]
     all_obs_data = {}
     for telescope in telescopes:
