@@ -1,5 +1,7 @@
 #! /opt/local/bin/python3.6
 
+import warnings
+
 from astroplan import (AltitudeConstraint, FixedTarget, MoonSeparationConstraint,
                        Observer, is_observable)
 
@@ -55,91 +57,63 @@ def event_definitions(v, current_time):
     return data
 
 
-def observing_definitions(telescope, midnight_time, alt_limit, event_dictionary):
+def observing_definitions(site, target, current_time, alt_limit=30):
 
-    # Get current date
-    current_time = Time(event_dictionary['current_time'])
-    currenttime_string = str(current_time)
-    current_date = currenttime_string[:10]
+    # Get midnight and astronomicla twilight times
+    midnight = site.midnight(current_time, which='next')
+    sun_set = site.twilight_evening_astronomical(midnight, which='previous')
+    sun_rise = site.twilight_morning_astronomical(midnight, which='next')
 
-    # Get midnight time
-    midnight_time = Time(['2018-01-1 ' + midnight_time])
-    midnight_time_str = str(midnight_time)[12:24]
-    midnight = current_date + midnight_time_str
-    midnight_iso = Time(midnight, format='iso', scale='utc')
-    midnight_jd = Time(midnight_iso.jd, format='jd', scale='utc')
+    time_range = Time([sun_set, sun_rise])
 
-    # Get sunrise, sunset and twilight times
-    sun_set_tonight = telescope.sun_set_time(midnight_jd, which='previous')
-    sun_rise_tonight = telescope.sun_rise_time(midnight_jd, which='next')
-    dark_sunset_tonight = telescope.twilight_evening_astronomical(midnight_jd, which='previous')
-    dark_sunrise_tonight = telescope.twilight_morning_astronomical(midnight_jd, which='next')
+    # Apply a constraint on altitude
+    min_alt = alt_limit * u.deg
+    alt_constraint = AltitudeConstraint(min=min_alt, max=None)
+    alt_observable = is_observable(alt_constraint, site, target, time_range=time_range)[0]
 
     # Get target rise and set times
-    event_target = event_dictionary['event_target']
-    target_rise = telescope.target_rise_time(dark_sunset_tonight, event_target, which='nearest')
-    target_set = telescope.target_set_time(dark_sunrise_tonight, event_target, which='nearest')
-    if target_set.jd < 0 and target_rise.jd < 0:
-        target_rise = Time.now() - 0.9 * u.day
-        target_set = Time.now() + 1 * u.day
+    if alt_observable:
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore')
+            target_rise = site.target_rise_time(midnight, target, which='nearest', horizon=min_alt)
+            target_set = site.target_set_time(target_rise, target, which='next', horizon=min_alt)
 
-    # Find the earilest and latest possible start times for observing
-    observation_start = np.max([target_rise, dark_sunset_tonight])
-    observation_start_iso = observation_start.iso
-    observation_end = np.min([target_set, dark_sunrise_tonight])
-    observation_end_iso = observation_end.iso
+        # Get observation times
+        observation_start = target_rise
+        observation_end = target_set
+        if target_rise.jd < 0 or target_set.jd < 0:
+            # target is always above the horizon, so visible all night
+            observation_start = sun_set
+            observation_end = sun_rise
+        if target_rise < sun_set:
+            # target is already up when the sun sets
+            observation_start = sun_set
+        if target_set > sun_rise:
+            # target sets after the sun rises
+            observation_end = sun_rise
 
-    # Create an array of times during the night
-    nighttime = dark_sunset_tonight + np.arange(0, 4, 0.25) * u.hour
+    else:
+        target_rise = None
+        target_set = None
+        observation_start = None
+        observation_end = None
 
-    # Create an array of times while the target is observable
-    delta_t = observation_end - observation_start
-    airmass_time = observation_start + delta_t * np.linspace(0, 1, 75)
-
-    # Create a constraint on altitude
-    min_alt = alt_limit * u.deg
-    max_alt = 90 * u.deg
-    alt_constraint = [AltitudeConstraint(min_alt, max_alt)]
-
-    # Create a constraint on distance from the Moon
+    # Apply a constraint on distance from the Moon
     min_moon = 5 * u.deg
-    max_moon = None
-    moon_constraint = [MoonSeparationConstraint(min=min_moon, max=max_moon)]
+    moon_constraint = MoonSeparationConstraint(min=min_moon, max=None)
+    moon_observable = is_observable(moon_constraint, site, target, time_range=time_range)[0]
 
-    # Apply constraints to the target during the whole night
-    time_range = Time([dark_sunset_tonight, dark_sunrise_tonight])
-    alt_observable = is_observable(alt_constraint, telescope, event_target,
-                                   time_range=time_range)[0]
-    moon_observable = is_observable(moon_constraint, telescope, event_target,
-                                    time_range=time_range)[0]
-
-    # Apply altitude constraint only during the observable period
-    time_range_obs = Time([observation_start_iso, observation_end_iso])
-    final_constraint = is_observable(alt_constraint, telescope, event_target,
-                                     time_range=time_range_obs)[0]
-
-    data = {'midnight_iso': midnight_iso,
-            'midnight_jd': midnight_jd,
-            'sun_set_tonight': sun_set_tonight,
-            'sun_rise_tonight': sun_rise_tonight,
-            'dark_sunset_tonight': dark_sunset_tonight,
-            'dark_sunrise_tonight': dark_sunrise_tonight,
+    data = {'midnight': midnight,
+            'sun_set': sun_set,
+            'sun_rise': sun_rise,
             'target_rise': target_rise,
             'target_set': target_set,
             'observation_start': observation_start,
-            'observation_start_iso': observation_start_iso,
             'observation_end': observation_end,
-            'observation_end_iso': observation_end_iso,
-            'night_time': nighttime,
-            'delta_t': delta_t,
-            'airmass_time': airmass_time,
             'alt_constraint': alt_constraint,
-            'moon_constraint': moon_constraint,
-            'time_range': time_range,
             'alt_observable': alt_observable,
+            'moon_constraint': moon_constraint,
             'moon_observable': moon_observable,
-            'time_range_obs': time_range_obs,
-            'final_constraint': final_constraint,
             }
 
     return data

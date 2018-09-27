@@ -3,6 +3,7 @@
 
 import os
 
+import astropy.units as u
 from astropy.time import Time
 
 import numpy as np
@@ -40,7 +41,7 @@ def parse(trigger_id, contact, event_dictionary, name, event_type, site_dictiona
         print("Target does rise above alt 40 at {}".format(scope_string))
 
     # Check if the target is visible for enough time
-    if np.sum(scope.target_is_up(site["night_time"], event_dictionary["event_target"])) < 6:
+    if event_dictionary["observation_end"] - event_dictionary["observation_start"] < 1.5 * u.hour:
         print("Target is not up longer then 1:30 at {} during the night".format(scope_string))
         return
     else:
@@ -141,15 +142,15 @@ def event_handler(v):
         return
     print('recognised event: {} ({})'.format(name, event_type))
 
-    goto_north = telescope('goto north', +37, 145, 10, 'UTC')
-    goto_south = telescope('goto south', -37, 145, 10, 'UTC')
-
-    # get telescope definitions
+    # get observing parameters
+    target = event_dictionary['event_target']
     site_dictionaries = {}
-    site_dictionaries['north'] = observing_definitions(goto_north, '23:59:59', 30,
-                                                       event_dictionary)
-    site_dictionaries['south'] = observing_definitions(goto_south, '11:59:59', 30,
-                                                       event_dictionary)
+
+    goto_north = telescope('goto north', +37, 145, 10, 'UTC')
+    site_dictionaries['north'] = observing_definitions(goto_north, target, current_time)
+
+    goto_south = telescope('goto south', -37, 145, 10, 'UTC')
+    site_dictionaries['south'] = observing_definitions(goto_south, target, current_time)
 
     # write master csv file
     coms.write_csv(os.path.join(path, "master.csv"),
