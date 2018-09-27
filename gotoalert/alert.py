@@ -56,34 +56,30 @@ def check_obs_params(obs_data):
         raise ValueError('Target is not up longer then 1:30 at {} during the night'.format(name))
 
 
-def parse(event_data, all_obs_data, scope):
+def parse(event_data, all_obs_data, telescope):
     """Parse an event for a given telescope."""
     name = event_data['name']
     event_type = event_data['type']
     trigger_id = event_data['trigger_id']
     contact = event_data['contact']
 
-    scope_string = scope.name
-    if scope_string == 'goto_north':
-        obs_data = all_obs_data['north']
-    elif scope_string == 'goto_south':
-        obs_data = all_obs_data['south']
+    obs_data = all_obs_data[telescope.name]
 
     # Find file paths
     file_name = name + trigger_id
-    file_path = "./www/{}_transients/".format(scope_string)
+    file_path = "./www/{}_transients/".format(telescope.name)
 
     # Create graphs
-    coms.create_graphs(event_data["event_coord"], scope, obs_data["airmass_time"],
+    coms.create_graphs(event_data["event_coord"], telescope, obs_data["airmass_time"],
                        file_path, file_name, 30, event_data["event_target"])
 
     # Write HTML
-    title = "New transient for {} from {}".format(scope_string, name)
+    title = "New transient for {} from {}".format(telescope.name, name)
     coms.write_html(file_path, file_name, title, trigger_id, event_type,
                     event_data, obs_data, contact)
 
     # Send email if enabled
-    email_subject = "Detection from {}".format(scope_string)
+    email_subject = "Detection from {}".format(telescope.name)
     email_body = "{} Detection: See more at http://118.138.235.166/~obrads".format(name)
     if send_email:
         coms.send_email(fromaddr="lapalmaobservatory@gmail.com",
@@ -95,7 +91,7 @@ def parse(event_data, all_obs_data, scope):
                         file_name=file_name)
 
     # Write CSV
-    csv_file = scope_string + ".csv"
+    csv_file = telescope.name + ".csv"
     coms.write_csv(os.path.join(file_path, csv_file),
                    file_name,
                    event_data,
@@ -106,7 +102,7 @@ def parse(event_data, all_obs_data, scope):
     coms.write_topten(file_path, csv_file, topten_file)
 
     # Send message to Slack
-    if scope_string == "goto_north":
+    if telescope.name == "goto_north":
         print("sent message to slack")
         slackmessage(name,
                      str(event_data["event_time"])[:22],
