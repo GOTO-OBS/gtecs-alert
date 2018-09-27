@@ -19,15 +19,22 @@ path = "./www"
 send_email = False
 
 
-def parse(trigger_id, contact, event_dictionary, name, event_type, site_dictionaries,
-          scope, scope_string):
+def parse(event_dictionary, site_dictionaries, scope):
     """Parse an event for a given telescope."""
+
+    name = event_dictionary['name']
+    event_type = event_dictionary['type']
+    trigger_id = event_dictionary['trigger_id']
+    contact = event_dictionary['contact']
+
+
     # Check if the event is too close to the galaxy
     if -8 < event_dictionary["object_galactic_lat"].value < 8:
         raise ValueError("too close to the Galactic plane")
     if event_dictionary["dist_galactic_center"].value < 15:
         raise ValueError("too close to the Galactic centre")
 
+    scope_string = scope.name
     if scope_string == 'goto_north':
         site = site_dictionaries['north']
     elif scope_string == 'goto_south':
@@ -106,58 +113,36 @@ def parse(trigger_id, contact, event_dictionary, name, event_type, site_dictiona
 
 def event_handler(v):
     """Handle a VOEvent payload."""
-    contact = v.Who.Author.contactEmail
+    current_time = Time.now()
 
-    # First check role
-    role = v.attrib['role']
-    if role == "test":
-        print('Event is marked as "test"')
-        return
-    if role == "utility":
-        print('Event is marked as "utility"')
-        return
-    print('Event is marked as "{}"'.format(role))
-
-    top_params = vp.get_toplevel_params(v)
-    trigger_id = top_params['TrigID']['value']
-
-    current_time = Time.now().utc
+    # Get event data from the payload
     event_data = event_definitions(v, current_time)
 
-    # Get alert name
-    ivorn = event_data["ivorn"]
-    alert_dictionary = coms.alert_dictionary()
-    if ivorn.startswith(alert_dictionary["Swift_XRT_POS"]):
-        name = "Swift_XRT_POS_"
-        event_type = str("swift")
-    elif ivorn.startswith(alert_dictionary["Swift_BAT_GRB_POS"]):
-        name = "Swift_BAT_GRB_POS_"
-        event_type = str("swift")
-    elif ivorn.startswith(alert_dictionary["Fermi_GMB_GND_POS"]):
-        name = "Fermi_GMB_GND_POS_"
-        event_type = str("fermi")
-    else:
-        # Something we don't care about
-        print('unrecognised event: {}'.format(ivorn))
+    # Check role
+    print('Event is marked as "{}"'.format(event_data['role']))
+    if event_data['role'] in ['test', 'utility']:
+        print('Ignoring {} event'.format(event_data['role']))
         return
-    print('recognised event: {} ({})'.format(name, event_type))
 
-    # get observing parameters
-    target = event_data['event_target']
+    # Get alert name
+    if event_data['type'] is None:
+        print('Ignoring unrecognised event type: {}'.format(event_data['ivorn']))
+        return
+    print('Recognised event type: {} ({})'.format(event_data['name'], event_data['type']))
+
+    # Get observing data
+    telescopes = [goto_north(), goto_south()]
     obs_data = {}
-    obs_data['north'] = observing_definitions(goto_north, target, current_time)
-    obs_data['south'] = observing_definitions(goto_south, target, current_time)
+    for telescope in telescopes:
+        obs_data['north'] = observing_definitions(telescope, event_data)
+        obs_data['south'] = observing_definitions(telescope, event_data)
 
     # write master csv file
-    coms.write_csv(os.path.join(path, "master.csv"),
-                   name + trigger_id,
-                   event_data,
-                   obs_data)
+    coms.write_csv(os.path.join(path, "master.csv"), event_data, obs_data)
 
     # parse the event for each site
-    parse(trigger_id, contact, event_data, name, event_type,
-          obs_data, goto_north, "goto_north")
-    parse(trigger_id, contact, event_data, name, event_type,
-          obs_data, goto_south, "goto_south")
+    for telescope in telescopes:
+        parse(event_data, obs_data, telescope)
+        parse(event_data, obs_data, telescope)
 
     print("done")

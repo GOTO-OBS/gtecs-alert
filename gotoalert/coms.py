@@ -21,27 +21,16 @@ import pandas as pd
 # Set backend
 matplotlib.use('Agg')
 
-
-def alert_dictionary():
-    """Convert between alert names and IVO strings."""
-    data = {"gaia": "ivo://gaia.cam.uk/alerts#",
-            "Swift_XRT_POS": "ivo://nasa.gsfc.gcn/SWIFT#XRT_Pos",
-            "Swift_BAT_GRB_POS": "ivo://nasa.gsfc.gcn/SWIFT#BAT_GRB_Pos",
-            "Fermi_GMB_GND_POS": "ivo://nasa.gsfc.gcn/Fermi#GBM_Gnd_Pos_",
-            }
-    return data
-
-
-def write_csv(filename, trigger, event_dictionary, site_dictionaries):
+def write_csv(filename, event_data, site_data):
     """Write the CSV file."""
-    data = {'trigger': trigger,
-            'date': event_dictionary["event_time"],
-            'ra': event_dictionary["event_coord"].ra.deg,
-            'dec': event_dictionary["event_coord"].dec.deg,
-            'Galactic Distance': event_dictionary["dist_galactic_center"],
-            'Galactic Lat': event_dictionary["object_galactic_lat"],
-            'goto north': site_dictionaries['north']["alt_observable"],
-            'goto south': site_dictionaries['south']["alt_observable"],
+    data = {'trigger': event_data['name'] + event_data['trigger_id'],
+            'date': event_data["event_time"],
+            'ra': event_data["event_coord"].ra.deg,
+            'dec': event_data["event_coord"].dec.deg,
+            'Galactic Distance': event_data["dist_galactic_center"],
+            'Galactic Lat': event_data["object_galactic_lat"],
+            'goto north': site_data['north']["alt_observable"],
+            'goto south': site_data['south']["alt_observable"],
             }
     fieldnames = list(data.keys())
 
@@ -72,13 +61,13 @@ def create_graphs(coord, telescope, airmass_time, file_path, file_name, fov, eve
     plt.clf()
 
 
-def write_html(file_path, file_name, title, trigger_id, event_type, event_dictionary, site, email):
+def write_html(file_path, file_name, title, trigger_id, event_type, event_data, site, email):
     """Write the HTML page."""
-    eventtime = event_dictionary["event_time"]
-    coord = event_dictionary["event_coord"]
-    error = event_dictionary["event_coord_error"]
-    dist = event_dictionary["dist_galactic_center"],
-    object_galactic_lat = event_dictionary["object_galactic_lat"]
+    eventtime = event_data["event_time"]
+    coord = event_data["event_coord"]
+    error = event_data["event_coord_error"]
+    dist = event_data["dist_galactic_center"],
+    object_galactic_lat = event_data["object_galactic_lat"]
 
     target_rise = site["target_rise"]
     target_set = site["target_set"]
