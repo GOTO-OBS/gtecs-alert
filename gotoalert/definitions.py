@@ -40,7 +40,7 @@ ALERT_DICTIONARY = {"gaia": "ivo://gaia.cam.uk/alerts#",
                     }
 
 
-def event_definitions(v, current_time):
+def get_event_data(v, current_time):
     """Fetch infomation about the event."""
 
     # Get attributes
@@ -103,7 +103,7 @@ def event_definitions(v, current_time):
     return data
 
 
-def observing_definitions(observer, event_data, alt_limit=30):
+def get_obs_data(observer, event_data, alt_limit=30):
     """Compile infomation about the target's visibility from the given observer."""
 
     # Get event info

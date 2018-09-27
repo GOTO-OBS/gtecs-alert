@@ -12,14 +12,14 @@ import voeventparse as vp
 
 from . import coms
 from .csv2htmltable import write_table
-from .definitions import event_definitions, goto_north, goto_south, observing_definitions
+from .definitions import get_event_data, get_obs_data, goto_north, goto_south
 from .slack_message import slackmessage
 
 path = "./www"
 send_email = False
 
 
-def parse(event_data, all_obs_dict, scope):
+def parse(event_data, all_obs_data, scope):
     """Parse an event for a given telescope."""
 
     name = event_data['name']
@@ -36,9 +36,9 @@ def parse(event_data, all_obs_dict, scope):
 
     scope_string = scope.name
     if scope_string == 'goto_north':
-        obs_data = all_obs_dict['north']
+        obs_data = all_obs_data['north']
     elif scope_string == 'goto_south':
-        obs_data = all_obs_dict['south']
+        obs_data = all_obs_data['south']
 
     # Check if the target rises above the horizon
     if obs_data["alt_observable"] is False:
@@ -92,7 +92,7 @@ def parse(event_data, all_obs_dict, scope):
     coms.write_csv(os.path.join(file_path, csv_file),
                    file_name,
                    event_data,
-                   all_obs_dict)
+                   all_obs_data)
 
     # Write latest 10 page
     topten_file = "recent_ten.html"
@@ -116,7 +116,7 @@ def event_handler(v):
     current_time = Time.now()
 
     # Get event data from the payload
-    event_data = event_definitions(v, current_time)
+    event_data = get_event_data(v, current_time)
 
     # Check role
     print('Event is marked as "{}"'.format(event_data['role']))
@@ -132,17 +132,16 @@ def event_handler(v):
 
     # Get observing data
     telescopes = [goto_north(), goto_south()]
-    all_obs_dict = {}
+    all_obs_data = {}
     for telescope in telescopes:
-        all_obs_dict['north'] = observing_definitions(telescope, event_data)
-        all_obs_dict['south'] = observing_definitions(telescope, event_data)
+        all_obs_data[telescope.name] = get_obs_data(telescope, event_data)
 
     # write master csv file
-    coms.write_csv(os.path.join(path, "master.csv"), event_data, all_obs_dict)
+    coms.write_csv(os.path.join(path, "master.csv"), event_data, all_obs_data)
 
     # parse the event for each site
     for telescope in telescopes:
-        parse(event_data, all_obs_dict, telescope)
-        parse(event_data, all_obs_dict, telescope)
+        parse(event_data, all_obs_data, telescope)
+        parse(event_data, all_obs_data, telescope)
 
     print("done")
