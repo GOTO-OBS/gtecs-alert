@@ -3,6 +3,7 @@
 import csv
 import os
 import smtplib
+from collections import OrderedDict
 from decimal import Decimal
 from email import encoders
 from email.mime.base import MIMEBase
@@ -13,25 +14,25 @@ from astroplan.plots import dark_style_sheet, plot_airmass, plot_finder_image
 
 import astropy.units as u
 
-import matplotlib
 import matplotlib.pyplot as plt
 
 import pandas as pd
 
-# Set backend
-matplotlib.use('Agg')
 
-def write_csv(filename, event_data, obs_data):
+def write_csv(filename, event_data, all_obs_data):
     """Write the CSV file."""
-    data = {'trigger': event_data['name'] + event_data['trigger_id'],
-            'date': event_data["event_time"],
-            'ra': event_data["event_coord"].ra.deg,
-            'dec': event_data["event_coord"].dec.deg,
-            'Galactic Distance': event_data["dist_galactic_center"],
-            'Galactic Lat': event_data["object_galactic_lat"],
-            'goto north': obs_data['north']["alt_observable"],
-            'goto south': obs_data['south']["alt_observable"],
-            }
+    data = OrderedDict()
+    data['trigger'] = event_data['name'] + event_data['trigger_id']
+    data['date'] = event_data["event_time"]
+    data['ra'] = event_data["event_coord"].ra.deg
+    data['dec'] = event_data["event_coord"].dec.deg
+    data['Galactic Distance'] = event_data["dist_galactic_center"]
+    data['Galactic Lat'] = event_data["object_galactic_lat"]
+
+    for telescope in all_obs_data:
+        obs_data = all_obs_data[telescope]
+        data[telescope] = obs_data['alt_observable']
+
     fieldnames = list(data.keys())
 
     # Write the data
