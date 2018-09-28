@@ -5,10 +5,10 @@ import os
 
 import astropy.units as u
 
-from . import coms
+from .comms import send_email, send_slackmessage
 from .csv2htmltable import write_table
 from .definitions import get_event_data, get_obs_data, goto_north, goto_south
-from .slack_message import slackmessage
+from .output import create_graphs, write_csv, write_html, write_topten
 
 path = "./www"
 send_messages = False
@@ -68,38 +68,38 @@ def parse(event_data, all_obs_data, telescope):
     file_path = "./www/{}_transients/".format(telescope.name)
 
     # Create graphs
-    coms.create_graphs(file_path, event_data, obs_data)
+    create_graphs(file_path, event_data, obs_data)
 
     # Write HTML
-    coms.write_html(file_path, event_data, obs_data)
+    write_html(file_path, event_data, obs_data)
 
     # Send email if enabled
     email_subject = "Detection from {}".format(telescope.name)
     email_body = "{} Detection: See more at http://118.138.235.166/~obrads".format(name)
     if send_messages:
-        coms.send_email(fromaddr="lapalmaobservatory@gmail.com",
-                        toaddr="aobr10@student.monash.edu",
-                        subject=email_subject,
-                        body=email_body,
-                        password="lapalmaobservatory1",
-                        file_path=file_path,
-                        file_name=file_name)
+        send_email(fromaddr="lapalmaobservatory@gmail.com",
+                   toaddr="aobr10@student.monash.edu",
+                   subject=email_subject,
+                   body=email_body,
+                   password="lapalmaobservatory1",
+                   file_path=file_path,
+                   file_name=file_name)
 
     # Write CSV
     csv_file = telescope.name + ".csv"
-    coms.write_csv(os.path.join(file_path, csv_file), event_data, all_obs_data)
+    write_csv(os.path.join(file_path, csv_file), event_data, all_obs_data)
 
     # Write latest 10 page
     topten_file = "recent_ten.html"
-    coms.write_topten(file_path, csv_file, topten_file)
+    write_topten(file_path, csv_file, topten_file)
 
     # Send message to Slack
     if telescope.name == "goto_north" and send_messages:
-        slackmessage(name,
-                     str(event_data["event_time"])[:22],
-                     str(event_data["event_coord"].ra.deg),
-                     str(event_data["event_coord"].dec.deg),
-                     file_name)
+        send_slackmessage(name,
+                          str(event_data["event_time"])[:22],
+                          str(event_data["event_coord"].ra.deg),
+                          str(event_data["event_coord"].dec.deg),
+                          file_name)
         print("sent message to slack")
 
     # Convert CSVs to HTML
@@ -127,7 +127,7 @@ def event_handler(v):
         all_obs_data[telescope.name] = get_obs_data(telescope, target)
 
     # write master csv file
-    coms.write_csv(os.path.join(path, "master.csv"), event_data, all_obs_data)
+    write_csv(os.path.join(path, "master.csv"), event_data, all_obs_data)
 
     # Parse the event for each site
     for telescope in telescopes:
