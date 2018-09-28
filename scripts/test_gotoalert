@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+"""A simple test script for GOTO-alert."""
 
 import os
 

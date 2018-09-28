@@ -1,4 +1,5 @@
 #! /opt/local/bin/python3.6
+"""Functions to extract event and observing data."""
 
 import warnings
 
@@ -42,7 +43,6 @@ ALERT_DICTIONARY = {"gaia": "ivo://gaia.cam.uk/alerts#",
 
 def get_event_data(v):
     """Fetch infomation about the event."""
-
     # Get attributes
     ivorn = v.attrib['ivorn']
     role = v.attrib['role']
@@ -104,7 +104,6 @@ def get_event_data(v):
 
 def get_obs_data(observer, target, alt_limit=30):
     """Compile infomation about the target's visibility from the given observer."""
-
     # Get midnight and astronomicla twilight times
     current_time = Time.now()
     midnight = observer.midnight(current_time, which='next')

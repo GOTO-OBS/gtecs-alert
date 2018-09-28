@@ -1,4 +1,5 @@
 #! /opt/local/bin/python3.6
+"""Functions for external communications."""
 
 import smtplib
 from email import encoders
@@ -37,6 +38,7 @@ def send_email(fromaddr, toaddr, subject, body, password, file_path, file_name):
 
 
 def send_slackmessage(text, time, ra, dec, file_name):
+    """Send a Slack message to the #grb-alerts channel."""
     slack_client = Slacker("xoxb-132218163666-416316276000-iueLeJ9b6JKToTTMGDvK5XaN")
 
     message = '{}  (Time = {})  (RA = {})  (DEC = {}) '.format(text, time, ra, dec)

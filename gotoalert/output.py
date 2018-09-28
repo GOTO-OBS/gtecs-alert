@@ -1,4 +1,5 @@
 #! /opt/local/bin/python3.6
+"""Functions to write output HTML pages."""
 
 import csv
 import os
@@ -45,7 +46,6 @@ def write_csv(filename, event_data, all_obs_data):
 
 def create_graphs(file_path, event_data, obs_data, fov=30):
     """Create airmass and finder plots."""
-
     # Get data
     name = event_data['name']
     trigger_id = event_data['trigger_id']
@@ -73,7 +73,6 @@ def create_graphs(file_path, event_data, obs_data, fov=30):
 
 def write_html(file_path, event_data, obs_data):
     """Write the HTML page."""
-
     name = event_data['name']
     trigger_id = event_data['trigger_id']
     event_type = event_data['type']
