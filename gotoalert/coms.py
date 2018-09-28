@@ -74,44 +74,67 @@ def create_graphs(file_path, event_data, obs_data, fov=30):
     plt.clf()
 
 
-def write_html(file_path, file_name, title, trigger_id, event_type, event_data, obs_data, email):
+def write_html(file_path, event_data, obs_data):
     """Write the HTML page."""
-    eventtime = event_data["event_time"]
-    coord = event_data["event_coord"]
-    error = event_data["event_coord_error"]
-    dist = event_data["dist_galactic_center"],
-    object_galactic_lat = event_data["object_galactic_lat"]
 
-    target_rise = obs_data["target_rise"]
-    target_set = obs_data["target_set"]
-    dark_sunset_tonight = obs_data["dark_sunset_tonight"]
-    dark_sunrise_tonight = obs_data["dark_sunrise_tonight"]
-    observation_start = obs_data["observation_start"]
-    observation_end = obs_data["observation_end"]
-    moon = obs_data["moon_observable"]
+    name = event_data['name']
+    trigger_id = event_data['trigger_id']
+    event_type = event_data['type']
 
-    html_file = file_name + '.html'
+    telescope = obs_data['observer']
+
+    html_file = '{}{}.html'.format(name, trigger_id)
     with open(file_path + html_file, 'w') as f:
+
+        title = "New transient for {} from {}".format(telescope.name, name)
         f.write('<!DOCTYPE html><html lang="en"><head>{}</head><body>'.format(title))
         f.write('<p>https://gcn.gsfc.nasa.gov/other/{}.{}</p>'.format(trigger_id, event_type))
         f.write('<p>Event ID:  {}</p>'.format(trigger_id))
-        f.write('<p>Time of event (UTC): {}</p>'.format(str(eventtime)[:21]))
-        f.write('<p>RA:  {} degrees</p>'.format(str(coord.ra.deg)))
-        f.write('<p>DEC: {} degrees</p>'.format(str(coord.dec.deg)))
-        f.write('<p>RA, DEC Error:   {}</p>'.format(str('{:.10f}'.format(Decimal(error))[:5])))
-        f.write('<p>Contact: {}</p>'.format(email))
+
+        # Write event time
+        event_time = event_data["event_time"].iso
+        f.write('<p>Time of event (UTC): {}</p>'.format(event_time))
+
+        # Write event coords
+        coord = event_data["event_coord"]
+        error = event_data["event_coord_error"]
+        f.write('<p>RA:  {:.3f} degrees</p>'.format(coord.ra.deg))
+        f.write('<p>DEC: {:.3f} degrees</p>'.format(coord.dec.deg))
+        f.write('<p>RA, DEC Error:   {:.3f}</p>'.format(error))
+
+        # Write event contact
+        contact = event_data['contact']
+        f.write('<p>Contact: {}</p>'.format(contact))
+
+        # Write obs details
         f.write('<p>Observation Details: Time in UTC</p>')
-        f.write('<p>Target Rise: {}</p>'.format(str((target_rise.iso))[:19]))
-        f.write('<p>Target Set:  {}</p>'.format(str((target_set.iso))[:19]))
-        f.write('<p>Start of night:  {}</p>'.format(str((dark_sunset_tonight.iso))[:19]))
-        f.write('<p>End of night:    {}</p>'.format(str((dark_sunrise_tonight.iso))[:19]))
-        f.write('<p>Observations Start:   {}</p>'.format(str((observation_start.iso))[:19]))
-        f.write('<p>Observations End:  {}</p>'.format(str((observation_end.iso))[:19]))
-        f.write('<p>Galactic Distance:   {} degrees</p>'.format(str(dist.value)[:6]))
-        f.write('<p>Galactic Lat:    {} degrees</p>'.format(str(object_galactic_lat.value)[:6]))
-        f.write('<p>Target within 5 degrees of the moon? {}</p>'.format(str(not moon)))
-        f.write('<img src=finder_charts/{}_FINDER.png>'.format(file_name))
-        f.write('<img src=airmass_plots/{}_AIRMASS.png>'.format(file_name))
+
+        # Write obs times
+        target_rise = obs_data["target_rise"].iso
+        target_set = obs_data["target_set"].iso
+        sun_set = obs_data["sun_set"].iso
+        sun_rise = obs_data["sun_rise"].iso
+        observation_start = obs_data["observation_start"].iso
+        observation_end = obs_data["observation_end"].iso
+        f.write('<p>Target Rise: {}</p>'.format(target_rise))
+        f.write('<p>Target Set:  {}</p>'.format(target_set))
+        f.write('<p>Start of night:  {}</p>'.format(sun_set))
+        f.write('<p>End of night:    {}</p>'.format(sun_rise))
+        f.write('<p>Observations Start:   {}</p>'.format(observation_start))
+        f.write('<p>Observations End:  {}</p>'.format(observation_end))
+
+        # Write obs checks
+        galactic_dist = event_data["dist_galactic_center"]
+        galactic_lat = event_data["object_galactic_lat"]
+        moon = not obs_data["moon_observable"]
+
+        f.write('<p>Galactic Distance:   {:.3f} degrees</p>'.format(galactic_dist))
+        f.write('<p>Galactic Lat:    {:.3f} degrees</p>'.format(galactic_lat))
+        f.write('<p>Target within 5 degrees of the moon? {}</p>'.format(moon))
+
+        # Write links to plots
+        f.write('<img src=finder_charts/{}{}_FINDER.png>'.format(name, trigger_id))
+        f.write('<img src=airmass_plots/{}{}_AIRMASS.png>'.format(name, trigger_id))
         f.write('</body></html>')
 
 

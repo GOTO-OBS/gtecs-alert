@@ -73,9 +73,7 @@ def parse(event_data, all_obs_data, telescope):
     coms.create_graphs(file_path, event_data, obs_data)
 
     # Write HTML
-    title = "New transient for {} from {}".format(telescope.name, name)
-    coms.write_html(file_path, file_name, title, trigger_id, event_type,
-                    event_data, obs_data, contact)
+    coms.write_html(file_path, event_data, obs_data)
 
     # Send email if enabled
     email_subject = "Detection from {}".format(telescope.name)

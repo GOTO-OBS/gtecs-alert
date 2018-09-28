@@ -70,7 +70,7 @@ def get_event_data(v):
     contact = v.Who.Author.contactEmail
 
     # Get event time
-    event_time = vp.convenience.get_event_time_as_utc(v, index=0)
+    event_time = Time(vp.convenience.get_event_time_as_utc(v, index=0))
 
     # Get event position (RA/DEC)
     pos = vp.get_event_position(v)
