@@ -11,7 +11,6 @@ from .definitions import get_event_data, get_obs_data, goto_north, goto_south
 from .output import create_webpages, write_csv
 
 PATH = "./www"
-send_messages = False
 
 
 def check_event_type(event_data, log):
@@ -60,41 +59,7 @@ def check_obs_params(obs_data, log):
     log.info('Target is up for longer than 1:30 tonight at {}'.format(name))
 
 
-def parse(event_data, all_obs_data, telescope, log):
-    """Parse an event for a given telescope."""
-    # Create and update web pages
-    create_webpages(event_data, all_obs_data, telescope, web_path=PATH)
-    log.debug('HTML page written for {}'.format(telescope.name))
-
-    event_name = event_data['name']
-    trigger_id = event_data['trigger_id']
-    file_name = event_name + trigger_id
-    file_path = PATH + "{}_transients/".format(telescope.name)
-
-    # Send email (if enabled)
-    email_subject = "Detection from {}".format(telescope.name)
-    email_body = "{} Detection: See more at http://118.138.235.166/~obrads".format(event_name)
-    if send_messages:
-        send_email(fromaddr="lapalmaobservatory@gmail.com",
-                   toaddr="aobr10@student.monash.edu",
-                   subject=email_subject,
-                   body=email_body,
-                   password="lapalmaobservatory1",
-                   file_path=file_path,
-                   file_name=file_name)
-        log.debug('Sent email alert for {}'.format(telescope.name))
-
-    # Send message to Slack (if enabled)
-    if telescope.name == "goto_north" and send_messages:
-        send_slackmessage(event_name,
-                          str(event_data["event_time"])[:22],
-                          str(event_data["event_coord"].ra.deg),
-                          str(event_data["event_coord"].dec.deg),
-                          file_name)
-        log.debug('Sent slack message for {}'.format(telescope.name))
-
-
-def event_handler(v, log=None):
+def event_handler(v, log=None, write_html=True, send_messages=False):
     """Handle a VOEvent payload."""
     # Create a logger if one isn't given
     if log is None:
@@ -133,7 +98,39 @@ def event_handler(v, log=None):
             log.warning(err)
             continue
 
-        # Parse the event
-        parse(event_data, all_obs_data, telescope, log)
+        # Create and update web pages
+        if write_html:
+            create_webpages(event_data, all_obs_data, telescope, web_path=PATH)
+            log.debug('HTML page written for {}'.format(telescope.name))
+
+        # Send messages
+        if send_messages:
+            event_name = event_data['name']
+            trigger_id = event_data['trigger_id']
+            file_name = event_name + trigger_id
+            file_path = PATH + "{}_transients/".format(telescope.name)
+
+            # Send email
+            email_subject = "Detection from {}".format(telescope.name)
+            email_link = 'http://118.138.235.166/~obrads'
+            email_body = "{} Detection: See more at {}".format(event_name, email_link)
+
+            send_email(fromaddr="lapalmaobservatory@gmail.com",
+                       toaddr="aobr10@student.monash.edu",
+                       subject=email_subject,
+                       body=email_body,
+                       password="lapalmaobservatory1",
+                       file_path=file_path,
+                       file_name=file_name)
+            log.debug('Sent email alert for {}'.format(telescope.name))
+
+            # Send message to Slack
+            if telescope.name == "goto_north":
+                send_slackmessage(event_name,
+                                  str(event_data["event_time"])[:22],
+                                  str(event_data["event_coord"].ra.deg),
+                                  str(event_data["event_coord"].dec.deg),
+                                  file_name)
+                log.debug('Sent slack message for {}'.format(telescope.name))
 
     log.info('Event {}{} processed'.format(event_data['name'], event_data['trigger_id']))
