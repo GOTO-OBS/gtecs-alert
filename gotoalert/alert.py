@@ -11,7 +11,7 @@ from .definitions import get_event_data, get_obs_data, goto_north, goto_south
 from .slack_message import slackmessage
 
 path = "./www"
-send_email = False
+send_messages = False
 
 
 def check_event_type(event_data):
@@ -78,7 +78,7 @@ def parse(event_data, all_obs_data, telescope):
     # Send email if enabled
     email_subject = "Detection from {}".format(telescope.name)
     email_body = "{} Detection: See more at http://118.138.235.166/~obrads".format(name)
-    if send_email:
+    if send_messages:
         coms.send_email(fromaddr="lapalmaobservatory@gmail.com",
                         toaddr="aobr10@student.monash.edu",
                         subject=email_subject,
@@ -99,13 +99,13 @@ def parse(event_data, all_obs_data, telescope):
     coms.write_topten(file_path, csv_file, topten_file)
 
     # Send message to Slack
-    if telescope.name == "goto_north":
-        print("sent message to slack")
+    if telescope.name == "goto_north" and send_messages:
         slackmessage(name,
                      str(event_data["event_time"])[:22],
                      str(event_data["event_coord"].ra.deg),
                      str(event_data["event_coord"].dec.deg),
                      file_name)
+        print("sent message to slack")
 
     # Convert CSVs to HTML
     write_table(file_path, csv_file, 20)
