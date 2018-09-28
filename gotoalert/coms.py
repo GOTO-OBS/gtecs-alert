@@ -68,7 +68,10 @@ def create_graphs(file_path, event_data, obs_data, fov=30):
     plt.clf()
 
     # Plot finder chart
-    plot_finder_image(target, fov_radius=fov * u.arcmin, grid=False, reticle=True)
+    import warnings
+    with warnings.catch_warnings():
+        warnings.simplefilter('ignore')
+        plot_finder_image(target, fov_radius=fov * u.arcmin, grid=False, reticle=True)
     airmass_file = "{}{}_FINDER.png".format(name, trigger_id)
     plt.savefig(os.path.join(file_path, 'finder_charts', airmass_file))
     plt.clf()
