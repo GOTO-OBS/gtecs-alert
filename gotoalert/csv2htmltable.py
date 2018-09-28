@@ -39,7 +39,7 @@ def format_template(df, file_path):
         f.write(html)
 
 
-def write_table(file_path, csv_file, ntrigs):
+def write_table(file_path, csv_file, ntrigs=20):
     """Convert the CSV table into HTML."""
     df = pd.read_csv(os.path.join(file_path, csv_file))
     df = parse(df, ntrigs)

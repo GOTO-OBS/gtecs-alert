@@ -59,9 +59,7 @@ def check_obs_params(obs_data):
 def parse(event_data, all_obs_data, telescope):
     """Parse an event for a given telescope."""
     name = event_data['name']
-    event_type = event_data['type']
     trigger_id = event_data['trigger_id']
-    contact = event_data['contact']
 
     obs_data = all_obs_data[telescope.name]
 
@@ -89,10 +87,7 @@ def parse(event_data, all_obs_data, telescope):
 
     # Write CSV
     csv_file = telescope.name + ".csv"
-    coms.write_csv(os.path.join(file_path, csv_file),
-                   file_name,
-                   event_data,
-                   all_obs_data)
+    coms.write_csv(os.path.join(file_path, csv_file), event_data, all_obs_data)
 
     # Write latest 10 page
     topten_file = "recent_ten.html"
@@ -108,7 +103,7 @@ def parse(event_data, all_obs_data, telescope):
         print("sent message to slack")
 
     # Convert CSVs to HTML
-    write_table(file_path, csv_file, 20)
+    write_table(file_path, csv_file)
 
 
 def event_handler(v):

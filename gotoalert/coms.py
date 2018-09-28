@@ -4,7 +4,6 @@ import csv
 import os
 import smtplib
 from collections import OrderedDict
-from decimal import Decimal
 from email import encoders
 from email.mime.base import MIMEBase
 from email.mime.multipart import MIMEMultipart
