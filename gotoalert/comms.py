@@ -1,6 +1,39 @@
 #! /opt/local/bin/python3.6
 
+import smtplib
+from email import encoders
+from email.mime.base import MIMEBase
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+
 from slacker import Slacker
+
+
+def send_email(fromaddr, toaddr, subject, body, password, file_path, file_name):
+    """Send an email when an event is detected."""
+    # Create message
+    msg = MIMEMultipart()
+    msg['From'] = fromaddr
+    msg['To'] = toaddr
+    msg['Subject'] = subject
+    msg.attach(MIMEText(body, 'plain'))
+
+    # Attach HTML file
+    html_file = file_name + '.html'
+    with open(file_path + html_file, "rb") as attachment:
+        part = MIMEBase('application', 'octet-stream')
+        part.set_payload((attachment).read())
+        encoders.encode_base64(part)
+        part.add_header('Content-Disposition', 'attachment; filename={}'.format(html_file))
+    msg.attach(part)
+
+    # Connect to server and send
+    server = smtplib.SMTP('smtp.gmail.com', 587)
+    server.starttls()
+    server.login(fromaddr, password)
+    text = msg.as_string()
+    server.sendmail(fromaddr, toaddr, text)
+    server.quit()
 
 
 def slackmessage(text, time, ra, dec, file_name):

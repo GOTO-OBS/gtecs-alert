@@ -2,12 +2,7 @@
 
 import csv
 import os
-import smtplib
 from collections import OrderedDict
-from email import encoders
-from email.mime.base import MIMEBase
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
 
 from astroplan.plots import dark_style_sheet, plot_airmass, plot_finder_image
 
@@ -138,33 +133,6 @@ def write_html(file_path, event_data, obs_data):
         f.write('<img src=finder_charts/{}{}_FINDER.png>'.format(name, trigger_id))
         f.write('<img src=airmass_plots/{}{}_AIRMASS.png>'.format(name, trigger_id))
         f.write('</body></html>')
-
-
-def send_email(fromaddr, toaddr, subject, body, password, file_path, file_name):
-    """Send an email when an event is detected."""
-    # Create message
-    msg = MIMEMultipart()
-    msg['From'] = fromaddr
-    msg['To'] = toaddr
-    msg['Subject'] = subject
-    msg.attach(MIMEText(body, 'plain'))
-
-    # Attach HTML file
-    html_file = file_name + '.html'
-    with open(file_path + html_file, "rb") as attachment:
-        part = MIMEBase('application', 'octet-stream')
-        part.set_payload((attachment).read())
-        encoders.encode_base64(part)
-        part.add_header('Content-Disposition', 'attachment; filename={}'.format(html_file))
-    msg.attach(part)
-
-    # Connect to server and send
-    server = smtplib.SMTP('smtp.gmail.com', 587)
-    server.starttls()
-    server.login(fromaddr, password)
-    text = msg.as_string()
-    server.sendmail(fromaddr, toaddr, text)
-    server.quit()
 
 
 def write_topten(file_path, csv_file, topten_file):
