@@ -15,6 +15,8 @@ import numpy as np
 
 import pandas as pd
 
+from .csv2htmltable import write_table
+
 
 def write_csv(filename, event_data, all_obs_data):
     """Write the CSV file."""
@@ -134,15 +136,41 @@ def write_html(file_path, event_data, obs_data):
         f.write('</body></html>')
 
 
-def write_topten(file_path, csv_file, topten_file):
+def write_topten(csv_path, topten_path):
     """Write the latest 10 events page."""
-    csv_path = os.path.expanduser(file_path + csv_file)
+    # Load the CSV file
     df = pd.read_csv(csv_path)
 
     # sort by date, pick the latest 10 and write to HTML
     df = df.sort_values('date')[-10:]
     html_table = df.to_html()
 
-    with open(file_path + topten_file, 'w') as f:
+    with open(topten_path, 'w') as f:
         f.write('<!DOCTYPE html><html lang="en"><head>Recent Events</head><body>')
         f.write('<p>{}</p>'.format(html_table))
+
+
+def create_webpages(event_data, all_obs_data, telescope, web_path):
+    """Create the output webpages for the given telescope."""
+    obs_data = all_obs_data[telescope.name]
+
+    # Find file paths
+    web_directory = '{}_transients'.format(telescope.name)
+    file_path = os.path.join(web_path, web_directory)
+
+    # Create graphs
+    create_graphs(file_path, event_data, obs_data)
+
+    # Write HTML
+    write_html(file_path, event_data, obs_data)
+
+    # Write CSV
+    csv_file = telescope.name + ".csv"
+    write_csv(os.path.join(file_path, csv_file), event_data, all_obs_data)
+
+    # Write latest 10 page
+    topten_file = "recent_ten.html"
+    write_topten(os.path.join(file_path, csv_file), os.path.join(file_path, topten_file))
+
+    # Convert CSVs to HTML
+    write_table(file_path, csv_file)
