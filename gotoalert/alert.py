@@ -1,6 +1,7 @@
 #! /opt/local/bin/python3.6
 """Event handlers for VOEvents."""
 
+import logging
 import os
 
 import astropy.units as u
@@ -14,20 +15,20 @@ path = "./www"
 send_messages = False
 
 
-def check_event_type(event_data):
+def check_event_type(event_data, log):
     """Check if the event is something we want to process."""
     # Check role
-    print('Event is marked as "{}"'.format(event_data['role']))
+    log.info('Event is marked as "{}"'.format(event_data['role']))
     if event_data['role'] in ['test', 'utility']:
         raise ValueError('Ignoring {} event'.format(event_data['role']))
 
     # Get alert name
     if event_data['type'] is None:
         raise ValueError('Ignoring unrecognised event type: {}'.format(event_data['ivorn']))
-    print('Recognised event type: {} ({})'.format(event_data['name'], event_data['type']))
+    log.info('Recognised event type: {} ({})'.format(event_data['name'], event_data['type']))
 
 
-def check_event_position(event_data):
+def check_event_position(event_data, log):
     """Check if the event position is too close to the galaxy ."""
     # Check galactic latitude
     if -8 < event_data['object_galactic_lat'].value < 8:
@@ -41,8 +42,10 @@ def check_event_position(event_data):
                          event_data['dist_galactic_center'].value
                          ))
 
+    log.info('Event sufficiently far away from the galactic plane')
 
-def check_obs_params(obs_data):
+
+def check_obs_params(obs_data, log):
     """Check if the event is observable from a paticular telescope."""
     telescope = obs_data['observer']
     name = telescope.name
@@ -50,13 +53,15 @@ def check_obs_params(obs_data):
     # Check if the target rises above the horizon
     if not obs_data['alt_observable']:
         raise ValueError('Target does not rise above minimum altitude at {}'.format(name))
+    log.info('Target is visible tonight at {}'.format(name))
 
     # Check if the target is visible for enough time
     if (obs_data['observation_end'] - obs_data['observation_start']) < 1.5 * u.hour:
         raise ValueError('Target is not up longer then 1:30 at {} during the night'.format(name))
+    log.info('Target is up for longer than 1:30 tonight at {}'.format(name))
 
 
-def parse(event_data, all_obs_data, telescope):
+def parse(event_data, all_obs_data, telescope, log):
     """Parse an event for a given telescope."""
     name = event_data['name']
     trigger_id = event_data['trigger_id']
@@ -84,6 +89,7 @@ def parse(event_data, all_obs_data, telescope):
                    password="lapalmaobservatory1",
                    file_path=file_path,
                    file_name=file_name)
+        log.debug('Sent email alert for {}'.format(telescope.name))
 
     # Write CSV
     csv_file = telescope.name + ".csv"
@@ -100,23 +106,29 @@ def parse(event_data, all_obs_data, telescope):
                           str(event_data["event_coord"].ra.deg),
                           str(event_data["event_coord"].dec.deg),
                           file_name)
-        print("sent message to slack")
+        log.debug('Sent slack message for {}'.format(telescope.name))
 
     # Convert CSVs to HTML
     write_table(file_path, csv_file)
+    log.debug('HTML page written for {}'.format(telescope.name))
 
 
-def event_handler(v):
+def event_handler(v, log=None):
     """Handle a VOEvent payload."""
+    # Create a logger if one isn't given
+    if log is None:
+        logging.basicConfig(level=logging.DEBUG)
+        log = logging.getLogger('goto-alert')
+
     # Get event data from the payload
     event_data = get_event_data(v)
 
     # Check if it's an event we want to process
     try:
-        check_event_type(event_data)
-        check_event_position(event_data)
+        check_event_type(event_data, log)
+        check_event_position(event_data, log)
     except Exception as err:
-        print(err)
+        log.warning(err)
         return
 
     # Get observing data for the event with each telescope
@@ -135,12 +147,12 @@ def event_handler(v):
 
         # Check if it's observable
         try:
-            check_obs_params(obs_data)
+            check_obs_params(obs_data, log)
         except Exception as err:
-            print(err)
+            log.warning(err)
             continue
 
         # Parse the event
-        parse(event_data, all_obs_data, telescope)
+        parse(event_data, all_obs_data, telescope, log)
 
-    print("done")
+    log.info('Event {}{} processed'.format(event_data['name'], event_data['trigger_id']))
