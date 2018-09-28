@@ -154,6 +154,9 @@ def create_webpages(event_data, all_obs_data, telescope, web_path):
     """Create the output webpages for the given telescope."""
     obs_data = all_obs_data[telescope.name]
 
+    # write master csv file
+    write_csv(os.path.join(web_path, 'master.csv'), event_data, all_obs_data)
+
     # Find file paths
     web_directory = '{}_transients'.format(telescope.name)
     file_path = os.path.join(web_path, web_directory)

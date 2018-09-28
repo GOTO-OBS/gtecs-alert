@@ -84,9 +84,6 @@ def event_handler(v, log=None, write_html=True, send_messages=False):
     for telescope in telescopes:
         all_obs_data[telescope.name] = get_obs_data(telescope, target)
 
-    # write master csv file
-    write_csv(os.path.join(PATH, "master.csv"), event_data, all_obs_data)
-
     # Parse the event for each site
     for telescope in telescopes:
         obs_data = all_obs_data[telescope.name]
