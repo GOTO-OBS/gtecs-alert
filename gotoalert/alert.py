@@ -1,176 +1,133 @@
 #! /opt/local/bin/python3.6
-import sys
+"""Event handlers for VOEvents."""
+
+import logging
 import os
-import voeventparse as vp
-from voeventparse import get_toplevel_params, get_event_time_as_utc
-import numpy as np
 
-from . import goto_observatories_definitions
-from .goto_observatories_definitions import telescope, observing_definitions
+import astropy.units as u
 
-from . import coms
-from .coms import writecsv, create_graphs, htmlwrite, sendemail, topten
+from .comms import send_email, send_slackmessage
+from .definitions import get_event_data, get_obs_data, goto_north, goto_south
+from .output import create_webpages, write_csv
 
-from .slack_message import slackmessage
-from .csv2htmltable import main
-
-path = "./www"
+PATH = "./www"
 
 
-def event_handler(v):
-    role = v.attrib['role']
+def check_event_type(event_data, log):
+    """Check if the event is something we want to process."""
+    # Check role
+    log.info('Event is marked as "{}"'.format(event_data['role']))
+    if event_data['role'] in ['test', 'utility']:
+        raise ValueError('Ignoring {} event'.format(event_data['role']))
 
-    if role == "test" or role == "utility":
-        sys.exit()
-
-    params = goto_observatories_definitions.params(v)
-    top_params = goto_observatories_definitions.top_params(v)
-    event_dictionary = goto_observatories_definitions.event_definitions(v)
-    alert_dictionary = coms.alert_dictionary()
-
-    goto_north = telescope('goto north', +37, 145, 10, 'UTC')
-    goto_south = telescope('goto south', -37, 145, 10, 'UTC')
-
-    goto_north_dictionary = observing_definitions('23:59:59', 4, 30, goto_north, event_dictionary["ra_dec_formatted"])
-    goto_south_dictionary = observing_definitions('11:59:59', 4, 30, goto_south, event_dictionary["ra_dec_formatted"])
-    #defines ra_dec, ra_dec_formatted and ra_dec_error and how to read xml file
+    # Get alert name
+    if event_data['type'] is None:
+        raise ValueError('Ignoring unrecognised event type: {}'.format(event_data['ivorn']))
+    log.info('Recognised event type: {} ({})'.format(event_data['name'], event_data['type']))
 
 
-    if event_dictionary["ivorn"].startswith(alert_dictionary["Swift_XRT_POS"]):
-        name = "Swift_XRT_POS_"
-        name1 = str("swift")
+def check_event_position(event_data, log):
+    """Check if the event position is too close to the galaxy ."""
+    # Check galactic latitude
+    if -8 < event_data['object_galactic_lat'].value < 8:
+        raise ValueError('Event too close to the Galactic plane (Lat {})'.format(
+                         event_data['object_galactic_lat'].value
+                         ))
 
-    if event_dictionary["ivorn"].startswith(alert_dictionary["Swift_BAT_GRB_POS"]):
-        name = "Swift_BAT_GRB_POS_"
-        name1 = str("swift")
+    # Check distance from galactic center
+    if event_data['dist_galactic_center'].value < 15:
+        raise ValueError(' Event too close to the Galactic centre (Dist {})'.format(
+                         event_data['dist_galactic_center'].value
+                         ))
 
-    if event_dictionary["ivorn"].startswith(alert_dictionary["Fermi_GMB_GND_POS"]):
-        name =  "Fermi_GMB_GND_POS_"
-        name1 = str("fermi")
-
-
-    writecsv(
-        os.path.join(path, "master.csv"),
-        event_dictionary["ivorn"],
-        name+top_params['TrigID']['value'],
-        event_dictionary["event_time"], event_dictionary["ra_dec"].ra.deg,
-        event_dictionary["ra_dec"].dec.deg, event_dictionary["dist_galactic_center"],
-        event_dictionary["object_galactic_lat"],
-        goto_north_dictionary["alt_observable_adjusted"],
-        goto_south_dictionary["alt_observable_adjusted"],
-        )
+    log.info('Event sufficiently far away from the galactic plane')
 
 
-    def parse(site, scope, scope_string):
+def check_obs_params(obs_data, log):
+    """Check if the event is observable from a paticular telescope."""
+    telescope = obs_data['observer']
+    name = telescope.name
 
-        if -8 < event_dictionary["object_galactic_lat"].value < 8:
-            sys.exit("too close to the Galactic plane")
+    # Check if the target rises above the horizon
+    if not obs_data['alt_observable']:
+        raise ValueError('Target does not rise above minimum altitude at {}'.format(name))
+    log.info('Target is visible tonight at {}'.format(name))
 
-        if event_dictionary["dist_galactic_center"].value < 15:
-            sys.exit("too close to the Galactic centre")
-
-        if site["alt_observable"] == False:
-            print("Target does not rise above alt 40 at " +scope_string)
-
-        if site["alt_observable"] == True:
-
-            print("Target does rise above alt 40 at " +scope_string)
-
-            if np.sum(scope.target_is_up(site["night_time"], event_dictionary["ra_dec_formatted"])) <6 :
-                print("Target is not up longer then 1:30 at " +scope_string+ " during the night")
-
-            if np.sum(scope.target_is_up(site["night_time"], event_dictionary["ra_dec_formatted"])) >6 :
-                print("Target is up longer then 1:30 at " +scope_string+ " during the night")
-
-                if site["final_constraint"] == False:
-                    print("Target does not rise above alt 40 at " +scope_string+ " during observation peroid")
-
-                if site["final_constraint"] == True:
-                    print("Target does rise above alt 40 at " +scope_string+ " during observation peroid")
+    # Check if the target is visible for enough time
+    if (obs_data['observation_end'] - obs_data['observation_start']) < 1.5 * u.hour:
+        raise ValueError('Target is not up longer then 1:30 at {} during the night'.format(name))
+    log.info('Target is up for longer than 1:30 tonight at {}'.format(name))
 
 
-                    file_name = name+top_params['TrigID']['value']
-                    file_path1 = "./www/"+scope_string+"_transients/airmass_plots/"
-                    file_path2 = "./www/"+scope_string+"_transients/finder_charts/"
-                    file_path3 = "./www/"+scope_string+"_transients/"
+def event_handler(v, log=None, write_html=True, send_messages=False):
+    """Handle a VOEvent payload."""
+    # Create a logger if one isn't given
+    if log is None:
+        logging.basicConfig(level=logging.DEBUG)
+        log = logging.getLogger('goto-alert')
 
+    # Get event data from the payload
+    event_data = get_event_data(v)
 
+    # Check if it's an event we want to process
+    try:
+        check_event_type(event_data, log)
+        check_event_position(event_data, log)
+    except Exception as err:
+        log.warning(err)
+        return
 
-                    create_graphs(
-                    event_dictionary["ra_dec"],
-                    scope,
-                    site["airmass_time"],
-                    file_path1,
-                    file_path2,
-                    file_name,
-                    30,
-                    event_dictionary["ra_dec_formatted"]
-                    )
+    # Get observing data for the event with each telescope
+    target = event_data['event_target']
+    telescopes = [goto_north(), goto_south()]
+    all_obs_data = {}
+    for telescope in telescopes:
+        all_obs_data[telescope.name] = get_obs_data(telescope, target)
 
-                    htmlwrite(
-                    file_path3,
-                    file_name,
-                    "New transient for "+scope_string+" from "+name,
-                    top_params['TrigID']['value'],
-                    name1,
-                    event_dictionary["event_time"],
-                    event_dictionary["ra_dec"],
-                    event_dictionary["ra_dec_error"],
-                    v.Who.Author.contactEmail,
-                    site["target_rise"],
-                    site["target_set"],
-                    site["dark_sunset_tonight"],
-                    site["dark_sunrise_tonight"],
-                    site["observation_start"],
-                    site["observation_end"],
-                    event_dictionary["dist_galactic_center"],
-                    event_dictionary["object_galactic_lat"],
-                    site["is_safe_from_moon"]
-                    )
+    # Parse the event for each site
+    for telescope in telescopes:
+        obs_data = all_obs_data[telescope.name]
 
+        # Check if it's observable
+        try:
+            check_obs_params(obs_data, log)
+        except Exception as err:
+            log.warning(err)
+            continue
 
-    #                sendemail(
-    #                "lapalmaobservatory@gmail.com",
-    #                "aobr10@student.monash.edu",
-    #                "Detection from "+scope_string,
-    #                name+" Detection: See more at  http://118.138.235.166/~obrads",
-    #                "lapalmaobservatory1",
-    #                file_path3,
-    #                file_name
-    #                )
+        # Create and update web pages
+        if write_html:
+            create_webpages(event_data, all_obs_data, telescope, web_path=PATH)
+            log.debug('HTML page written for {}'.format(telescope.name))
 
+        # Send messages
+        if send_messages:
+            event_name = event_data['name']
+            trigger_id = event_data['trigger_id']
+            file_name = event_name + trigger_id
+            file_path = PATH + "{}_transients/".format(telescope.name)
 
-                    writecsv(
-                        os.path.join(file_path3, scope_string+".csv"),
-                        event_dictionary["ivorn"],
-                        name+top_params['TrigID']['value'],
-                        event_dictionary["event_time"], event_dictionary["ra_dec"].ra.deg,
-                        event_dictionary["ra_dec"].dec.deg, event_dictionary["dist_galactic_center"],
-                        event_dictionary["object_galactic_lat"],
-                        goto_north_dictionary["alt_observable_adjusted"],
-                        goto_south_dictionary["alt_observable_adjusted"],
-                        )
+            # Send email
+            email_subject = "Detection from {}".format(telescope.name)
+            email_link = 'http://118.138.235.166/~obrads'
+            email_body = "{} Detection: See more at {}".format(event_name, email_link)
 
-                    topten(
-                    file_path3+scope_string+".csv",
-                    file_path3+"recent_ten.html"
-                    )
+            send_email(fromaddr="lapalmaobservatory@gmail.com",
+                       toaddr="aobr10@student.monash.edu",
+                       subject=email_subject,
+                       body=email_body,
+                       password="lapalmaobservatory1",
+                       file_path=file_path,
+                       file_name=file_name)
+            log.debug('Sent email alert for {}'.format(telescope.name))
 
-                    if scope_string == "goto_north":
-                        print("sent message to slack")
+            # Send message to Slack
+            if telescope.name == "goto_north":
+                send_slackmessage(event_name,
+                                  str(event_data["event_time"])[:22],
+                                  str(event_data["event_coord"].ra.deg),
+                                  str(event_data["event_coord"].dec.deg),
+                                  file_name)
+                log.debug('Sent slack message for {}'.format(telescope.name))
 
-                        slackmessage(
-                        name,
-                        str(event_dictionary["event_time"])[:22],
-                        str(event_dictionary["ra_dec"].ra.deg),
-                        str(event_dictionary["ra_dec"].dec.deg),
-                        file_name
-                        )
-
-                    main()
-
-    parse(goto_north_dictionary, goto_north, "goto_north")
-    parse(goto_south_dictionary, goto_south, "goto_south")
-
-
-    print("done")
+    log.info('Event {}{} processed'.format(event_data['name'], event_data['trigger_id']))
