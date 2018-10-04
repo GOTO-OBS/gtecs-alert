@@ -7,6 +7,7 @@ import astropy.units as u
 from astropy.time import Time
 
 from .comms import send_email, send_slackmessage
+from .database import db_insert
 from .definitions import get_event_data, get_obs_data, goto_north, goto_south
 from .output import create_webpages
 
@@ -76,6 +77,11 @@ def event_handler(payload, log=None, write_html=True, send_messages=False):
     except Exception as err:
         log.warning(err)
         return
+
+    # It's an interesting event!
+
+    # Add the event into the GOTO observation DB
+    db_insert(event_data, log)
 
     # Get observing data for the event at each site
     target = event_data['event_target']
