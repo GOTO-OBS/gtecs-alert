@@ -36,13 +36,13 @@ def goto_south():
 
 ALERT_DICTIONARY = {'XRT_Pos': {'type': 'GRB',
                                 'source': 'SWIFT',
-                                'name': 'Swift_XRT_POS'},
+                                'base_name': 'Swift_XRT_POS'},
                     'BAT_GRB_Pos': {'type': 'GRB',
                                     'source': 'SWIFT',
-                                    'name': 'Swift_BAT_GRB_POS'},
+                                    'base_name': 'Swift_BAT_GRB_POS'},
                     'GBM_Gnd_Pos': {'type': 'GRB',
                                     'source': 'Fermi',
-                                    'name': 'Fermi_GMB_GND_POS'},
+                                    'base_name': 'Fermi_GMB_GND_POS'},
                     }
 
 
@@ -80,6 +80,7 @@ def get_event_data(payload):
         data['trigger_id'] = top_params['TrigID']['value']
     else:
         data['trigger_id'] = 0
+    data['event_name'] = data['base_name'] + '_' + data['trigger_id']
 
     # Get contact email, if there is one
     try:

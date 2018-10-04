@@ -21,7 +21,7 @@ from .csv2htmltable import write_table
 def write_csv(filename, event_data, obs_data):
     """Write the CSV file."""
     data = OrderedDict()
-    data['trigger'] = event_data['name'] + event_data['trigger_id']
+    data['trigger'] = event_data['event_name']
     data['date'] = event_data["event_time"]
     data['ra'] = event_data["event_coord"].ra.deg
     data['dec'] = event_data["event_coord"].dec.deg
@@ -49,8 +49,7 @@ def write_csv(filename, event_data, obs_data):
 def create_graphs(file_path, event_data, site_data, fov=30):
     """Create airmass and finder plots."""
     # Get data
-    name = event_data['name']
-    trigger_id = event_data['trigger_id']
+    event_name = event_data['event_name']
     coord = event_data['event_coord']
     target = event_data['event_target']
     observer = site_data['observer']
@@ -59,7 +58,7 @@ def create_graphs(file_path, event_data, site_data, fov=30):
     delta_t = site_data['sun_rise'] - site_data['sun_set']
     time_range = site_data['sun_set'] + delta_t * np.linspace(0, 1, 75)
     plot_airmass(coord, observer, time_range, altitude_yaxis=True, style_sheet=dark_style_sheet)
-    airmass_file = "{}{}_AIRMASS.png".format(name, trigger_id)
+    airmass_file = "{}_AIRMASS.png".format(event_name)
     plt.savefig(os.path.join(file_path, 'airmass_plots', airmass_file))
     plt.clf()
 
@@ -68,25 +67,26 @@ def create_graphs(file_path, event_data, site_data, fov=30):
     with warnings.catch_warnings():
         warnings.simplefilter('ignore')
         plot_finder_image(target, fov_radius=fov * u.arcmin, grid=False, reticle=True)
-    airmass_file = "{}{}_FINDER.png".format(name, trigger_id)
+    airmass_file = "{}_FINDER.png".format(event_name)
     plt.savefig(os.path.join(file_path, 'finder_charts', airmass_file))
     plt.clf()
 
 
 def write_html(file_path, event_data, site_data):
     """Write the HTML page."""
-    name = event_data['name']
+    event_name = event_data['event_name']
     trigger_id = event_data['trigger_id']
-    event_type = event_data['type']
+    source = event_data['source']
 
     site_name = site_data['observer'].name
 
-    html_file = '{}{}.html'.format(name, trigger_id)
-    with open(file_path + html_file, 'w') as f:
+    html_file = '{}.html'.format(event_name)
+    html_path = os.path.join(file_path, html_file)
+    with open(html_path, 'w') as f:
 
-        title = "New transient for {} from {}".format(site_name, name)
+        title = "New transient for {} from {}".format(site_name, event_data['base_name'])
         f.write('<!DOCTYPE html><html lang="en"><head>{}</head><body>'.format(title))
-        f.write('<p>https://gcn.gsfc.nasa.gov/other/{}.{}</p>'.format(trigger_id, event_type))
+        f.write('<p>https://gcn.gsfc.nasa.gov/other/{}.{}</p>'.format(trigger_id, source.lower()))
         f.write('<p>Event ID:  {}</p>'.format(trigger_id))
 
         # Write event time
@@ -131,8 +131,8 @@ def write_html(file_path, event_data, site_data):
         f.write('<p>Target within 5 degrees of the moon? {}</p>'.format(moon))
 
         # Write links to plots
-        f.write('<img src=finder_charts/{}{}_FINDER.png>'.format(name, trigger_id))
-        f.write('<img src=airmass_plots/{}{}_AIRMASS.png>'.format(name, trigger_id))
+        f.write('<img src=finder_charts/{}_FINDER.png>'.format(event_name))
+        f.write('<img src=airmass_plots/{}_AIRMASS.png>'.format(event_name))
         f.write('</body></html>')
 
 

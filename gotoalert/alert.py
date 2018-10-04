@@ -23,7 +23,7 @@ def check_event_type(event_data, log):
     # Get alert name
     if event_data['type'] is None:
         raise ValueError('Ignoring unrecognised event type: {}'.format(event_data['ivorn']))
-    log.info('Recognised event type: {} ({})'.format(event_data['name'], event_data['type']))
+    log.info('Recognised event type: {} ({})'.format(event_data['base_name'], event_data['type']))
 
 
 def check_event_position(event_data, log):
@@ -101,15 +101,13 @@ def event_handler(payload, log=None, write_html=True, send_messages=False):
 
         # Send messages
         if send_messages:
-            event_name = event_data['name']
-            trigger_id = event_data['trigger_id']
-            file_name = event_name + trigger_id
+            file_name = event_data['event_name']
             file_path = PATH + "{}_transients/".format(site_name)
 
             # Send email
             email_subject = "Detection from {}".format(site_name)
             email_link = 'http://118.138.235.166/~obrads'
-            email_body = "{} Detection: See more at {}".format(event_name, email_link)
+            email_body = "{} Detection: See more at {}".format(event_data['type'], email_link)
 
             send_email(fromaddr="lapalmaobservatory@gmail.com",
                        toaddr="aobr10@student.monash.edu",
@@ -122,11 +120,11 @@ def event_handler(payload, log=None, write_html=True, send_messages=False):
 
             # Send message to Slack
             if site_name == "goto_north":
-                send_slackmessage(event_name,
+                send_slackmessage(event_data['event_name'],
                                   str(event_data["event_time"])[:22],
                                   str(event_data["event_coord"].ra.deg),
                                   str(event_data["event_coord"].dec.deg),
                                   file_name)
                 log.debug('Sent slack message for {}'.format(site_name))
 
-    log.info('Event {}{} processed'.format(event_data['name'], event_data['trigger_id']))
+    log.info('Event {} processed'.format(event_data['event_name']))
