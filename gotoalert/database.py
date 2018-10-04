@@ -4,6 +4,8 @@
 import obsdb as db
 
 DEFAULT_USER = 'goto'
+DEFAULT_PW = 'gotoobs'
+DEFAULT_NAME = 'GOTO automated alerts'
 
 DEFAULT_MPOINTING = {'userKey': None,
                      'objectName': None,
@@ -57,8 +59,11 @@ def db_insert(event_data, log):
 def add_single_pointing(event_data, log):
     """Simply add a single pointing at the coordinates given in the alert."""
     with db.open_session() as session:
-        username = DEFAULT_USER
-        userkey = db.get_userkey(session, username)
+        try:
+            userkey = db.get_userkey(session, DEFAULT_USER)
+        except Exception:
+            db.add_user(session, DEFAULT_USER, DEFAULT_PW, DEFAULT_NAME)
+            userkey = db.get_userkey(session, DEFAULT_USER)
 
         # Create Event and add it to the database
         event = db.Event(ivo=event_data['ivorn'],
