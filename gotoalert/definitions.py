@@ -34,71 +34,70 @@ def goto_south():
     return telescope
 
 
-ALERT_DICTIONARY = {"gaia": "ivo://gaia.cam.uk/alerts#",
-                    "Swift_XRT_POS": "ivo://nasa.gsfc.gcn/SWIFT#XRT_Pos",
-                    "Swift_BAT_GRB_POS": "ivo://nasa.gsfc.gcn/SWIFT#BAT_GRB_Pos",
-                    "Fermi_GMB_GND_POS": "ivo://nasa.gsfc.gcn/Fermi#GBM_Gnd_Pos_",
+ALERT_DICTIONARY = {'XRT_Pos': {'type': 'GRB',
+                                'source': 'SWIFT',
+                                'name': 'Swift_XRT_POS'},
+                    'BAT_GRB_Pos': {'type': 'GRB',
+                                    'source': 'SWIFT',
+                                    'name': 'Swift_BAT_GRB_POS'},
+                    'GBM_Gnd_Pos': {'type': 'GRB',
+                                    'source': 'Fermi',
+                                    'name': 'Fermi_GMB_GND_POS'},
                     }
 
 
 def get_event_data(v):
     """Fetch infomation about the event."""
-    # Get attributes
-    ivorn = v.attrib['ivorn']
-    role = v.attrib['role']
+    data = {}
 
-    # Get alert type
-    if ivorn.startswith(ALERT_DICTIONARY["Swift_XRT_POS"]):
-        name = "Swift_XRT_POS_"
-        event_type = 'swift'
-    elif ivorn.startswith(ALERT_DICTIONARY["Swift_BAT_GRB_POS"]):
-        name = "Swift_BAT_GRB_POS_"
-        event_type = 'swift'
-    elif ivorn.startswith(ALERT_DICTIONARY["Fermi_GMB_GND_POS"]):
-        name = "Fermi_GMB_GND_POS_"
-        event_type = 'fermi'
-    else:
-        # Something we don't care about
-        name = 'Unknown'
-        event_type = None
+    # Get key attributes
+    data['ivorn'] = v.attrib['ivorn']
+    data['role'] = v.attrib['role']
 
-    # Get trigger ID
+    if not any([key in data['ivorn'] for key in ALERT_DICTIONARY]):
+        # The event doesn't match any ones we care about
+        data['type'] = None
+        return data
+
+    # If we've got here the IVORN must match one of the events we're looking for.
+    # Add the known type and source to the
+    for key in ALERT_DICTIONARY:
+        if key in data['ivorn']:
+            data.update(ALERT_DICTIONARY[key])
+
+    # Sanity check that the sources match
+    ivorn_source = data['ivorn'].split('/')[-1].split('#')[0]
+    if data['source'].upper() != ivorn_source.upper():
+        raise ValueError('Mismatched sources: {} and {}'.format(data['source'].upper(),
+                                                                ivorn_source.upper()))
+
+    # Get the trigger ID, if there is one
     top_params = vp.get_toplevel_params(v)
-    trigger_id = top_params['TrigID']['value']
+    if 'TrigID' in top_params:
+        data['trigger_id'] = top_params['TrigID']['value']
+    else:
+        data['trigger_id'] = 0
 
-    # Get contact email
-    contact = v.Who.Author.contactEmail
+    # Get contact email, if there is one
+    try:
+        data['contact'] = v.Who.Author.contactEmail
+    except AttributeError:
+        data['contact'] = None
 
     # Get event time
-    event_time = Time(vp.convenience.get_event_time_as_utc(v, index=0))
+    data['event_time'] = Time(vp.convenience.get_event_time_as_utc(v, index=0))
 
     # Get event position (RA/DEC)
-    pos = vp.get_event_position(v)
-    event_coord = SkyCoord(ra=pos.ra, dec=pos.dec, unit=pos.units)
-    coorderr = pos.err
-    event_str = str(event_coord.ra.value) + ' ' + str(event_coord.dec.value)
-    event_target = FixedTarget.from_name(event_str)
+    position = vp.get_event_position(v)
+    data['event_coord'] = SkyCoord(ra=position.ra, dec=position.dec, unit=position.units)
+    data['event_coord_error'] = position.err
+    data['event_target'] = FixedTarget(data['event_coord'])
 
     # Get event position (Galactic)
-    coord_deg = SkyCoord(event_coord, unit='deg')
-    object_galactic_pos = coord_deg.galactic
-    object_galactic_lat = coord_deg.galactic.b
+    data['object_galactic_lat'] = data['event_coord'].galactic.b
     galactic_center = SkyCoord(l=0, b=0, unit='deg,deg', frame='galactic')
-    dist_galactic_center = object_galactic_pos.separation(galactic_center)
+    data['dist_galactic_center'] = data['event_coord'].galactic.separation(galactic_center)
 
-    data = {'name': name,
-            'type': event_type,
-            'ivorn': ivorn,
-            'role': role,
-            'trigger_id': trigger_id,
-            'contact': contact,
-            'event_coord': event_coord,
-            'event_coord_error': coorderr,
-            'event_target': event_target,
-            'event_time': event_time,
-            'object_galactic_lat': object_galactic_lat,
-            'dist_galactic_center': dist_galactic_center,
-            }
     return data
 
 
