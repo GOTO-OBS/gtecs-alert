@@ -61,7 +61,10 @@ def check_obs_params(site_data, log):
 
 
 def event_handler(payload, log=None, write_html=True, send_messages=False):
-    """Handle a VOEvent payload."""
+    """Handle a VOEvent payload.
+
+    Returns the event data dict if the event is interesting, or None if it's been rejected.
+    """
     # Create a logger if one isn't given
     if log is None:
         logging.basicConfig(level=logging.DEBUG)
@@ -76,7 +79,7 @@ def event_handler(payload, log=None, write_html=True, send_messages=False):
         check_event_position(event_data, log)
     except Exception as err:
         log.warning(err)
-        return
+        return None
 
     # It's an interesting event!
 
@@ -134,3 +137,4 @@ def event_handler(payload, log=None, write_html=True, send_messages=False):
                 log.debug('Sent slack message for {}'.format(site_name))
 
     log.info('Event {} processed'.format(event_data['event_name']))
+    return event_data
