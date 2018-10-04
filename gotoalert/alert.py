@@ -2,13 +2,12 @@
 """Event handlers for VOEvents."""
 
 import logging
-import os
 
 import astropy.units as u
 
 from .comms import send_email, send_slackmessage
 from .definitions import get_event_data, get_obs_data, goto_north, goto_south
-from .output import create_webpages, write_csv
+from .output import create_webpages
 
 PATH = "./www"
 
