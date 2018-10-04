@@ -1,13 +1,11 @@
 #!/usr/bin/env python
+"""A script to handle any events passed to STDIN."""
 
-import os
 import sys
-import pkg_resources
-import voeventparse as vp
 
 from gotoalert.alert import event_handler
 
 
 if __name__ == '__main__':
-    v = vp.loads(sys.stdin.buffer.read())
-    event_handler(v)
+    payload = sys.stdin.buffer.read()
+    event_handler(payload)

@@ -58,7 +58,7 @@ def check_obs_params(obs_data, log):
     log.info('Target is up for longer than 1:30 tonight at {}'.format(name))
 
 
-def event_handler(v, log=None, write_html=True, send_messages=False):
+def event_handler(payload, log=None, write_html=True, send_messages=False):
     """Handle a VOEvent payload."""
     # Create a logger if one isn't given
     if log is None:
@@ -66,7 +66,7 @@ def event_handler(v, log=None, write_html=True, send_messages=False):
         log = logging.getLogger('goto-alert')
 
     # Get event data from the payload
-    event_data = get_event_data(v)
+    event_data = get_event_data(payload)
 
     # Check if it's an event we want to process
     try:

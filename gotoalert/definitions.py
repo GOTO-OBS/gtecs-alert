@@ -46,13 +46,16 @@ ALERT_DICTIONARY = {'XRT_Pos': {'type': 'GRB',
                     }
 
 
-def get_event_data(v):
+def get_event_data(payload):
     """Fetch infomation about the event."""
     data = {}
 
+    # Load the payload using voeventparse
+    voevent = vp.loads(payload)
+
     # Get key attributes
-    data['ivorn'] = v.attrib['ivorn']
-    data['role'] = v.attrib['role']
+    data['ivorn'] = voevent.attrib['ivorn']
+    data['role'] = voevent.attrib['role']
 
     if not any([key in data['ivorn'] for key in ALERT_DICTIONARY]):
         # The event doesn't match any ones we care about
@@ -72,7 +75,7 @@ def get_event_data(v):
                                                                 ivorn_source.upper()))
 
     # Get the trigger ID, if there is one
-    top_params = vp.get_toplevel_params(v)
+    top_params = vp.get_toplevel_params(voevent)
     if 'TrigID' in top_params:
         data['trigger_id'] = top_params['TrigID']['value']
     else:
@@ -80,15 +83,15 @@ def get_event_data(v):
 
     # Get contact email, if there is one
     try:
-        data['contact'] = v.Who.Author.contactEmail
+        data['contact'] = voevent.Who.Author.contactEmail
     except AttributeError:
         data['contact'] = None
 
     # Get event time
-    data['event_time'] = Time(vp.convenience.get_event_time_as_utc(v, index=0))
+    data['event_time'] = Time(vp.convenience.get_event_time_as_utc(voevent, index=0))
 
     # Get event position (RA/DEC)
-    position = vp.get_event_position(v)
+    position = vp.get_event_position(voevent)
     data['event_coord'] = SkyCoord(ra=position.ra, dec=position.dec, unit=position.units)
     data['event_coord_error'] = position.err
     data['event_target'] = FixedTarget(data['event_coord'])
