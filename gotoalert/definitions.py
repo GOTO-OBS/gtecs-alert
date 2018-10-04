@@ -104,68 +104,71 @@ def get_event_data(payload):
     return data
 
 
-def get_obs_data(observer, target, alt_limit=30):
-    """Compile infomation about the target's visibility from the given observer."""
-    # Get midnight and astronomicla twilight times
-    current_time = Time.now()
-    midnight = observer.midnight(current_time, which='next')
-    sun_set = observer.twilight_evening_astronomical(midnight, which='previous')
-    sun_rise = observer.twilight_morning_astronomical(midnight, which='next')
+def get_obs_data(target, observers, current_time, alt_limit=30):
+    """Compile infomation about the target's visibility from the given observers."""
+    all_data = {}
 
-    time_range = Time([sun_set, sun_rise])
+    for observer in observers:
+        data = {}
+        data['observer'] = observer
+        data['current_time'] = current_time
 
-    # Apply a constraint on altitude
-    min_alt = alt_limit * u.deg
-    alt_constraint = AltitudeConstraint(min=min_alt, max=None)
-    alt_observable = is_observable(alt_constraint, observer, target, time_range=time_range)[0]
+        # Get midnight and astronomical twilight times
+        midnight = observer.midnight(current_time, which='next')
+        sun_set = observer.twilight_evening_astronomical(midnight, which='previous')
+        sun_rise = observer.twilight_morning_astronomical(midnight, which='next')
+        dark_time = Time([sun_set, sun_rise])
+        data['midnight'] = midnight
+        data['sun_set'] = sun_set
+        data['sun_rise'] = sun_rise
 
-    # Get target rise and set times
-    if alt_observable:
-        with warnings.catch_warnings():
-            warnings.simplefilter('ignore')
-            target_rise = observer.target_rise_time(midnight, target,
-                                                    which='nearest', horizon=min_alt)
-            target_set = observer.target_set_time(target_rise, target,
-                                                  which='next', horizon=min_alt)
+        # Apply a constraint on altitude
+        min_alt = alt_limit * u.deg
+        alt_constraint = AltitudeConstraint(min=min_alt, max=None)
+        alt_observable = is_observable(alt_constraint, observer, target, time_range=dark_time)[0]
+        data['alt_constraint'] = alt_constraint
+        data['alt_observable'] = alt_observable
 
-        # Get observation times
-        observation_start = target_rise
-        observation_end = target_set
-        if target_rise.jd < 0 or target_set.jd < 0:
-            # target is always above the horizon, so visible all night
-            observation_start = sun_set
-            observation_end = sun_rise
-        if target_rise < sun_set:
-            # target is already up when the sun sets
-            observation_start = sun_set
-        if target_set > sun_rise:
-            # target sets after the sun rises
-            observation_end = sun_rise
+        # Get target rise and set times
+        if alt_observable:
+            with warnings.catch_warnings():
+                warnings.simplefilter('ignore')
+                target_rise = observer.target_rise_time(midnight, target,
+                                                        which='nearest', horizon=min_alt)
+                target_set = observer.target_set_time(target_rise, target,
+                                                      which='next', horizon=min_alt)
 
-    else:
-        target_rise = None
-        target_set = None
-        observation_start = None
-        observation_end = None
+            # Get observation times
+            observation_start = target_rise
+            observation_end = target_set
+            if target_rise.jd < 0 or target_set.jd < 0:
+                # target is always above the horizon, so visible all night
+                observation_start = sun_set
+                observation_end = sun_rise
+            if target_rise < sun_set:
+                # target is already up when the sun sets
+                observation_start = sun_set
+            if target_set > sun_rise:
+                # target sets after the sun rises
+                observation_end = sun_rise
 
-    # Apply a constraint on distance from the Moon
-    min_moon = 5 * u.deg
-    moon_constraint = MoonSeparationConstraint(min=min_moon, max=None)
-    moon_observable = is_observable(moon_constraint, observer, target, time_range=time_range)[0]
+            data['target_rise'] = target_rise
+            data['target_set'] = target_set
+            data['observation_start'] = observation_start
+            data['observation_end'] = observation_end
+        else:
+            data['target_rise'] = None
+            data['target_set'] = None
+            data['observation_start'] = None
+            data['observation_end'] = None
 
-    data = {'observer': observer,
-            'current_time': current_time,
-            'midnight': midnight,
-            'sun_set': sun_set,
-            'sun_rise': sun_rise,
-            'target_rise': target_rise,
-            'target_set': target_set,
-            'observation_start': observation_start,
-            'observation_end': observation_end,
-            'alt_constraint': alt_constraint,
-            'alt_observable': alt_observable,
-            'moon_constraint': moon_constraint,
-            'moon_observable': moon_observable,
-            }
+        # Apply a constraint on distance from the Moon
+        min_moon = 5 * u.deg
+        moon_constraint = MoonSeparationConstraint(min=min_moon, max=None)
+        moon_observable = is_observable(moon_constraint, observer, target, time_range=dark_time)[0]
+        data['moon_constraint'] = moon_constraint
+        data['moon_observable'] = moon_observable
 
-    return data
+        all_data[observer.name] = data
+
+    return all_data
