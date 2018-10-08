@@ -3,14 +3,11 @@
 
 import warnings
 
-from astroplan import (AltitudeConstraint, FixedTarget, MoonSeparationConstraint,
-                       Observer, is_observable)
+from astroplan import (AltitudeConstraint, MoonSeparationConstraint, Observer, is_observable)
 
 import astropy.units as u
-from astropy.coordinates import EarthLocation, SkyCoord
+from astropy.coordinates import EarthLocation
 from astropy.time import Time
-
-import voeventparse as vp
 
 
 def telescope(name, latitude, longitude, elevation, time_zone):
@@ -32,77 +29,6 @@ def goto_south():
     clayton = EarthLocation(lon=145.131389 * u.deg, lat=-37.910556 * u.deg, height=50 * u.m)
     telescope = Observer(name='goto_south', location=clayton, timezone='Australia/Melbourne')
     return telescope
-
-
-ALERT_DICTIONARY = {'XRT_Pos': {'type': 'GRB',
-                                'source': 'SWIFT',
-                                'base_name': 'Swift_XRT_POS'},
-                    'BAT_GRB_Pos': {'type': 'GRB',
-                                    'source': 'SWIFT',
-                                    'base_name': 'Swift_BAT_GRB_POS'},
-                    'GBM_Gnd_Pos': {'type': 'GRB',
-                                    'source': 'Fermi',
-                                    'base_name': 'Fermi_GMB_GND_POS'},
-                    }
-
-
-def get_event_data(payload):
-    """Fetch infomation about the event."""
-    data = {}
-
-    # Load the payload using voeventparse
-    voevent = vp.loads(payload)
-
-    # Get key attributes
-    data['ivorn'] = voevent.attrib['ivorn']
-    data['role'] = voevent.attrib['role']
-
-    if not any([key in data['ivorn'] for key in ALERT_DICTIONARY]):
-        # The event doesn't match any ones we care about
-        data['type'] = None
-        return data
-
-    # If we've got here the IVORN must match one of the events we're looking for.
-    # Add the known type and source to the
-    for key in ALERT_DICTIONARY:
-        if key in data['ivorn']:
-            data.update(ALERT_DICTIONARY[key])
-
-    # Sanity check that the sources match
-    ivorn_source = data['ivorn'].split('/')[-1].split('#')[0]
-    if data['source'].upper() != ivorn_source.upper():
-        raise ValueError('Mismatched sources: {} and {}'.format(data['source'].upper(),
-                                                                ivorn_source.upper()))
-
-    # Get the trigger ID, if there is one
-    top_params = vp.get_toplevel_params(voevent)
-    if 'TrigID' in top_params:
-        data['trigger_id'] = top_params['TrigID']['value']
-    else:
-        data['trigger_id'] = 0
-    data['event_name'] = data['base_name'] + '_' + data['trigger_id']
-
-    # Get contact email, if there is one
-    try:
-        data['contact'] = voevent.Who.Author.contactEmail
-    except AttributeError:
-        data['contact'] = None
-
-    # Get event time
-    data['event_time'] = Time(vp.convenience.get_event_time_as_utc(voevent, index=0))
-
-    # Get event position (RA/DEC)
-    position = vp.get_event_position(voevent)
-    data['event_coord'] = SkyCoord(ra=position.ra, dec=position.dec, unit=position.units)
-    data['event_coord_error'] = position.err
-    data['event_target'] = FixedTarget(data['event_coord'])
-
-    # Get event position (Galactic)
-    data['object_galactic_lat'] = data['event_coord'].galactic.b
-    galactic_center = SkyCoord(l=0, b=0, unit='deg,deg', frame='galactic')
-    data['dist_galactic_center'] = data['event_coord'].galactic.separation(galactic_center)
-
-    return data
 
 
 def get_obs_data(target, observers, current_time, alt_limit=30):
