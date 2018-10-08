@@ -4,8 +4,10 @@
 import sys
 
 from gotoalert.alert import event_handler
+from gotoalert.events import Event
 
 
 if __name__ == '__main__':
     payload = sys.stdin.buffer.read()
-    event_handler(payload)
+    event = Event(payload)
+    event_handler(event)

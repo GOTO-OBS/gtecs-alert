@@ -56,18 +56,15 @@ def check_obs_params(site_data, log):
     log.info('Target is up for longer than 1:30 tonight at {}'.format(name))
 
 
-def event_handler(payload, log=None, write_html=True, send_messages=False):
-    """Handle a VOEvent payload.
+def event_handler(event, log=None, write_html=True, send_messages=False):
+    """Handle a new Event.
 
-    Returns the event data dict if the event is interesting, or None if it's been rejected.
+    Returns the Event if it is interesting, or None if it's been rejected.
     """
     # Create a logger if one isn't given
     if log is None:
         logging.basicConfig(level=logging.DEBUG)
         log = logging.getLogger('goto-alert')
-
-    # Create event from the payload
-    event = Event(payload)
 
     # Check if it's an event we want to process
     try:
@@ -132,3 +129,16 @@ def event_handler(payload, log=None, write_html=True, send_messages=False):
 
     log.info('Event {} processed'.format(event.name))
     return event
+
+
+def payload_handler(payload, log=None, write_html=True, send_messages=False):
+    """Handle a VOEvent payload.
+
+    Returns the Event if it is interesting, or None if it's been rejected.
+    """
+
+    # Create event from the payload
+    event = Event(payload)
+
+    # Run the event handler
+    event_handler(event, log, write_html, send_messages)
