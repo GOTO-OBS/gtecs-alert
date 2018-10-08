@@ -2,13 +2,14 @@
 """Event handlers for VOEvents."""
 
 import logging
-import os
 
 import astropy.units as u
+from astropy.time import Time
 
 from .comms import send_email, send_slackmessage
+from .database import db_insert
 from .definitions import get_event_data, get_obs_data, goto_north, goto_south
-from .output import create_webpages, write_csv
+from .output import create_webpages
 
 PATH = "./www"
 
@@ -23,7 +24,7 @@ def check_event_type(event_data, log):
     # Get alert name
     if event_data['type'] is None:
         raise ValueError('Ignoring unrecognised event type: {}'.format(event_data['ivorn']))
-    log.info('Recognised event type: {} ({})'.format(event_data['name'], event_data['type']))
+    log.info('Recognised event type: {} ({})'.format(event_data['base_name'], event_data['type']))
 
 
 def check_event_position(event_data, log):
@@ -43,31 +44,34 @@ def check_event_position(event_data, log):
     log.info('Event sufficiently far away from the galactic plane')
 
 
-def check_obs_params(obs_data, log):
-    """Check if the event is observable from a paticular telescope."""
-    telescope = obs_data['observer']
-    name = telescope.name
+def check_obs_params(site_data, log):
+    """Check if the event is observable from a paticular site."""
+    observer = site_data['observer']
+    name = observer.name
 
     # Check if the target rises above the horizon
-    if not obs_data['alt_observable']:
+    if not site_data['alt_observable']:
         raise ValueError('Target does not rise above minimum altitude at {}'.format(name))
     log.info('Target is visible tonight at {}'.format(name))
 
     # Check if the target is visible for enough time
-    if (obs_data['observation_end'] - obs_data['observation_start']) < 1.5 * u.hour:
+    if (site_data['observation_end'] - site_data['observation_start']) < 1.5 * u.hour:
         raise ValueError('Target is not up longer then 1:30 at {} during the night'.format(name))
     log.info('Target is up for longer than 1:30 tonight at {}'.format(name))
 
 
-def event_handler(v, log=None, write_html=True, send_messages=False):
-    """Handle a VOEvent payload."""
+def event_handler(payload, log=None, write_html=True, send_messages=False):
+    """Handle a VOEvent payload.
+
+    Returns the event data dict if the event is interesting, or None if it's been rejected.
+    """
     # Create a logger if one isn't given
     if log is None:
         logging.basicConfig(level=logging.DEBUG)
         log = logging.getLogger('goto-alert')
 
     # Get event data from the payload
-    event_data = get_event_data(v)
+    event_data = get_event_data(payload)
 
     # Check if it's an event we want to process
     try:
@@ -75,42 +79,44 @@ def event_handler(v, log=None, write_html=True, send_messages=False):
         check_event_position(event_data, log)
     except Exception as err:
         log.warning(err)
-        return
+        return None
 
-    # Get observing data for the event with each telescope
+    # It's an interesting event!
+
+    # Add the event into the GOTO observation DB
+    db_insert(event_data, log)
+
+    # Get observing data for the event at each site
     target = event_data['event_target']
-    telescopes = [goto_north(), goto_south()]
-    all_obs_data = {}
-    for telescope in telescopes:
-        all_obs_data[telescope.name] = get_obs_data(telescope, target)
+    observers = [goto_north(), goto_south()]
+    time = Time.now()
+    obs_data = get_obs_data(target, observers, time)
 
     # Parse the event for each site
-    for telescope in telescopes:
-        obs_data = all_obs_data[telescope.name]
+    for site_name in obs_data:
+        site_data = obs_data[site_name]
 
         # Check if it's observable
         try:
-            check_obs_params(obs_data, log)
+            check_obs_params(site_data, log)
         except Exception as err:
             log.warning(err)
             continue
 
         # Create and update web pages
         if write_html:
-            create_webpages(event_data, all_obs_data, telescope, web_path=PATH)
-            log.debug('HTML page written for {}'.format(telescope.name))
+            create_webpages(event_data, obs_data, site_name, web_path=PATH)
+            log.debug('HTML page written for {}'.format(site_name))
 
         # Send messages
         if send_messages:
-            event_name = event_data['name']
-            trigger_id = event_data['trigger_id']
-            file_name = event_name + trigger_id
-            file_path = PATH + "{}_transients/".format(telescope.name)
+            file_name = event_data['event_name']
+            file_path = PATH + "{}_transients/".format(site_name)
 
             # Send email
-            email_subject = "Detection from {}".format(telescope.name)
+            email_subject = "Detection from {}".format(site_name)
             email_link = 'http://118.138.235.166/~obrads'
-            email_body = "{} Detection: See more at {}".format(event_name, email_link)
+            email_body = "{} Detection: See more at {}".format(event_data['type'], email_link)
 
             send_email(fromaddr="lapalmaobservatory@gmail.com",
                        toaddr="aobr10@student.monash.edu",
@@ -119,15 +125,16 @@ def event_handler(v, log=None, write_html=True, send_messages=False):
                        password="lapalmaobservatory1",
                        file_path=file_path,
                        file_name=file_name)
-            log.debug('Sent email alert for {}'.format(telescope.name))
+            log.debug('Sent email alert for {}'.format(site_name))
 
             # Send message to Slack
-            if telescope.name == "goto_north":
-                send_slackmessage(event_name,
+            if site_name == "goto_north":
+                send_slackmessage(event_data['event_name'],
                                   str(event_data["event_time"])[:22],
                                   str(event_data["event_coord"].ra.deg),
                                   str(event_data["event_coord"].dec.deg),
                                   file_name)
-                log.debug('Sent slack message for {}'.format(telescope.name))
+                log.debug('Sent slack message for {}'.format(site_name))
 
-    log.info('Event {}{} processed'.format(event_data['name'], event_data['trigger_id']))
+    log.info('Event {} processed'.format(event_data['event_name']))
+    return event_data
