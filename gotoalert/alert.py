@@ -136,7 +136,6 @@ def payload_handler(payload, log=None, write_html=True, send_messages=False):
 
     Returns the Event if it is interesting, or None if it's been rejected.
     """
-
     # Create event from the payload
     event = Event(payload)
 
