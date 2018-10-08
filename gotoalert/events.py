@@ -1,13 +1,12 @@
 """Event classes to contain VOEvents."""
 
 import os
+from urllib.parse import quote_plus
 
 from astroplan import FixedTarget
 
 from astropy.coordinates import SkyCoord
 from astropy.time import Time
-
-from six.moves.urllib.parse import quote_plus
 
 import voeventparse as vp
 
