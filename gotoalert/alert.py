@@ -22,7 +22,7 @@ def check_event_type(event, log):
         raise ValueError('Ignoring {} event'.format(event.role))
 
     # Get alert name
-    if event.type is None:
+    if event.type is 'Unknown':
         raise ValueError('Ignoring unrecognised event type: {}'.format(event.ivorn))
     log.info('Recognised event type: {} ({})'.format(event.base_name, event.type))
 
