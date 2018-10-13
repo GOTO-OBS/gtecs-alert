@@ -88,9 +88,9 @@ def add_single_pointing(event, log):
         mp_data['ra'] = event.coord.ra.value
         mp_data['decl'] = event.coord.dec.value
 
-        # Time to start immedietly, expire after 4 days if not completed
-        mp_data['startUTC'] = event.creation_time
-        mp_data['stopUTC'] = event.creation_time + 4 * u.day
+        # Time to start immedietly after the event, expire after 4 days if not completed
+        mp_data['startUTC'] = event.time
+        mp_data['stopUTC'] = event.time + 4 * u.day
 
         # Create Mpointing
         db_mpointing = db.Mpointing(**mp_data)
