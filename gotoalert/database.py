@@ -2,7 +2,6 @@
 """Functions to add events into the GOTO Observation Database."""
 
 import astropy.units as u
-from astropy.time import Time
 
 import obsdb as db
 
@@ -90,9 +89,8 @@ def add_single_pointing(event, log):
         mp_data['decl'] = event.coord.dec.value
 
         # Time to start immedietly, expire after 4 days if not completed
-        now = Time.now()
-        mp_data['startUTC'] = now
-        mp_data['stopUTC'] = now + 4 * u.day
+        mp_data['startUTC'] = event.creation_time
+        mp_data['stopUTC'] = event.creation_time + 4 * u.day
 
         # Create Mpointing
         db_mpointing = db.Mpointing(**mp_data)
