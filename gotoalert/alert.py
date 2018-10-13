@@ -120,11 +120,7 @@ def event_handler(event, log=None, write_html=True, send_messages=False):
 
             # Send message to Slack
             if site_name == "goto_north":
-                send_slackmessage(event.name,
-                                  str(event._time)[:22],
-                                  str(event.coord.ra.deg),
-                                  str(event.coord.dec.deg),
-                                  file_name)
+                send_slackmessage(event, file_name)
                 log.debug('Sent slack message for {}'.format(site_name))
 
     log.info('Event {} processed'.format(event.name))

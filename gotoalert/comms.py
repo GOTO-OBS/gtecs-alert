@@ -37,11 +37,12 @@ def send_email(fromaddr, toaddr, subject, body, password, file_path, file_name):
     server.quit()
 
 
-def send_slackmessage(text, time, ra, dec, file_name):
+def send_slackmessage(event, file_name):
     """Send a Slack message to the #grb-alerts channel."""
     slack_client = Slacker("xoxb-132218163666-416316276000-iueLeJ9b6JKToTTMGDvK5XaN")
 
-    message = '{}  (Time = {})  (RA = {})  (DEC = {}) '.format(text, time, ra, dec)
+    message = '{}  (Time = {})  (RA = {})  (DEC = {}) '.format(event.name, event.time,
+                                                               event.ra, event.dec)
     html_file = file_name + '.html'
     link = 'http://118.138.235.166/~obrads/Transients_For_La_Palma_Observatory/' + html_file
     message += 'See more at ' + link
