@@ -38,7 +38,14 @@ class Event(object):
         self.role = self.voevent.attrib['role']
 
         # Get event time
-        self.time = Time(vp.convenience.get_event_time_as_utc(self.voevent, index=0))
+        event_time = vp.convenience.get_event_time_as_utc(self.voevent, index=0)
+        if event_time is None:
+            # Sometimes we might get system test events from the server.
+            # They (annoyingly) don't actually have an event attached, even a fake one,
+            # so don't have a time. Just return here, the handler will ignore it.
+            self.time = None
+            return
+        self.time = Time(event_time)
 
         # Get event position (RA/DEC)
         position = vp.get_event_position(self.voevent)
@@ -75,11 +82,11 @@ class Event(object):
 
         # Get the trigger ID, if there is one
         top_params = vp.get_toplevel_params(self.voevent)
-        if 'TrigID' in top_params:
-            self.trigger_id = top_params['TrigID']['value']
-        else:
+        try:
+            self.trigger_id = int(top_params['TrigID']['value'])
+        except Exception:
             self.trigger_id = 0
-        self.name = self.base_name + '_' + self.trigger_id
+        self.name = '{}_{:.0f}'.format(self.base_name, self.trigger_id)
 
         # Get contact email, if there is one
         try:
