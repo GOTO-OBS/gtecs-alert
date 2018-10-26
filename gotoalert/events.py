@@ -75,11 +75,11 @@ class Event(object):
 
         # Get the trigger ID, if there is one
         top_params = vp.get_toplevel_params(self.voevent)
-        if 'TrigID' in top_params:
-            self.trigger_id = top_params['TrigID']['value']
-        else:
+        try:
+            self.trigger_id = int(top_params['TrigID']['value'])
+        except Exception:
             self.trigger_id = 0
-        self.name = self.base_name + '_' + self.trigger_id
+        self.name = '{}_{:.0f}'.format(self.base_name, self.trigger_id)
 
         # Get contact email, if there is one
         try:
