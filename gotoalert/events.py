@@ -5,7 +5,7 @@ from urllib.parse import quote_plus
 
 from astroplan import FixedTarget
 
-from astropy.coordinates import SkyCoord
+from astropy.coordinates import Angle, SkyCoord
 from astropy.time import Time
 
 import voeventparse as vp
@@ -50,7 +50,7 @@ class Event(object):
         # Get event position (RA/DEC)
         position = vp.get_event_position(self.voevent)
         self.coord = SkyCoord(ra=position.ra, dec=position.dec, unit=position.units)
-        self.coord_error = position.err
+        self.coord_error = Angle(position.err, unit=position.units)
         self.target = FixedTarget(self.coord)
 
         # Get event position (Galactic)

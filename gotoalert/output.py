@@ -89,7 +89,7 @@ def write_html(file_path, event, site_data):
         # Write event coords
         f.write('<p>RA:  {:.3f} degrees</p>'.format(event.coord.ra.deg))
         f.write('<p>DEC: {:.3f} degrees</p>'.format(event.coord.dec.deg))
-        f.write('<p>RA, DEC Error:   {:.3f}</p>'.format(event.coord_error))
+        f.write('<p>RA, DEC Error:   {:.3f}</p>'.format(event.coord_error.deg))
 
         # Write event contact
         f.write('<p>Contact: {}</p>'.format(event.contact))
