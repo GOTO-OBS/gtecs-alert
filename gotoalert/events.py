@@ -8,6 +8,8 @@ from astroplan import FixedTarget
 from astropy.coordinates import Angle, SkyCoord
 from astropy.time import Time
 
+from gototile.skymap import SkyMap
+
 import voeventparse as vp
 
 
@@ -108,3 +110,11 @@ class Event(object):
 
         if log:
             log.info('Archived to {}'.format(path))
+
+    def get_skymap(self, nside=128):
+        """Create a GOTO-tile SkyMap based on the uncertanty in the position."""
+        skymap = SkyMap.from_position(self.coord.ra.deg,
+                                      self.coord.dec.deg,
+                                      self.coord_error.deg,
+                                      nside)
+        return skymap
