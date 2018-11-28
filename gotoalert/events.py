@@ -22,6 +22,9 @@ ALERT_DICTIONARY = {'XRT_Pos': {'type': 'GRB',
                     'GBM_Gnd_Pos': {'type': 'GRB',
                                     'source': 'Fermi',
                                     'base_name': 'Fermi_GMB_GND_POS'},
+                    'gwnet': {'type': 'GW',
+                              'source': 'GCN_SENDER',
+                              'base_name': 'LVC_GW'},
                     }
 
 
@@ -49,16 +52,25 @@ class Event(object):
             return
         self.time = Time(event_time)
 
-        # Get event position (RA/DEC)
-        position = vp.get_event_position(self.voevent)
-        self.coord = SkyCoord(ra=position.ra, dec=position.dec, unit=position.units)
-        self.coord_error = Angle(position.err, unit=position.units)
-        self.target = FixedTarget(self.coord)
+        # Get event position
+        try:
+            # (RA/DEC)
+            position = vp.get_event_position(self.voevent)
+            self.coord = SkyCoord(ra=position.ra, dec=position.dec, unit=position.units)
+            self.coord_error = Angle(position.err, unit=position.units)
+            self.target = FixedTarget(self.coord)
 
-        # Get event position (Galactic)
-        self.gal_lat = self.coord.galactic.b.value
-        galactic_center = SkyCoord(l=0, b=0, unit='deg,deg', frame='galactic')
-        self.gal_dist = self.coord.galactic.separation(galactic_center).value
+            # (Galactic)
+            self.gal_lat = self.coord.galactic.b.value
+            galactic_center = SkyCoord(l=0, b=0, unit='deg,deg', frame='galactic')
+            self.gal_dist = self.coord.galactic.separation(galactic_center).value
+        except AttributeError:
+            # Probably a LVC skympap
+            self.coord = None
+            self.coord_error = None
+            self.target = None
+            self.gal_la = None
+            self.gal_dist = None
 
         if not any([key in self.ivorn for key in ALERT_DICTIONARY]):
             # The event doesn't match any ones we care about
@@ -84,11 +96,15 @@ class Event(object):
 
         # Get the trigger ID, if there is one
         top_params = vp.get_toplevel_params(self.voevent)
-        try:
+        if self.type == 'GRB':
             self.trigger_id = int(top_params['TrigID']['value'])
-        except Exception:
+            self.name = '{}_{:.0f}'.format(self.base_name, self.trigger_id)
+        elif self.type == 'GW':
             self.trigger_id = 0
-        self.name = '{}_{:.0f}'.format(self.base_name, self.trigger_id)
+            self.name = top_params['GraceID']['value']
+        else:
+            self.trigger_id = 0
+            self.name = '{}_{:.0f}'.format(self.base_name, self.trigger_id)
 
         # Get contact email, if there is one
         try:
@@ -97,7 +113,7 @@ class Event(object):
             self.contact = None
 
     def __repr__(self):
-            return 'Event(ivorn={})'.format(self.ivorn)
+            return 'Event(name={}, ivorn={})'.format(self.name, self.ivorn)
 
     def archive(self, path, log=None):
         """Archive this event in the config directory."""
