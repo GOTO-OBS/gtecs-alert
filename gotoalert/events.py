@@ -69,7 +69,7 @@ class Event(object):
             self.coord = None
             self.coord_error = None
             self.target = None
-            self.gal_la = None
+            self.gal_lat = None
             self.gal_dist = None
 
         # Get skymap url, if there is one
