@@ -72,6 +72,14 @@ class Event(object):
             self.gal_la = None
             self.gal_dist = None
 
+        # Get skymap url, if there is one
+        group_params = vp.get_grouped_params(self.voevent)
+        try:
+            self.skymap_url = group_params['bayestar']['skymap_fits']['value']
+        except KeyError:
+            self.skymap_url = None
+        self.skymap = None
+
         if not any([key in self.ivorn for key in ALERT_DICTIONARY]):
             # The event doesn't match any ones we care about
             self.interesting = False
@@ -128,9 +136,21 @@ class Event(object):
             log.info('Archived to {}'.format(path))
 
     def get_skymap(self, nside=128):
-        """Create a GOTO-tile SkyMap based on the uncertanty in the position."""
-        skymap = SkyMap.from_position(self.coord.ra.deg,
-                                      self.coord.dec.deg,
-                                      self.coord_error.deg,
-                                      nside)
-        return skymap
+        """Create a GOTO-tile SkyMap for the event.
+
+        If the Event is from the LVC then it should have a skymap url,
+        if not then a Gaussian skymap is created based on the position error.
+
+        """
+        if self.skymap:
+            return self.skymap
+
+        if self.skymap_url:
+            # HealPIX can download from a URL
+            self.skymap = SkyMap.from_fits(self.skymap_url)
+        else:
+            self.skymap = SkyMap.from_position(self.coord.ra.deg,
+                                               self.coord.dec.deg,
+                                               self.coord_error.deg,
+                                               nside)
+        return self.skymap
