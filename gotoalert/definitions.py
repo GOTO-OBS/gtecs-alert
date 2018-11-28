@@ -34,6 +34,8 @@ def goto_south():
 def get_obs_data(target, observers, current_time, alt_limit=30):
     """Compile infomation about the target's visibility from the given observers."""
     all_data = {}
+    if target is None:
+        return all_data
 
     for observer in observers:
         data = {}
