@@ -10,6 +10,8 @@ from astropy.time import Time
 
 from gototile.skymap import SkyMap
 
+import numpy as np
+
 import voeventparse as vp
 
 
@@ -28,6 +30,11 @@ ALERT_DICTIONARY = {'XRT_Pos': {'type': 'GRB',
                     }
 
 
+ERROR_DICTONARY = {'Fermi': 3.71,
+                   'SWIFT': 0,
+                   }
+
+
 class Event(object):
     """A simple class to represent a single VOEvent."""
 
@@ -41,44 +48,6 @@ class Event(object):
         # Get key attributes
         self.ivorn = self.voevent.attrib['ivorn']
         self.role = self.voevent.attrib['role']
-
-        # Get event time
-        event_time = vp.convenience.get_event_time_as_utc(self.voevent, index=0)
-        if event_time is None:
-            # Sometimes we might get system test events from the server.
-            # They (annoyingly) don't actually have an event attached, even a fake one,
-            # so don't have a time. Just return here, the handler will ignore it.
-            self.time = None
-            return
-        self.time = Time(event_time)
-
-        # Get event position
-        try:
-            # (RA/DEC)
-            position = vp.get_event_position(self.voevent)
-            self.coord = SkyCoord(ra=position.ra, dec=position.dec, unit=position.units)
-            self.coord_error = Angle(position.err, unit=position.units)
-            self.target = FixedTarget(self.coord)
-
-            # (Galactic)
-            self.gal_lat = self.coord.galactic.b.value
-            galactic_center = SkyCoord(l=0, b=0, unit='deg,deg', frame='galactic')
-            self.gal_dist = self.coord.galactic.separation(galactic_center).value
-        except AttributeError:
-            # Probably a LVC skympap
-            self.coord = None
-            self.coord_error = None
-            self.target = None
-            self.gal_lat = None
-            self.gal_dist = None
-
-        # Get skymap url, if there is one
-        group_params = vp.get_grouped_params(self.voevent)
-        try:
-            self.skymap_url = group_params['bayestar']['skymap_fits']['value']
-        except KeyError:
-            self.skymap_url = None
-        self.skymap = None
 
         if not any([key in self.ivorn for key in ALERT_DICTIONARY]):
             # The event doesn't match any ones we care about
@@ -101,6 +70,52 @@ class Event(object):
             if self.source.upper() != ivorn_source.upper():
                 raise ValueError('Mismatched sources: {} and {}'.format(self.source.upper(),
                                                                         ivorn_source.upper()))
+
+        # Get event time
+        event_time = vp.convenience.get_event_time_as_utc(self.voevent, index=0)
+        if event_time is None:
+            # Sometimes we might get system test events from the server.
+            # They (annoyingly) don't actually have an event attached, even a fake one,
+            # so don't have a time. Just return here, the handler will ignore it.
+            self.time = None
+            return
+        self.time = Time(event_time)
+
+        # Get event position
+        try:
+            # (RA/DEC)
+            position = vp.get_event_position(self.voevent)
+            self.coord = SkyCoord(ra=position.ra, dec=position.dec, unit=position.units)
+            self.target = FixedTarget(self.coord)
+
+            # Error
+            self.coord_error = Angle(position.err, unit=position.units)
+            if self.source in ERROR_DICTONARY:
+                self.systematic_error = Angle(ERROR_DICTONARY[self.source], unit='deg')
+            else:
+                self.systematic_error = Angle(0, unit='deg')
+            self.total_error = Angle(np.sqrt(self.coord_error ** 2 + self.systematic_error ** 2),
+                                     unit='deg')
+
+            # (Galactic)
+            self.gal_lat = self.coord.galactic.b.value
+            galactic_center = SkyCoord(l=0, b=0, unit='deg,deg', frame='galactic')
+            self.gal_dist = self.coord.galactic.separation(galactic_center).value
+        except AttributeError:
+            # Probably a LVC skympap
+            self.coord = None
+            self.coord_error = None
+            self.target = None
+            self.gal_lat = None
+            self.gal_dist = None
+
+        # Get skymap url, if there is one
+        group_params = vp.get_grouped_params(self.voevent)
+        try:
+            self.skymap_url = group_params['bayestar']['skymap_fits']['value']
+        except KeyError:
+            self.skymap_url = None
+        self.skymap = None
 
         # Get the trigger ID, if there is one
         top_params = vp.get_toplevel_params(self.voevent)
@@ -151,6 +166,6 @@ class Event(object):
         else:
             self.skymap = SkyMap.from_position(self.coord.ra.deg,
                                                self.coord.dec.deg,
-                                               self.coord_error.deg,
+                                               self.total_error.deg,
                                                nside)
         return self.skymap
