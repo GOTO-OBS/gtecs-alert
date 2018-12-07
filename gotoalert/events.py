@@ -168,4 +168,9 @@ class Event(object):
                                                self.coord.dec.deg,
                                                self.total_error.deg,
                                                nside)
+
+        # Add some basic info
+        self.skymap.object = self.name
+        self.skymap.objid = self.name
+
         return self.skymap
