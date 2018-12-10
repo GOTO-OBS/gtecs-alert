@@ -24,7 +24,7 @@ def check_event_type(event, log):
     # Get alert name
     if event.type is 'Unknown':
         raise ValueError('Ignoring unrecognised event type: {}'.format(event.ivorn))
-    log.info('Recognised event type: {} ({})'.format(event.base_name, event.type))
+    log.info('Recognised event type: {} ({})'.format(event.notice, event.type))
 
 
 def check_event_position(event, log):

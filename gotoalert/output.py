@@ -75,7 +75,7 @@ def write_html(file_path, event, site_data):
     html_path = os.path.join(file_path, html_file)
     with open(html_path, 'w') as f:
 
-        title = "New transient for {} from {}".format(site_name, event.base_name)
+        title = "New transient for {} from {} notice".format(site_name, event.notice)
         f.write('<!DOCTYPE html><html lang="en"><head>{}</head><body>'.format(title))
 
         page = '{}.{}'.format(event.trigger_id, event.source.lower())

@@ -14,25 +14,42 @@ import numpy as np
 
 import voeventparse as vp
 
-
-ALERT_DICTIONARY = {'XRT_Pos': {'type': 'GRB',
-                                'source': 'SWIFT',
-                                'base_name': 'Swift_XRT_POS'},
-                    'BAT_GRB_Pos': {'type': 'GRB',
-                                    'source': 'SWIFT',
-                                    'base_name': 'Swift_BAT_GRB_POS'},
-                    'GBM_Gnd_Pos': {'type': 'GRB',
-                                    'source': 'Fermi',
-                                    'base_name': 'Fermi_GMB_GND_POS'},
-                    'gwnet': {'type': 'GW',
-                              'source': 'GCN_SENDER',
-                              'base_name': 'LVC_GW'},
-                    }
-
-
-ERROR_DICTONARY = {'Fermi': 3.71,
-                   'SWIFT': 0,
-                   }
+# Define interesting events we want to process
+# Primary key is the VOEvent Packet_Type
+EVENT_DICTONARY = {  # Swift GRBs
+                     61: {'notice': 'SWIFT_BAT_GRB_POS',
+                          'type': 'GRB',
+                          'source': 'Swift',
+                          'systematic_error': 0,
+                          },
+                     67: {'notice': 'SWIFT_XRT_POS',
+                          'type': 'GRB',
+                          'source': 'Swift',
+                          'systematic_error': 0,
+                          },
+                     # Fermi GRBs
+                     112: {'notice': 'FERMI_GBM_GND_POS',
+                           'type': 'GRB',
+                           'source': 'Fermi',
+                           'systematic_error': 3.71,
+                           },
+                     # LVC GW events
+                     150: {'notice': 'LVC_PRELIMINARY',
+                           'type': 'GW',
+                           'source': 'LVC',
+                           'systematic_error': 0,
+                           },
+                     151: {'notice': 'LVC_INITIAL',
+                           'type': 'GW',
+                           'source': 'LVC',
+                           'systematic_error': 0,
+                           },
+                     152: {'notice': 'LVC_UPDATE',
+                           'type': 'GW',
+                           'source': 'LVC',
+                           'systematic_error': 0,
+                           },
+}
 
 
 class Event(object):
@@ -49,27 +66,24 @@ class Event(object):
         self.ivorn = self.voevent.attrib['ivorn']
         self.role = self.voevent.attrib['role']
 
-        if not any([key in self.ivorn for key in ALERT_DICTIONARY]):
+        top_params = vp.get_toplevel_params(self.voevent)
+        self.packet_type = int(top_params['Packet_Type']['value'])
+
+        if self.packet_type not in EVENT_DICTONARY:
             # The event doesn't match any ones we care about
             self.interesting = False
+            self.notice = 'Unknown'
             self.type = 'Unknown'
-            self.source = self.ivorn.split('/')[-1].split('#')[0]
-            self.base_name = 'Unknown'
-
+            self.source = 'Unknown'
+            self.systematic_error = Angle(0, unit='deg')
         else:
-            # The IVORN must match one of the events we're looking for
+            # The packet type must match one of the events we're looking for
             self.interesting = True
-            for key in ALERT_DICTIONARY:
-                if key in self.ivorn:
-                    self.type = ALERT_DICTIONARY[key]['type']
-                    self.source = ALERT_DICTIONARY[key]['source']
-                    self.base_name = ALERT_DICTIONARY[key]['base_name']
-
-            # Sanity check that the sources match
-            ivorn_source = self.ivorn.split('/')[-1].split('#')[0]
-            if self.source.upper() != ivorn_source.upper():
-                raise ValueError('Mismatched sources: {} and {}'.format(self.source.upper(),
-                                                                        ivorn_source.upper()))
+            self.notice = EVENT_DICTONARY[self.packet_type]['notice']
+            self.type = EVENT_DICTONARY[self.packet_type]['type']
+            self.source = EVENT_DICTONARY[self.packet_type]['source']
+            self.systematic_error = Angle(EVENT_DICTONARY[self.packet_type]['systematic_error'],
+                                          unit='deg')
 
         # Get event time
         event_time = vp.convenience.get_event_time_as_utc(self.voevent, index=0)
@@ -90,10 +104,6 @@ class Event(object):
 
             # Error
             self.coord_error = Angle(position.err, unit=position.units)
-            if self.source in ERROR_DICTONARY:
-                self.systematic_error = Angle(ERROR_DICTONARY[self.source], unit='deg')
-            else:
-                self.systematic_error = Angle(0, unit='deg')
             self.total_error = Angle(np.sqrt(self.coord_error ** 2 + self.systematic_error ** 2),
                                      unit='deg')
 
@@ -118,16 +128,15 @@ class Event(object):
         self.skymap = None
 
         # Get the trigger ID, if there is one
-        top_params = vp.get_toplevel_params(self.voevent)
         if self.type == 'GRB':
             self.trigger_id = int(top_params['TrigID']['value'])
-            self.name = '{}_{:.0f}'.format(self.base_name, self.trigger_id)
+            self.name = '{}_{:.0f}'.format(self.notice, self.trigger_id)
         elif self.type == 'GW':
             self.trigger_id = 0
             self.name = top_params['GraceID']['value']
         else:
             self.trigger_id = 0
-            self.name = '{}_{:.0f}'.format(self.base_name, self.trigger_id)
+            self.name = '{}_{:.0f}'.format(self.notice, self.trigger_id)
 
         # Get contact email, if there is one
         try:
@@ -136,7 +145,7 @@ class Event(object):
             self.contact = None
 
     def __repr__(self):
-            return 'Event(name={}, ivorn={})'.format(self.name, self.ivorn)
+            return 'Event(name={}, notice={}, type={})'.format(self.name, self.notice, self.type)
 
     def archive(self, path, log=None):
         """Archive this event in the config directory."""
