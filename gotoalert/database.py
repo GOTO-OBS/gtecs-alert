@@ -143,7 +143,9 @@ def add_tiles(event, grid, log):
             # TODO: Replace surveys and events with grids and surveys
             #       See https://github.com/GOTO-OBS/goto-obsdb/issues/16
             db_tile = db.EventTile(ra=ra.deg, decl=dec.deg,
-                                   probability=float(prob))
+                                   probability=float(prob),
+                                   unobserved_probability=float(prob)  # if trigger fails
+                                   )
             db_tile.event = db_event
 
             # Get default Mpointing infomation and add event name and coords
