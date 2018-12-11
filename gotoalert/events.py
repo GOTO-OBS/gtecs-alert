@@ -172,6 +172,7 @@ class Event(object):
         if self.skymap_url:
             # HealPIX can download from a URL
             self.skymap = SkyMap.from_fits(self.skymap_url)
+            self.skymap.regrade(nside)
         else:
             self.skymap = SkyMap.from_position(self.coord.ra.deg,
                                                self.coord.dec.deg,
