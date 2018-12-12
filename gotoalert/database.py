@@ -137,6 +137,18 @@ def add_tiles(event, grid, log):
             db.add_user(session, DEFAULT_USER, DEFAULT_PW, DEFAULT_NAME)
             userkey = db.get_userkey(session, DEFAULT_USER)
 
+        # Find the Survey matching the grid
+        # (TODO: this is why we need a grid table)
+        db_surveys = session.query(db.Survey).filter(db.Survey.name == grid.name).all()
+        print(db_surveys)#########
+        if not db_surveys:
+            db_survey = None
+        else:
+            # Must have multiple base surveys defined with the same name!
+            # (I don't know why, but we did for ER13)
+            # Just take the latest for now...
+            db_survey = db_surveys[-1]
+
         # Create Event and add it to the database
         db_event = db.Event(ivo=event.ivorn,
                             name=event.name,
@@ -170,16 +182,15 @@ def add_tiles(event, grid, log):
             # TODO: Replace surveys and events with grids and surveys
             #       See https://github.com/GOTO-OBS/goto-obsdb/issues/16
 
-            # Find the Survey and SurveyTile
-            query = session.query(db.Survey, db.SurveyTile)
-            query = query.filter(db.Survey.surveyID == 3,  # TODO: Hardcoded for ER13, sorry!
-                                 db.SurveyTile.name == tilename)
-            result = query.one_or_none()
-            if result:
-                db_tile = result[1]  # [0] is the Survey
-            else:
-                # If we have a limited survey then the db_tile will be None
+            # Find the matching SurveyTile
+            if db_survey is None:
+                # The survey wasn't found, so don't link anything
                 db_tile = None
+            else:
+                query = session.query(db.SurveyTile)
+                query = query.filter(db.SurveyTile.survey == db_survey,
+                                     db.SurveyTile.name == tilename)
+                db_tile = query.one_or_none()
 
             # Create an EventTile
             db_etile = db.EventTile(ra=ra.deg, decl=dec.deg,
