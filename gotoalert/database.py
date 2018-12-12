@@ -167,15 +167,27 @@ def add_tiles(event, grid, log):
         # Create Mpointings for each tile
         mpointings = []
         for tilename, ra, dec, prob in masked_table:
-
-            # Create an EventTile
             # TODO: Replace surveys and events with grids and surveys
             #       See https://github.com/GOTO-OBS/goto-obsdb/issues/16
-            db_tile = db.EventTile(ra=ra.deg, decl=dec.deg,
-                                   probability=float(prob),
-                                   unobserved_probability=float(prob)  # if trigger fails
-                                   )
-            db_tile.event = db_event
+
+            # Find the Survey and SurveyTile
+            query = session.query(db.Survey, db.SurveyTile)
+            query = query.filter(db.Survey.surveyID == 3,  # TODO: Hardcoded for ER13, sorry!
+                                 db.SurveyTile.name == tilename)
+            result = query.one_or_none()
+            if result:
+                db_tile = result[1]  # [0] is the Survey
+            else:
+                # If we have a limited survey then the db_tile will be None
+                db_tile = None
+
+            # Create an EventTile
+            db_etile = db.EventTile(ra=ra.deg, decl=dec.deg,
+                                    probability=float(prob),
+                                    unobserved_probability=float(prob)  # if trigger fails
+                                    )
+            db_etile.event = db_event
+            db_etile.surveyTile = db_tile
 
             # Get default Mpointing infomation and add event name and coords
             if event.type == 'GW':
@@ -197,7 +209,8 @@ def add_tiles(event, grid, log):
             # Create Mpointing
             db_mpointing = db.Mpointing(**mp_data)
             db_mpointing.event = db_event
-            db_mpointing.eventTile = db_tile
+            db_mpointing.eventTile = db_etile
+            db_mpointing.surveyTile = db_tile
 
             # Get default Exposure Set infomation
             if event.type == 'GW':
