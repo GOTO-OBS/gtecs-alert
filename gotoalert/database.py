@@ -40,6 +40,35 @@ DEFAULT_EXPSET = {'numexp': 5,
                   'typeFlag': 'SCIENCE',
                   }
 
+GW_MPOINTING = {'userKey': None,
+                'objectName': None,
+                'ra': None,
+                'decl': None,
+                # auto filled values
+                'minTime': None,
+                'startUTC': None,
+                'stopUTC': None,
+                # put in at rank 6, marked as ToO
+                'ToO': True,
+                'start_rank': 1,
+                # default to 3 pointings, at least hour apart, valid for a day
+                'num_todo': 99,
+                'valid_time': -1,
+                'wait_time': -1,
+                # default values
+                'maxSunAlt': -12,
+                'maxMoon': 'B',
+                'minMoonSep': 10,
+                'minAlt': 30,
+                }
+
+GW_EXPSET = {'numexp': 3,
+             'expTime': 60,
+             'filt': 'L',
+             'binning': 1,
+             'typeFlag': 'SCIENCE',
+             }
+
 
 def add_single_pointing(event, log):
     """Simply add a single pointing at the coordinates given in the alert."""
@@ -149,15 +178,21 @@ def add_tiles(event, grid, log):
             db_tile.event = db_event
 
             # Get default Mpointing infomation and add event name and coords
-            mp_data = DEFAULT_MPOINTING.copy()
+            if event.type == 'GW':
+                mp_data = GW_MPOINTING.copy()
+            else:
+                mp_data = DEFAULT_MPOINTING.copy()
             mp_data['userKey'] = userkey
             mp_data['objectName'] = event.name + '_' + tilename
             mp_data['ra'] = ra.deg
             mp_data['decl'] = dec.deg
 
-            # Time to start immedietly after the event, expire after 4 days if not completed
+            # Time to start immedietly after the event, expire after X days if not completed
             mp_data['startUTC'] = event.time
-            mp_data['stopUTC'] = event.time + 4 * u.day
+            if event.type == 'GW':
+                mp_data['stopUTC'] = None
+            else:
+                mp_data['stopUTC'] = event.time + 4 * u.day
 
             # Create Mpointing
             db_mpointing = db.Mpointing(**mp_data)
@@ -165,7 +200,10 @@ def add_tiles(event, grid, log):
             db_mpointing.eventTile = db_tile
 
             # Get default Exposure Set infomation
-            expsets_data = [DEFAULT_EXPSET.copy()]
+            if event.type == 'GW':
+                expsets_data = [GW_EXPSET.copy()]
+            else:
+                expsets_data = [DEFAULT_EXPSET.copy()]
 
             # Create Exposure Sets
             for expset_data in expsets_data:
