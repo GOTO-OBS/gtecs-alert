@@ -162,7 +162,7 @@ def add_tiles(event, grid, log):
         # Here we select up to the 20 most prbable tiles with contained prob > 1%
         # TODO: Different selection options: by prob, by number etc
         mask = table['prob'] > 0.01
-        masked_table = table[mask][:20]
+        masked_table = table[mask][:50]
 
         # Create Mpointings for each tile
         mpointings = []
