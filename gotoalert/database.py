@@ -292,6 +292,10 @@ def add_tiles(event, grid, log):
             total_exptime = sum([(es['expTime'] + 30) * es['numexp'] for es in expsets_data])
             db_mpointing.minTime = total_exptime
 
+            # Create the first pointing (i.e. preempt the caretaker)
+            db_pointing = db_mpointing.get_next_pointing()
+            db_mpointing.pointings.append(db_pointing)
+
             # Add to list
             mpointings.append(db_mpointing)
 
