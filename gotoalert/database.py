@@ -219,6 +219,9 @@ def add_tiles(event, grid, log):
         skymap = event.get_skymap()
         grid.apply_skymap(skymap)
 
+        # Store grid on the Event
+        event.grid = grid
+
         # Get the table of tiles and contained probability
         table = grid.get_table()
         table.sort('prob')
@@ -229,6 +232,9 @@ def add_tiles(event, grid, log):
         # TODO: Different selection options: by prob, by number etc
         mask = table['prob'] > 0.01
         masked_table = table[mask][:50]
+
+        # Store table on the Event
+        event.tile_table = masked_table
 
         # Create Mpointings for each tile
         mpointings = []
