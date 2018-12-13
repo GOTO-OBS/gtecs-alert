@@ -78,9 +78,9 @@ def write_html(file_path, event, site_data):
         title = "New transient for {} from {} notice".format(site_name, event.notice)
         f.write('<!DOCTYPE html><html lang="en"><head>{}</head><body>'.format(title))
 
-        page = '{}.{}'.format(event.trigger_id, event.source.lower())
+        page = '{}.{}'.format(event.id, event.source.lower())
         f.write('<p>https://gcn.gsfc.nasa.gov/other/{}</p>'.format(page))
-        f.write('<p>Event ID:  {}</p>'.format(event.trigger_id))
+        f.write('<p>Event ID:  {}</p>'.format(event.id))
 
         # Write event time
         event_time = event.time

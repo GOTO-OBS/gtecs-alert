@@ -134,14 +134,12 @@ class Event(object):
 
         # Get the trigger ID, if there is one
         if self.type == 'GRB':
-            self.trigger_id = int(top_params['TrigID']['value'])
-            self.name = '{}_{:.0f}'.format(self.notice, self.trigger_id)
+            self.id = top_params['TrigID']['value']
         elif self.type == 'GW':
-            self.trigger_id = 0
-            self.name = top_params['GraceID']['value']
+            self.id = top_params['GraceID']['value']
         else:
-            self.trigger_id = 0
-            self.name = '{}_{:.0f}'.format(self.notice, self.trigger_id)
+            self.id = '0'
+        self.name = '{}_{}'.format(self.source, self.id)
 
         # Get contact email, if there is one
         try:
@@ -186,6 +184,6 @@ class Event(object):
 
         # Add some basic info
         self.skymap.object = self.name
-        self.skymap.objid = self.name
+        self.skymap.objid = self.id
 
         return self.skymap

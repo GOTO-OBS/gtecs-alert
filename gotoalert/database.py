@@ -78,14 +78,13 @@ def remove_previous_events(event, log):
     """
     with db.open_session() as session:
         # Check the events table for any previous entries of the same event
-        query = session.query(db.Event).filter(db.Event.name == event.name,
+        query = session.query(db.Event).filter(db.Event.name == event.id,
                                                db.Event.source == event.source)
         db_events = query.all()
 
         if not db_events:
             # Nothing to worry about, it's a new event
-            log.info('{} event {} has no previous entry in the database'.format(
-                     event.source, event.name))
+            log.info('Event {} has no previous entry in the database'.format(event.name))
             return
 
         if any([db_event.ivo == event.ivorn for db_event in db_events]):
@@ -137,7 +136,7 @@ def add_single_pointing(event, log):
 
         # Create Event and add it to the database
         db_event = db.Event(ivo=event.ivorn,
-                            name=event.name,
+                            name=event.id,
                             source=event.source,
                             )
         try:
@@ -150,7 +149,7 @@ def add_single_pointing(event, log):
         # Get default Mpointing infomation and add event name and coords
         mp_data = DEFAULT_MPOINTING.copy()
         mp_data['userKey'] = userkey
-        mp_data['objectName'] = event.name
+        mp_data['objectName'] = event.id
         mp_data['ra'] = event.coord.ra.value
         mp_data['decl'] = event.coord.dec.value
 
@@ -206,7 +205,7 @@ def add_tiles(event, grid, log):
 
         # Create Event and add it to the database
         db_event = db.Event(ivo=event.ivorn,
-                            name=event.name,
+                            name=event.id,
                             source=event.source,
                             )
         try:
@@ -261,7 +260,7 @@ def add_tiles(event, grid, log):
             else:
                 mp_data = DEFAULT_MPOINTING.copy()
             mp_data['userKey'] = userkey
-            mp_data['objectName'] = event.name + '_' + tilename
+            mp_data['objectName'] = event.id + '_' + tilename
             mp_data['ra'] = ra.deg
             mp_data['decl'] = dec.deg
 
