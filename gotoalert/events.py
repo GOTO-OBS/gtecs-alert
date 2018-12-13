@@ -33,6 +33,11 @@ EVENT_DICTONARY = {  # Swift GRBs
                            'source': 'Fermi',
                            'systematic_error': 3.71,
                            },
+                     115: {'notice': 'FERMI_GBM_FIN_POS',
+                           'type': 'GRB',
+                           'source': 'Fermi',
+                           'systematic_error': 3.71,  # Might be different
+                           },
                      # LVC GW events
                      150: {'notice': 'LVC_PRELIMINARY',
                            'type': 'GW',
