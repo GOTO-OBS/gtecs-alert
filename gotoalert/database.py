@@ -140,7 +140,6 @@ def add_tiles(event, grid, log):
         # Find the Survey matching the grid
         # (TODO: this is why we need a grid table)
         db_surveys = session.query(db.Survey).filter(db.Survey.name == grid.name).all()
-        print(db_surveys)#########
         if not db_surveys:
             db_survey = None
         else:
