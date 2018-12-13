@@ -70,6 +70,62 @@ GW_EXPSET = {'numexp': 3,
              }
 
 
+def remove_previous_events(event, log):
+    """Check the database Events table to see if there's a previous instance of the event.
+
+    If any are found then any pending pointings and mpointings will be removed from the queue
+    (status set to 'deleted' in the database, not actually dropped).
+    """
+    with db.open_session() as session:
+        # Check the events table for any previous entries of the same event
+        query = session.query(db.Event).filter(db.Event.name == event.name,
+                                               db.Event.source == event.source)
+        db_events = query.all()
+
+        if not db_events:
+            # Nothing to worry about, it's a new event
+            log.info('{} event {} has no previous entry in the database'.format(
+                     event.source, event.name))
+            return
+
+        if any([db_event.ivo == event.ivorn for db_event in db_events]):
+            # Something's wrong, IVORN should be a unique column so we can't add this one
+            raise ValueError('ivorn={} already exists in the database'.format(event.ivorn))
+
+        # So there is (at least one) previous entry for this event
+        for db_event in db_events:
+            # Get any Mpointings for this event
+            # Note both scheduled and unscheduled, but we don't care about completed or expired
+            # or already deleted (if this is the 2nd+ update)
+            query = session.query(db.Mpointing).filter(db.Mpointing.event == db_event,
+                                                       db.Mpointing.status.in_(('scheduled',
+                                                                                'unscheduled')))
+            db_mpointings = query.all()
+
+            # Delete the Mpointings
+            for db_mpointing in db_mpointings:
+                db_mpointing.status = 'deleted'
+
+            # Get any pending pointings related to this event
+            # Note only pending, if one's running we don't want to delete it and we don't care
+            # about finished ones (completed, aborted, interrupted) or expired
+            # or already deleted (if this is the 2nd+ update)
+            query = session.query(db.Pointing).filter(db.Pointing.event == db_event,
+                                                      db.Pointing.status == 'pending')
+            db_pointings = query.all()
+
+            # Delete the Pointings
+            for db_pointing in db_pointings:
+                db_pointing.status = 'deleted'
+
+            # Commit changes
+            session.commit()
+
+            if len(db_mpointings) > 0 or len(db_pointings) > 0:
+                log.info('Deleted {} mpointings and {} pointings from previous event {}'.format(
+                         len(db_mpointings), len(db_pointings), db_event.ivo))
+
+
 def add_single_pointing(event, log):
     """Simply add a single pointing at the coordinates given in the alert."""
     with db.open_session() as session:
@@ -250,18 +306,24 @@ def add_tiles(event, grid, log):
             raise
 
 
-def db_insert(event, log, on_grid=True):
+def db_insert(event, log, delete_old=True, on_grid=True):
     """Insert an event into the ObsDB.
 
-    If on_grid is True given then work out which tiles the event covers using GOTO-tile.
-    If not then just add a single pointing at the event centre.
+    If delete_old is True thenremove any existing (m)pointings assosiated with an event of the
+    same name.
 
-    In the future this will need to alter parameters depending on the event,
-    most obviously the rank but also different filter sets, times between visits and so on.
+    If on_grid is True then work out which tiles the event covers using GOTO-tile.
+    If not then just add a single pointing at the event centre.
     """
     log.info('Inserting event {} into GOTO database'.format(event.name))
 
     try:
+        # First we need to see if there's a previous instance of the same event already in the db
+        # If so, then delete any still pending pointings and mpointings assosiated with the event
+        if delete_old:
+            remove_previous_events(event, log)
+
+        # Then add the new pointings
         if not on_grid:
             # Add a single pointing at the event centre
             add_single_pointing(event, log)
