@@ -21,7 +21,7 @@ DEFAULT_MPOINTING = {'userKey': None,
                      'stopUTC': None,
                      # put in at rank 6, marked as ToO
                      'ToO': True,
-                     'start_rank': 6,
+                     'start_rank': 106,
                      # default to 3 pointings, at least hour apart, valid for a day
                      'num_todo': 3,
                      'valid_time': 24 * 60,
