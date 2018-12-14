@@ -300,6 +300,12 @@ def add_tiles(event, grid, log):
 
             # Create the first pointing (i.e. preempt the caretaker)
             db_pointing = db_mpointing.get_next_pointing()
+
+            # Attach the tiles, because get_next_pointing uses IDs but they don't have them yet!
+            db_pointing.event = db_event
+            db_pointing.eventTile = db_etile
+            db_pointing.surveyTile = db_tile
+
             db_mpointing.pointings.append(db_pointing)
 
             # Add to list
