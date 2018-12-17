@@ -348,7 +348,7 @@ def db_insert(event, log, delete_old=True, on_grid=True):
             #       For now it's hardcoded here
             fov = {'ra': 5.5 * u.deg, 'dec': 2.6 * u.deg}
             overlap = {'ra': 0.1, 'dec': 0.1}
-            grid = SkyGrid(fov, overlap)
+            grid = SkyGrid(fov, overlap, kind='minverlap')
 
             add_tiles(event, grid, log)
         log.info('Database insersion complete')
