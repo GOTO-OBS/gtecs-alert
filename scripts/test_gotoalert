@@ -11,9 +11,11 @@ import pkg_resources
 
 if __name__ == '__main__':
     # used for local testing
-    data_dir = pkg_resources.resource_filename('gotoalert', 'data')
-    testdata_path = os.path.join(data_dir, 'ivo__nasa.gsfc.gcn_SWIFTBAT_GRB_Pos_813449030')
-    with open(testdata_path, "rb") as f:
-        payload = f.read()
-        event = Event(payload)
-        event_handler(event)
+    data_path = pkg_resources.resource_filename('gotoalert', 'data')
+    test_path = os.path.join(data_path, 'tests')
+    for test_file in sorted(os.listdir(test_path)):
+        print('~~~~~~~~~~~~~~~')
+        with open(os.path.join(test_path, test_file), "rb") as f:
+            payload = f.read()
+            event = Event(payload)
+            event_handler(event)

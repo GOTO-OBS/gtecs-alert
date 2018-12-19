@@ -24,17 +24,17 @@ def check_event_type(event, log):
     # Get alert name
     if event.type is 'Unknown':
         raise ValueError('Ignoring unrecognised event type: {}'.format(event.ivorn))
-    log.info('Recognised event type: {} ({})'.format(event.base_name, event.type))
+    log.info('Recognised event type: {} ({})'.format(event.notice, event.type))
 
 
 def check_event_position(event, log):
     """Check if the event position is too close to the galaxy ."""
     # Check galactic latitude
-    if -8 < event.gal_lat < 8:
+    if event.gal_lat and -8 < event.gal_lat < 8:
         raise ValueError('Event too close to the Galactic plane (Lat {:.2f})'.format(event.gal_lat))
 
     # Check distance from galactic center
-    if event.gal_dist < 15:
+    if event.gal_dist and event.gal_dist < 15:
         raise ValueError('Event too close to the Galactic centre (Dist {})'.format(event.gal_dist))
 
     log.info('Event sufficiently far away from the galactic plane')
@@ -77,7 +77,7 @@ def event_handler(event, log=None, write_html=True, send_messages=False):
     # It's an interesting event!
 
     # Add the event into the GOTO observation DB
-    db_insert(event, log)
+    db_insert(event, log, on_grid=True)
 
     # Get observing data for the event at each site
     observers = [goto_north(), goto_south()]

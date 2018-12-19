@@ -75,12 +75,12 @@ def write_html(file_path, event, site_data):
     html_path = os.path.join(file_path, html_file)
     with open(html_path, 'w') as f:
 
-        title = "New transient for {} from {}".format(site_name, event.base_name)
+        title = "New transient for {} from {} notice".format(site_name, event.notice)
         f.write('<!DOCTYPE html><html lang="en"><head>{}</head><body>'.format(title))
 
-        page = '{}.{}'.format(event.trigger_id, event.source.lower())
+        page = '{}.{}'.format(event.id, event.source.lower())
         f.write('<p>https://gcn.gsfc.nasa.gov/other/{}</p>'.format(page))
-        f.write('<p>Event ID:  {}</p>'.format(event.trigger_id))
+        f.write('<p>Event ID:  {}</p>'.format(event.id))
 
         # Write event time
         event_time = event.time
@@ -89,7 +89,7 @@ def write_html(file_path, event, site_data):
         # Write event coords
         f.write('<p>RA:  {:.3f} degrees</p>'.format(event.coord.ra.deg))
         f.write('<p>DEC: {:.3f} degrees</p>'.format(event.coord.dec.deg))
-        f.write('<p>RA, DEC Error:   {:.3f}</p>'.format(event.coord_error))
+        f.write('<p>RA, DEC Error:   {:.3f}</p>'.format(event.coord_error.deg))
 
         # Write event contact
         f.write('<p>Contact: {}</p>'.format(event.contact))
