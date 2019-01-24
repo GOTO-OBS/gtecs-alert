@@ -1,4 +1,4 @@
-"""Setup script for the obsdb package."""
+"""Setup script for the gotoalert package."""
 import glob
 
 from setuptools import setup
