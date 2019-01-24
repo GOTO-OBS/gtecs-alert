@@ -17,7 +17,7 @@ REQUIRES = ['numpy',
 # Get the version string
 __version__ = None
 with open('gotoalert/version.py') as f:
-    version = exec(f.read())
+    exec(f.read())  # Should set __version__
 
 setup(name='gotoalert',
       version=__version__,
