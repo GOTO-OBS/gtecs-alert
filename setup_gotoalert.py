@@ -7,6 +7,8 @@ import shutil
 import sys
 import traceback
 
+from gotoalert import params
+
 import pkg_resources
 
 
@@ -14,19 +16,30 @@ print('~~~~~~~~~~~~~~~~~~~~~~')
 print('Setting up GOTO-alert')
 print('~~~~~~~~~~~~~~~~~~~~~~')
 
+# Check for config file
+if params.CONFIG_FILE_PATH is None:
+    print('ERROR: No config file found, using default config')
+    print('       You need to create a .gotoalert.conf file')
+    sys.exit(1)
+print('Using config file {}/.gotoalert.conf'.format(params.CONFIG_FILE_PATH))
+print('')
+
 # Check HTML path
-HTML_PATH = './www'  # Should be in config file
-print('HTML_PATH is set to: "{}"'.format(HTML_PATH))
+if params.HTML_PATH in ['/path/goes/here/', 'path_not_set', None]:
+    print('ERROR: HTML_PATH not set')
+    print('       You need to edit .gotoalert.conf')
+    sys.exit(1)
+print('HTML_PATH is set to: "{}"'.format(params.HTML_PATH))
 print('')
 
 # Create directories
 try:
-    if not os.path.exists(HTML_PATH):
-        os.mkdir(HTML_PATH)
-    print('Created ', HTML_PATH)
+    if not os.path.exists(params.HTML_PATH):
+        os.mkdir(params.HTML_PATH)
+    print('Created ', params.HTML_PATH)
 
     for direc in ['goto_north_transients', 'goto_south_transients']:
-        subpath = os.path.join(HTML_PATH, direc)
+        subpath = os.path.join(params.HTML_PATH, direc)
         if not os.path.exists(subpath):
             os.mkdir(subpath)
             print('Created ', subpath)
@@ -38,7 +51,7 @@ try:
                 print('Created ', subsubpath)
 except Exception:
     print('ERROR: Failed to create HTML directories')
-    print('       Try creating {} yourself then re-running this script'.format(HTML_PATH))
+    print('       Try creating {} yourself then re-running this script'.format(params.HTML_PATH))
     traceback.print_exc()
     sys.exit(1)
 print('')
@@ -49,11 +62,11 @@ data_dir = pkg_resources.resource_filename('gotoalert', 'data')
 # Copy files to the new directories
 try:
     shutil.copy(os.path.join(data_dir, 'index.html'),
-                os.path.join(HTML_PATH, 'index.html'))
-    print('Created ', os.path.join(HTML_PATH, 'index.html'))
+                os.path.join(params.HTML_PATH, 'index.html'))
+    print('Created ', os.path.join(params.HTML_PATH, 'index.html'))
 
     for direc in ['goto_north_transients', 'goto_south_transients']:
-        subpath = os.path.join(HTML_PATH, direc)
+        subpath = os.path.join(params.HTML_PATH, direc)
         shutil.copy(os.path.join(data_dir, 'index2.html'),
                     os.path.join(subpath, 'index.html'))
         print('Created ', os.path.join(subpath, 'index.html'))
@@ -84,7 +97,7 @@ FIELDNAMES = ['trigger',
 
 try:
     for tel in ['goto_north', 'goto_south']:
-        subpath = os.path.join(HTML_PATH, tel + '_transients')
+        subpath = os.path.join(params.HTML_PATH, tel + '_transients')
         csvfile = os.path.join(subpath, tel + '.csv')
         if not os.path.exists(csvfile):
             with open(csvfile, 'w') as f:

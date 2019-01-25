@@ -5,13 +5,12 @@ import logging
 
 import astropy.units as u
 
+from . import params
 from .comms import send_email, send_slackmessage
 from .database import db_insert
 from .definitions import get_obs_data, goto_north, goto_south
 from .events import Event
 from .output import create_webpages
-
-PATH = "./www"
 
 
 def check_event_type(event, log):
@@ -96,13 +95,13 @@ def event_handler(event, log=None, write_html=True, send_messages=False):
 
         # Create and update web pages
         if write_html:
-            create_webpages(event, obs_data, site_name, web_path=PATH)
+            create_webpages(event, obs_data, site_name, web_path=params.HTML_PATH)
             log.debug('HTML page written for {}'.format(site_name))
 
         # Send messages
         if send_messages:
             file_name = event.name
-            file_path = PATH + "{}_transients/".format(site_name)
+            file_path = params.HTML_PATH + "{}_transients/".format(site_name)
 
             # Send email
             email_subject = "Detection from {}".format(site_name)
