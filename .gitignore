@@ -1,5 +1,7 @@
-# Compiled python files
-*.pyc
+# Python files
+__pycache__/
+*.py[cod]
+*.egg-info/
 
 # Visual Studio Code files
 *.browse*
