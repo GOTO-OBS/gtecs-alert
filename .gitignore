@@ -1,13 +1,13 @@
-#Ignore compiled python files
+# Compiled python files
 *.pyc
 
-#Ignore Visual Studio Code files
+# Visual Studio Code files
 *.browse*
 *.vscode*
 
-#Ignore web directory
+# Web directory
 *www*
 
-#Ignore comet files
+# Comet files
 *comet.log
 *twistd.pid
