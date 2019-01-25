@@ -8,6 +8,7 @@ PACKAGES = ['gotoalert']
 REQUIRES = ['numpy',
             'astropy',
             'astroplan',
+            'astroquery',
             'voevent-parse',
             'pandas',
             'slacker',
