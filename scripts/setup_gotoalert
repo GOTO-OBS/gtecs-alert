@@ -50,15 +50,21 @@ data_dir = pkg_resources.resource_filename('gotoalert', 'data')
 try:
     shutil.copy(os.path.join(data_dir, 'index.html'),
                 os.path.join(HTML_PATH, 'index.html'))
+    print('Created ', os.path.join(HTML_PATH, 'index.html'))
 
     for direc in ['goto_north_transients', 'goto_south_transients']:
         subpath = os.path.join(HTML_PATH, direc)
         shutil.copy(os.path.join(data_dir, 'index2.html'),
                     os.path.join(subpath, 'index.html'))
+        print('Created ', os.path.join(subpath, 'index.html'))
+
         shutil.copy(os.path.join(data_dir, 'recent_ten.html'),
                     os.path.join(subpath, 'recent_ten.html'))
+        print('Created ', os.path.join(subpath, 'recent_ten.html'))
+
         shutil.copy(os.path.join(data_dir, 'template.html'),
                     os.path.join(subpath, 'template.html'))
+        print('Created ', os.path.join(subpath, 'template.html'))
 except Exception:
     print('ERROR: Failed to copy data files to HTML directories')
     traceback.print_exc()
@@ -84,6 +90,7 @@ try:
             with open(csvfile, 'w') as f:
                 writer = csv.DictWriter(f, fieldnames=FIELDNAMES)
                 writer.writeheader()
+            print('Created ', os.path.join(csvfile))
         else:
             with open(csvfile, 'a') as f:
                 writer = csv.DictWriter(f, fieldnames=FIELDNAMES)
