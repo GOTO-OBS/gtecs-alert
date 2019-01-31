@@ -1,17 +1,36 @@
+"""Setup script for the gotoalert package."""
 import glob
 
 from setuptools import setup
 
+PACKAGES = ['gotoalert']
+
+REQUIRES = ['numpy',
+            'astropy',
+            'astroplan',
+            'astroquery',
+            'voevent-parse',
+            'pandas',
+            'slacker',
+            'slackclient',
+            'setuptools',
+            ]
+
+# Get the version string
+__version__ = None
+with open('gotoalert/version.py') as f:
+    exec(f.read())  # Should set __version__
+
 setup(name='gotoalert',
-      version='0.1',
+      version=__version__,
       description='GOTO Alert manager',
       url='http://github.com/GOTO/goto-alert',
-      author='Alex Obradovic',
-      author_email='aobr10@student.monash.edu',
-      packages=['gotoalert'],
+      author='Martin Dyer, Alex Obradovic',
+      author_email='martin.dyer@sheffield.ac.uk',
+      install_requires=REQUIRES,
+      packages=PACKAGES,
       package_data={'': ['data/*', 'data/tests/*']},
-      install_requires=['numpy', 'astropy', 'astroplan', 'voevent-parse',
-                        'slacker', 'slackclient', 'setuptools'],
-      scripts=glob.glob('scripts/*'),
       include_package_data=True,
-      zip_safe=False)
+      scripts=glob.glob('scripts/*'),
+      zip_safe=False,
+      )

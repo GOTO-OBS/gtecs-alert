@@ -1,13 +1,15 @@
-#Ignore compiled python files
-*.pyc
+# Python files
+__pycache__/
+*.py[cod]
+*.egg-info/
 
-#Ignore Visual Studio Code files
+# Visual Studio Code files
 *.browse*
 *.vscode*
 
-#Ignore web directory
+# Web directory
 *www*
 
-#Ignore comet files
+# Comet files
 *comet.log
 *twistd.pid
