@@ -17,7 +17,7 @@ def check_event_type(event, log):
     """Check if the event is something we want to process."""
     # Check role
     log.info('Event is marked as "{}"'.format(event.role))
-    if event.role in ['test', 'utility']:
+    if event.role in params.IGNORE_ROLES:
         raise ValueError('Ignoring {} event'.format(event.role))
 
     # Get alert name
@@ -29,12 +29,12 @@ def check_event_type(event, log):
 def check_event_position(event, log):
     """Check if the event position is too close to the galaxy ."""
     # Check galactic latitude
-    if event.gal_lat and -8 < event.gal_lat < 8:
-        raise ValueError('Event too close to the Galactic plane (Lat {:.2f})'.format(event.gal_lat))
+    if event.gal_lat and abs(event.gal_lat) < params.MIN_GALACTIC_LATITUDE:
+        raise ValueError('Event too close to the galactic plane (Lat {:.2f})'.format(event.gal_lat))
 
     # Check distance from galactic center
-    if event.gal_dist and event.gal_dist < 15:
-        raise ValueError('Event too close to the Galactic centre (Dist {})'.format(event.gal_dist))
+    if event.gal_dist and event.gal_dist < params.MIN_GALACTIC_DISTANCE:
+        raise ValueError('Event too close to the galactic centre (Dist {})'.format(event.gal_dist))
 
     log.info('Event sufficiently far away from the galactic plane')
 
@@ -68,7 +68,14 @@ def event_handler(event, log=None, write_html=True, send_messages=False):
     # Check if it's an event we want to process
     try:
         check_event_type(event, log)
-        check_event_position(event, log)
+    except Exception as err:
+        log.warning(err)
+        return None
+
+    # Check if it's too close to the galaxy
+    try:
+        if params.MIN_GALACTIC_LATITUDE or params.MIN_GALACTIC_DISTANCE:
+            check_event_position(event, log)
     except Exception as err:
         log.warning(err)
         return None

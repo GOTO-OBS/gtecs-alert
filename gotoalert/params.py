@@ -55,3 +55,8 @@ VERSION = __version__
 
 # HTML webpage path
 HTML_PATH = config['HTML_PATH']
+
+# Filter parameters
+IGNORE_ROLES = config['IGNORE_ROLES']
+MIN_GALACTIC_LATITUDE = config['MIN_GALACTIC_LATITUDE']
+MIN_GALACTIC_DISTANCE = config['MIN_GALACTIC_DISTANCE']
