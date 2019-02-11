@@ -83,7 +83,7 @@ def event_handler(event, log=None, write_html=True, send_messages=False):
     # It's an interesting event!
 
     # Add the event into the GOTO observation DB
-    db_insert(event, log, on_grid=True)
+    db_insert(event, log, on_grid=params.ON_GRID)
 
     # Get observing data for the event at each site
     observers = [goto_north(), goto_south()]
