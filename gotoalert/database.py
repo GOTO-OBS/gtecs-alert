@@ -235,7 +235,7 @@ def add_tiles(event, grid, log):
         if params.MIN_TILE_PROB:
             mask = table['prob'] > params.MIN_TILE_PROB
         else:
-            # Still remove super-low probability tiles
+            # Still remove super-low probability tiles (0.01%)
             mask = table['prob'] > 0.0001
         masked_table = table[mask]
 
@@ -245,7 +245,13 @@ def add_tiles(event, grid, log):
             masked_table = masked_table[:params.MAX_TILES]
 
         # Store table on the Event
-        event.tile_table = masked_table
+        event.tile_table = table
+        event.masked_table = masked_table
+
+        # We might have excluded all of our tiles, if so exit
+        if not len(masked_table):
+            log.warning('No tiles passed filtering')
+            return
 
         # Create Mpointings for each tile
         mpointings = []
