@@ -245,8 +245,8 @@ def add_tiles(event, grid, log):
             masked_table = masked_table[:params.MAX_TILES]
 
         # Store table on the Event
-        event.tile_table = table
-        event.masked_table = masked_table
+        event.tile_table = masked_table
+        event.full_table = table
 
         # We might have excluded all of our tiles, if so exit
         if not len(masked_table):
