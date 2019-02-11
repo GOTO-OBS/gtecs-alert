@@ -30,7 +30,7 @@ DEFAULT_MPOINTING = {'userKey': None,
                      'maxSunAlt': -15,
                      'maxMoon': 'B',
                      'minMoonSep': 30,
-                     'minAlt': 40,
+                     'minAlt': 30,
                      }
 
 DEFAULT_EXPSET = {'numexp': 5,
