@@ -7,6 +7,9 @@ from gototile.grid import SkyGrid
 
 import obsdb as db
 
+from . import params
+
+
 DEFAULT_USER = 'goto'
 DEFAULT_PW = 'gotoobs'
 DEFAULT_NAME = 'GOTO automated alerts'
@@ -30,7 +33,7 @@ DEFAULT_MPOINTING = {'userKey': None,
                      'maxSunAlt': -15,
                      'maxMoon': 'B',
                      'minMoonSep': 30,
-                     'minAlt': 40,
+                     'minAlt': 30,
                      }
 
 DEFAULT_EXPSET = {'numexp': 5,
@@ -228,13 +231,27 @@ def add_tiles(event, grid, log):
         table.reverse()
 
         # Mask the table based on tile probs
-        # Here we select up to the 20 most prbable tiles with contained prob > 1%
-        # TODO: Different selection options: by prob, by number etc
-        mask = table['prob'] > 0.01
-        masked_table = table[mask][:50]
+        # TODO: Different selection options for different event types
+        if params.MIN_TILE_PROB:
+            mask = table['prob'] > params.MIN_TILE_PROB
+        else:
+            # Still remove super-low probability tiles (0.01%)
+            mask = table['prob'] > 0.0001
+        masked_table = table[mask]
+
+        # Limit the number of tiles added
+        # TODO: Different limits for different event types
+        if params.MAX_TILES:
+            masked_table = masked_table[:params.MAX_TILES]
 
         # Store table on the Event
         event.tile_table = masked_table
+        event.full_table = table
+
+        # We might have excluded all of our tiles, if so exit
+        if not len(masked_table):
+            log.warning('No tiles passed filtering')
+            return
 
         # Create Mpointings for each tile
         mpointings = []
@@ -275,7 +292,7 @@ def add_tiles(event, grid, log):
             if event.type == 'GW':
                 mp_data['stopUTC'] = None
             else:
-                mp_data['stopUTC'] = event.time + 4 * u.day
+                mp_data['stopUTC'] = event.time + params.VALID_DAYS * u.day
 
             # Create Mpointing
             db_mpointing = db.Mpointing(**mp_data)
@@ -344,10 +361,9 @@ def db_insert(event, log, delete_old=True, on_grid=True):
             add_single_pointing(event, log)
         else:
             # Add a series of on-grid pointings based on a Gaussian skymap
-            # TODO: We should load the grid from the database, but it's not there yet
-            #       For now it's hardcoded here
-            fov = {'ra': 5.5 * u.deg, 'dec': 2.6 * u.deg}
-            overlap = {'ra': 0.1, 'dec': 0.1}
+            # TODO: We should load the grid from the database
+            fov = {'ra': params.GRID_FOV[0] * u.deg, 'dec': params.GRID_FOV[1] * u.deg}
+            overlap = {'ra': params.GRID_OVERLAP[0], 'dec': params.GRID_OVERLAP[1]}
             grid = SkyGrid(fov, overlap, kind='minverlap')
 
             add_tiles(event, grid, log)

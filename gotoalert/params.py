@@ -55,3 +55,16 @@ VERSION = __version__
 
 # HTML webpage path
 HTML_PATH = config['HTML_PATH']
+
+# Filter parameters
+IGNORE_ROLES = config['IGNORE_ROLES']
+MIN_GALACTIC_LATITUDE = config['MIN_GALACTIC_LATITUDE']
+MIN_GALACTIC_DISTANCE = config['MIN_GALACTIC_DISTANCE']
+
+# Database parameters
+ON_GRID = config['ON_GRID']
+GRID_FOV = config['GRID_FOV']
+GRID_OVERLAP = config['GRID_OVERLAP']
+MIN_TILE_PROB = config['MIN_TILE_PROB']
+MAX_TILES = config['MAX_TILES']
+VALID_DAYS = config['VALID_DAYS']
