@@ -17,7 +17,7 @@ DEFAULT_NAME = 'GOTO automated alerts'
 DEFAULT_MPOINTING = {'userKey': None,
                      'objectName': None,
                      'ra': None,
-                     'decl': None,
+                     'dec': None,
                      # auto filled values
                      'minTime': None,
                      'startUTC': None,
@@ -46,7 +46,7 @@ DEFAULT_EXPSET = {'numexp': 5,
 GW_MPOINTING = {'userKey': None,
                 'objectName': None,
                 'ra': None,
-                'decl': None,
+                'dec': None,
                 # auto filled values
                 'minTime': None,
                 'startUTC': None,
@@ -154,7 +154,7 @@ def add_single_pointing(event, log):
         mp_data['userKey'] = userkey
         mp_data['objectName'] = event.name
         mp_data['ra'] = event.coord.ra.value
-        mp_data['decl'] = event.coord.dec.value
+        mp_data['dec'] = event.coord.dec.value
 
         # Time to start immedietly after the event, expire after 4 days if not completed
         mp_data['startUTC'] = event.time
@@ -270,7 +270,7 @@ def add_tiles(event, grid, log):
                 db_tile = query.one_or_none()
 
             # Create an EventTile
-            db_etile = db.EventTile(ra=ra.deg, decl=dec.deg,
+            db_etile = db.EventTile(ra=ra.deg, dec=dec.deg,
                                     probability=float(prob),
                                     unobserved_probability=float(prob)  # if trigger fails
                                     )
@@ -285,7 +285,7 @@ def add_tiles(event, grid, log):
             mp_data['userKey'] = userkey
             mp_data['objectName'] = event.name + '_' + tilename
             mp_data['ra'] = ra.deg
-            mp_data['decl'] = dec.deg
+            mp_data['dec'] = dec.deg
 
             # Time to start immedietly after the event, expire after X days if not completed
             mp_data['startUTC'] = event.time
