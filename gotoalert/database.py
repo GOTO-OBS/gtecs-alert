@@ -14,7 +14,7 @@ DEFAULT_USER = 'goto'
 DEFAULT_PW = 'gotoobs'
 DEFAULT_NAME = 'GOTO automated alerts'
 
-DEFAULT_MPOINTING = {'userKey': None,
+DEFAULT_MPOINTING = {'user_id': None,
                      'objectName': None,
                      'ra': None,
                      'dec': None,
@@ -43,7 +43,7 @@ DEFAULT_EXPSET = {'numexp': 5,
                   'typeFlag': 'SCIENCE',
                   }
 
-GW_MPOINTING = {'userKey': None,
+GW_MPOINTING = {'user_id': None,
                 'objectName': None,
                 'ra': None,
                 'dec': None,
@@ -132,10 +132,10 @@ def add_single_pointing(event, log):
     """Simply add a single pointing at the coordinates given in the alert."""
     with db.open_session() as session:
         try:
-            userkey = db.get_userkey(session, DEFAULT_USER)
+            user_id = db.get_user_id(session, DEFAULT_USER)
         except Exception:
             db.add_user(session, DEFAULT_USER, DEFAULT_PW, DEFAULT_NAME)
-            userkey = db.get_userkey(session, DEFAULT_USER)
+            user_id = db.get_user_id(session, DEFAULT_USER)
 
         # Create Event and add it to the database
         db_event = db.Event(ivo=event.ivorn,
@@ -151,7 +151,7 @@ def add_single_pointing(event, log):
 
         # Get default Mpointing infomation and add event name and coords
         mp_data = DEFAULT_MPOINTING.copy()
-        mp_data['userKey'] = userkey
+        mp_data['user_id'] = user_id
         mp_data['objectName'] = event.name
         mp_data['ra'] = event.coord.ra.value
         mp_data['dec'] = event.coord.dec.value
@@ -190,10 +190,10 @@ def add_tiles(event, grid, log):
     """Use GOTO-tile to add pointings based on the alert."""
     with db.open_session() as session:
         try:
-            userkey = db.get_userkey(session, DEFAULT_USER)
+            user_id = db.get_user_id(session, DEFAULT_USER)
         except Exception:
             db.add_user(session, DEFAULT_USER, DEFAULT_PW, DEFAULT_NAME)
-            userkey = db.get_userkey(session, DEFAULT_USER)
+            user_id = db.get_user_id(session, DEFAULT_USER)
 
         # Find the Survey matching the grid
         # (TODO: this is why we need a grid table)
@@ -282,7 +282,7 @@ def add_tiles(event, grid, log):
                 mp_data = GW_MPOINTING.copy()
             else:
                 mp_data = DEFAULT_MPOINTING.copy()
-            mp_data['userKey'] = userkey
+            mp_data['user_id'] = user_id
             mp_data['objectName'] = event.name + '_' + tilename
             mp_data['ra'] = ra.deg
             mp_data['dec'] = dec.deg
