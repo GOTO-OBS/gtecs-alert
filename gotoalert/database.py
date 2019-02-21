@@ -195,7 +195,7 @@ def add_tiles(event, log):
             db.add_user(session, DEFAULT_USER, DEFAULT_PW, DEFAULT_NAME)
             user_id = db.get_user_id(session, DEFAULT_USER)
 
-        # Find the surrent Grid in the database
+        # Find the current Grid in the database
         db_grids = session.query(db.Grid).all()
         if not db_grids:
             raise ValueError('No defined grids found!')
