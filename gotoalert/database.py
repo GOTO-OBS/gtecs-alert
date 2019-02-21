@@ -90,7 +90,7 @@ def remove_previous_events(event, log):
             log.info('Event {} has no previous entry in the database'.format(event.name))
             return
 
-        if any([db_event.ivo == event.ivorn for db_event in db_events]):
+        if any([db_event.ivorn == event.ivorn for db_event in db_events]):
             # Something's wrong, IVORN should be a unique column so we can't add this one
             raise ValueError('ivorn={} already exists in the database'.format(event.ivorn))
 
@@ -125,7 +125,7 @@ def remove_previous_events(event, log):
 
             if len(db_mpointings) > 0 or len(db_pointings) > 0:
                 log.info('Deleted {} mpointings and {} pointings from previous event {}'.format(
-                         len(db_mpointings), len(db_pointings), db_event.ivo))
+                         len(db_mpointings), len(db_pointings), db_event.ivorn))
 
 
 def add_single_pointing(event, log):
@@ -138,7 +138,7 @@ def add_single_pointing(event, log):
             user_id = db.get_user_id(session, DEFAULT_USER)
 
         # Create Event and add it to the database
-        db_event = db.Event(ivo=event.ivorn,
+        db_event = db.Event(ivorn=event.ivorn,
                             name=event.name,
                             source=event.source,
                             )
@@ -207,7 +207,7 @@ def add_tiles(event, grid, log):
             db_survey = db_surveys[-1]
 
         # Create Event and add it to the database
-        db_event = db.Event(ivo=event.ivorn,
+        db_event = db.Event(ivorn=event.ivorn,
                             name=event.name,
                             source=event.source,
                             )
