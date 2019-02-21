@@ -71,8 +71,13 @@ class Event(object):
         self.ivorn = self.voevent.attrib['ivorn']
         self.role = self.voevent.attrib['role']
 
-        top_params = vp.get_toplevel_params(self.voevent)
-        self.packet_type = int(top_params['Packet_Type']['value'])
+        # Get packet type
+        try:
+            top_params = vp.get_toplevel_params(self.voevent)
+            self.packet_type = int(top_params['Packet_Type']['value'])
+        except Exception:
+            # Some test events don't have packet types
+            return
 
         if self.packet_type not in EVENT_DICTONARY:
             # The event doesn't match any ones we care about
