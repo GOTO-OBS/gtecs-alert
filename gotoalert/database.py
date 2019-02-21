@@ -186,7 +186,7 @@ def add_single_pointing(event, log):
             raise
 
 
-def add_tiles(event, grid, log):
+def add_tiles(event, log):
     """Use GOTO-tile to add pointings based on the alert."""
     with db.open_session() as session:
         try:
@@ -195,28 +195,18 @@ def add_tiles(event, grid, log):
             db.add_user(session, DEFAULT_USER, DEFAULT_PW, DEFAULT_NAME)
             user_id = db.get_user_id(session, DEFAULT_USER)
 
-        # Find the Survey matching the grid
-        # (TODO: this is why we need a grid table)
-        db_surveys = session.query(db.Survey).filter(db.Survey.name == grid.name).all()
-        if not db_surveys:
-            db_survey = None
+        # Find the surrent Grid in the database
+        db_grids = session.query(db.Grid).all()
+        if not db_grids:
+            raise ValueError('No defined grids found!')
         else:
-            # Must have multiple base surveys defined with the same name!
-            # (I don't know why, but we did for ER13)
-            # Just take the latest for now...
-            db_survey = db_surveys[-1]
+            # Might have multiple grids defined, just take the latest...
+            db_grid = db_grids[-1]
 
-        # Create Event and add it to the database
-        db_event = db.Event(ivorn=event.ivorn,
-                            name=event.name,
-                            source=event.source,
-                            )
-        try:
-            session.add(db_event)
-            session.commit()
-        except Exception as err:
-            session.rollback()
-            raise
+        # Create a SkyGrid from the database Grid
+        fov = {'ra': db_grid.ra_fov * u.deg, 'dec': db_grid.dec_fov * u.deg}
+        overlap = {'ra': db_grid.ra_overlap, 'dec': db_grid.dec_overlap}
+        grid = SkyGrid(fov, overlap, kind=db_grid.algorithm)
 
         # Get the Event skymap and apply it to the grid
         skymap = event.get_skymap()
@@ -253,39 +243,49 @@ def add_tiles(event, grid, log):
             log.warning('No tiles passed filtering')
             return
 
+        # Create Event and add it to the database
+        db_event = db.Event(name=event.name,
+                            ivorn=event.ivorn,
+                            source=event.source,
+                            event_type=event.type,
+                            time=event.time,
+                            skymap=event.skymap_url,
+                            )
+        try:
+            session.add(db_event)
+            session.commit()
+        except Exception as err:
+            session.rollback()
+            raise
+
+        # Create Survey and add it to the database
+        db_survey = db.Survey(name=event.name)
+        db_survey.grid = db_grid
+        db_survey.event = db_event
+        session.add(db_survey)
+
         # Create Mpointings for each tile
+        # NB no coords, we get them from the GridTile
         mpointings = []
-        for tilename, ra, dec, prob in masked_table:
-            # TODO: Replace surveys and events with grids and surveys
-            #       See https://github.com/GOTO-OBS/goto-obsdb/issues/16
+        for tilename, _, _, prob in masked_table:
+            # Find the matching GridTile
+            query = session.query(db.GridTile)
+            query = query.filter(db.GridTile.grid == db_grid,
+                                 db.GridTile.name == tilename)
+            db_grid_tile = query.one_or_none()
 
-            # Find the matching SurveyTile
-            if db_survey is None:
-                # The survey wasn't found, so don't link anything
-                db_tile = None
-            else:
-                query = session.query(db.SurveyTile)
-                query = query.filter(db.SurveyTile.survey == db_survey,
-                                     db.SurveyTile.name == tilename)
-                db_tile = query.one_or_none()
+            # Create a SurveyTile
+            db_survey_tile = db.SurveyTile(weight=float(prob))
+            db_survey_tile.survey = db_survey
+            db_survey_tile.grid_tile = db_grid_tile
 
-            # Create an EventTile
-            db_etile = db.EventTile(ra=ra.deg, dec=dec.deg,
-                                    probability=float(prob),
-                                    unobserved_probability=float(prob)  # if trigger fails
-                                    )
-            db_etile.event = db_event
-            db_etile.survey_tile = db_tile
-
-            # Get default Mpointing infomation and add event name and coords
+            # Get default Mpointing infomation and add event name
             if event.type == 'GW':
                 mp_data = GW_MPOINTING.copy()
             else:
                 mp_data = DEFAULT_MPOINTING.copy()
             mp_data['user_id'] = user_id
             mp_data['object_name'] = event.name + '_' + tilename
-            mp_data['ra'] = ra.deg
-            mp_data['dec'] = dec.deg
 
             # Time to start immedietly after the event, expire after X days if not completed
             mp_data['start_time'] = event.time
@@ -296,9 +296,9 @@ def add_tiles(event, grid, log):
 
             # Create Mpointing
             db_mpointing = db.Mpointing(**mp_data)
+            db_mpointing.grid_tile = db_grid_tile
+            db_mpointing.survey_tile = db_survey_tile
             db_mpointing.event = db_event
-            db_mpointing.event_tile = db_etile
-            db_mpointing.survey_tile = db_tile
 
             # Get default Exposure Set infomation
             if event.type == 'GW':
@@ -319,9 +319,9 @@ def add_tiles(event, grid, log):
             db_pointing = db_mpointing.get_next_pointing()
 
             # Attach the tiles, because get_next_pointing uses IDs but they don't have them yet!
+            db_pointing.grid_tile = db_grid_tile
+            db_pointing.survey_tile = db_survey_tile
             db_pointing.event = db_event
-            db_pointing.event_tile = db_etile
-            db_pointing.survey_tile = db_tile
 
             db_mpointing.pointings.append(db_pointing)
 
@@ -361,12 +361,8 @@ def db_insert(event, log, delete_old=True, on_grid=True):
             add_single_pointing(event, log)
         else:
             # Add a series of on-grid pointings based on a Gaussian skymap
-            # TODO: We should load the grid from the database
-            fov = {'ra': params.GRID_FOV[0] * u.deg, 'dec': params.GRID_FOV[1] * u.deg}
-            overlap = {'ra': params.GRID_OVERLAP[0], 'dec': params.GRID_OVERLAP[1]}
-            grid = SkyGrid(fov, overlap, kind='minverlap')
-
-            add_tiles(event, grid, log)
+            # We load the latest all-sky grid from the database
+            add_tiles(event, log)
         log.info('Database insersion complete')
 
     except Exception as err:
