@@ -14,8 +14,7 @@ DEFAULT_USER = 'goto'
 DEFAULT_PW = 'gotoobs'
 DEFAULT_NAME = 'GOTO automated alerts'
 
-DEFAULT_MPOINTING = {'user_id': None,
-                     'object_name': None,
+DEFAULT_MPOINTING = {'object_name': None,
                      'ra': None,
                      'dec': None,
                      # auto filled values
@@ -43,8 +42,7 @@ DEFAULT_EXPSET = {'num_exp': 5,
                   'imgtype': 'SCIENCE',
                   }
 
-GW_MPOINTING = {'user_id': None,
-                'object_name': None,
+GW_MPOINTING = {'object_name': None,
                 'ra': None,
                 'dec': None,
                 # auto filled values
@@ -131,11 +129,11 @@ def remove_previous_events(event, log):
 def add_single_pointing(event, log):
     """Simply add a single pointing at the coordinates given in the alert."""
     with db.open_session() as session:
+        # Get the User, or make it if it doesn't exist
         try:
-            user_id = db.get_user_id(session, DEFAULT_USER)
-        except Exception:
-            db.add_user(session, DEFAULT_USER, DEFAULT_PW, DEFAULT_NAME)
-            user_id = db.get_user_id(session, DEFAULT_USER)
+            user = db.get_user(session, username=DEFAULT_USER)
+        except ValueError:
+            user = db.User(DEFAULT_USER, DEFAULT_PW, DEFAULT_NAME)
 
         # Create Event and add it to the database
         db_event = db.Event(ivorn=event.ivorn,
@@ -151,7 +149,6 @@ def add_single_pointing(event, log):
 
         # Get default Mpointing infomation and add event name and coords
         mp_data = DEFAULT_MPOINTING.copy()
-        mp_data['user_id'] = user_id
         mp_data['object_name'] = event.name
         mp_data['ra'] = event.coord.ra.value
         mp_data['dec'] = event.coord.dec.value
@@ -161,7 +158,7 @@ def add_single_pointing(event, log):
         mp_data['stop_time'] = event.time + 4 * u.day
 
         # Create Mpointing
-        db_mpointing = db.Mpointing(**mp_data)
+        db_mpointing = db.Mpointing(**mp_data, user=user)
         db_mpointing.event = db_event
 
         # Get default Exposure Set infomation
@@ -189,11 +186,11 @@ def add_single_pointing(event, log):
 def add_tiles(event, log):
     """Use GOTO-tile to add pointings based on the alert."""
     with db.open_session() as session:
+        # Get the User, or make it if it doesn't exist
         try:
-            user_id = db.get_user_id(session, DEFAULT_USER)
-        except Exception:
-            db.add_user(session, DEFAULT_USER, DEFAULT_PW, DEFAULT_NAME)
-            user_id = db.get_user_id(session, DEFAULT_USER)
+            user = db.get_user(session, username=DEFAULT_USER)
+        except ValueError:
+            user = db.User(DEFAULT_USER, DEFAULT_PW, DEFAULT_NAME)
 
         # Find the current Grid in the database
         db_grids = session.query(db.Grid).all()
@@ -284,7 +281,6 @@ def add_tiles(event, log):
                 mp_data = GW_MPOINTING.copy()
             else:
                 mp_data = DEFAULT_MPOINTING.copy()
-            mp_data['user_id'] = user_id
             mp_data['object_name'] = event.name + '_' + tilename
 
             # Time to start immedietly after the event, expire after X days if not completed
@@ -295,7 +291,7 @@ def add_tiles(event, log):
                 mp_data['stop_time'] = event.time + params.VALID_DAYS * u.day
 
             # Create Mpointing
-            db_mpointing = db.Mpointing(**mp_data)
+            db_mpointing = db.Mpointing(**mp_data, user=user)
             db_mpointing.grid_tile = db_grid_tile
             db_mpointing.survey_tile = db_survey_tile
             db_mpointing.event = db_event
