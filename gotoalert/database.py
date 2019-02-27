@@ -14,62 +14,60 @@ DEFAULT_USER = 'goto'
 DEFAULT_PW = 'gotoobs'
 DEFAULT_NAME = 'GOTO automated alerts'
 
-DEFAULT_MPOINTING = {'userKey': None,
-                     'objectName': None,
+DEFAULT_MPOINTING = {'object_name': None,
                      'ra': None,
-                     'decl': None,
+                     'dec': None,
                      # auto filled values
-                     'minTime': None,
-                     'startUTC': None,
-                     'stopUTC': None,
+                     'min_time': None,
+                     'start_time': None,
+                     'stop_time': None,
                      # put in at rank 6, marked as ToO
-                     'ToO': True,
+                     'too': True,
                      'start_rank': 106,
                      # default to 3 pointings, at least hour apart, valid for a day
                      'num_todo': 3,
                      'valid_time': 24 * 60,
                      'wait_time': 60,
                      # default values
-                     'maxSunAlt': -15,
-                     'maxMoon': 'B',
-                     'minMoonSep': 30,
-                     'minAlt': 30,
+                     'max_sunalt': -15,
+                     'max_moon': 'B',
+                     'min_moonsep': 30,
+                     'min_alt': 30,
                      }
 
-DEFAULT_EXPSET = {'numexp': 5,
-                  'expTime': 120,
+DEFAULT_EXPSET = {'num_exp': 5,
+                  'exptime': 120,
                   'filt': 'L',
                   'binning': 1,
-                  'typeFlag': 'SCIENCE',
+                  'imgtype': 'SCIENCE',
                   }
 
-GW_MPOINTING = {'userKey': None,
-                'objectName': None,
+GW_MPOINTING = {'object_name': None,
                 'ra': None,
-                'decl': None,
+                'dec': None,
                 # auto filled values
-                'minTime': None,
-                'startUTC': None,
-                'stopUTC': None,
+                'min_time': None,
+                'start_time': None,
+                'stop_time': None,
                 # put in at rank 6, marked as ToO
-                'ToO': True,
+                'too': True,
                 'start_rank': 1,
                 # default to 3 pointings, at least hour apart, valid for a day
                 'num_todo': 99,
                 'valid_time': -1,
                 'wait_time': -1,
                 # default values
-                'maxSunAlt': -12,
-                'maxMoon': 'B',
-                'minMoonSep': 10,
-                'minAlt': 30,
+                'max_sunalt': -12,
+                'max_moon': 'B',
+                'min_moonsep': 10,
+                'min_alt': 30,
                 }
 
-GW_EXPSET = {'numexp': 3,
-             'expTime': 60,
+GW_EXPSET = {'num_exp': 3,
+             'exptime': 60,
              'filt': 'L',
              'binning': 1,
-             'typeFlag': 'SCIENCE',
+             'imgtype': 'SCIENCE',
              }
 
 
@@ -90,7 +88,7 @@ def remove_previous_events(event, log):
             log.info('Event {} has no previous entry in the database'.format(event.name))
             return
 
-        if any([db_event.ivo == event.ivorn for db_event in db_events]):
+        if any([db_event.ivorn == event.ivorn for db_event in db_events]):
             # Something's wrong, IVORN should be a unique column so we can't add this one
             raise ValueError('ivorn={} already exists in the database'.format(event.ivorn))
 
@@ -125,20 +123,20 @@ def remove_previous_events(event, log):
 
             if len(db_mpointings) > 0 or len(db_pointings) > 0:
                 log.info('Deleted {} mpointings and {} pointings from previous event {}'.format(
-                         len(db_mpointings), len(db_pointings), db_event.ivo))
+                         len(db_mpointings), len(db_pointings), db_event.ivorn))
 
 
 def add_single_pointing(event, log):
     """Simply add a single pointing at the coordinates given in the alert."""
     with db.open_session() as session:
+        # Get the User, or make it if it doesn't exist
         try:
-            userkey = db.get_userkey(session, DEFAULT_USER)
-        except Exception:
-            db.add_user(session, DEFAULT_USER, DEFAULT_PW, DEFAULT_NAME)
-            userkey = db.get_userkey(session, DEFAULT_USER)
+            user = db.get_user(session, username=DEFAULT_USER)
+        except ValueError:
+            user = db.User(DEFAULT_USER, DEFAULT_PW, DEFAULT_NAME)
 
         # Create Event and add it to the database
-        db_event = db.Event(ivo=event.ivorn,
+        db_event = db.Event(ivorn=event.ivorn,
                             name=event.name,
                             source=event.source,
                             )
@@ -151,17 +149,16 @@ def add_single_pointing(event, log):
 
         # Get default Mpointing infomation and add event name and coords
         mp_data = DEFAULT_MPOINTING.copy()
-        mp_data['userKey'] = userkey
-        mp_data['objectName'] = event.name
+        mp_data['object_name'] = event.name
         mp_data['ra'] = event.coord.ra.value
-        mp_data['decl'] = event.coord.dec.value
+        mp_data['dec'] = event.coord.dec.value
 
         # Time to start immedietly after the event, expire after 4 days if not completed
-        mp_data['startUTC'] = event.time
-        mp_data['stopUTC'] = event.time + 4 * u.day
+        mp_data['start_time'] = event.time
+        mp_data['stop_time'] = event.time + 4 * u.day
 
         # Create Mpointing
-        db_mpointing = db.Mpointing(**mp_data)
+        db_mpointing = db.Mpointing(**mp_data, user=user)
         db_mpointing.event = db_event
 
         # Get default Exposure Set infomation
@@ -173,8 +170,8 @@ def add_single_pointing(event, log):
             db_mpointing.exposure_sets.append(db_exposure_set)
 
         # Update mintime
-        total_exptime = sum([(es['expTime'] + 30) * es['numexp'] for es in expsets_data])
-        db_mpointing.minTime = total_exptime
+        total_exptime = sum([(es['exptime'] + 30) * es['num_exp'] for es in expsets_data])
+        db_mpointing.min_time = total_exptime
 
         # Add Mpointing to the database
         try:
@@ -186,37 +183,27 @@ def add_single_pointing(event, log):
             raise
 
 
-def add_tiles(event, grid, log):
+def add_tiles(event, log):
     """Use GOTO-tile to add pointings based on the alert."""
     with db.open_session() as session:
+        # Get the User, or make it if it doesn't exist
         try:
-            userkey = db.get_userkey(session, DEFAULT_USER)
-        except Exception:
-            db.add_user(session, DEFAULT_USER, DEFAULT_PW, DEFAULT_NAME)
-            userkey = db.get_userkey(session, DEFAULT_USER)
+            user = db.get_user(session, username=DEFAULT_USER)
+        except ValueError:
+            user = db.User(DEFAULT_USER, DEFAULT_PW, DEFAULT_NAME)
 
-        # Find the Survey matching the grid
-        # (TODO: this is why we need a grid table)
-        db_surveys = session.query(db.Survey).filter(db.Survey.name == grid.name).all()
-        if not db_surveys:
-            db_survey = None
+        # Find the current Grid in the database
+        db_grids = session.query(db.Grid).all()
+        if not db_grids:
+            raise ValueError('No defined grids found!')
         else:
-            # Must have multiple base surveys defined with the same name!
-            # (I don't know why, but we did for ER13)
-            # Just take the latest for now...
-            db_survey = db_surveys[-1]
+            # Might have multiple grids defined, just take the latest...
+            db_grid = db_grids[-1]
 
-        # Create Event and add it to the database
-        db_event = db.Event(ivo=event.ivorn,
-                            name=event.name,
-                            source=event.source,
-                            )
-        try:
-            session.add(db_event)
-            session.commit()
-        except Exception as err:
-            session.rollback()
-            raise
+        # Create a SkyGrid from the database Grid
+        fov = {'ra': db_grid.ra_fov * u.deg, 'dec': db_grid.dec_fov * u.deg}
+        overlap = {'ra': db_grid.ra_overlap, 'dec': db_grid.dec_overlap}
+        grid = SkyGrid(fov, overlap, kind=db_grid.algorithm)
 
         # Get the Event skymap and apply it to the grid
         skymap = event.get_skymap()
@@ -253,52 +240,61 @@ def add_tiles(event, grid, log):
             log.warning('No tiles passed filtering')
             return
 
+        # Create Event and add it to the database
+        db_event = db.Event(name=event.name,
+                            ivorn=event.ivorn,
+                            source=event.source,
+                            event_type=event.type,
+                            time=event.time,
+                            skymap=event.skymap_url,
+                            )
+        try:
+            session.add(db_event)
+            session.commit()
+        except Exception as err:
+            session.rollback()
+            raise
+
+        # Create Survey and add it to the database
+        db_survey = db.Survey(name=event.name)
+        db_survey.grid = db_grid
+        db_survey.event = db_event
+        session.add(db_survey)
+
         # Create Mpointings for each tile
+        # NB no coords, we get them from the GridTile
         mpointings = []
-        for tilename, ra, dec, prob in masked_table:
-            # TODO: Replace surveys and events with grids and surveys
-            #       See https://github.com/GOTO-OBS/goto-obsdb/issues/16
+        for tilename, _, _, prob in masked_table:
+            # Find the matching GridTile
+            query = session.query(db.GridTile)
+            query = query.filter(db.GridTile.grid == db_grid,
+                                 db.GridTile.name == tilename)
+            db_grid_tile = query.one_or_none()
 
-            # Find the matching SurveyTile
-            if db_survey is None:
-                # The survey wasn't found, so don't link anything
-                db_tile = None
-            else:
-                query = session.query(db.SurveyTile)
-                query = query.filter(db.SurveyTile.survey == db_survey,
-                                     db.SurveyTile.name == tilename)
-                db_tile = query.one_or_none()
+            # Create a SurveyTile
+            db_survey_tile = db.SurveyTile(weight=float(prob))
+            db_survey_tile.survey = db_survey
+            db_survey_tile.grid_tile = db_grid_tile
 
-            # Create an EventTile
-            db_etile = db.EventTile(ra=ra.deg, decl=dec.deg,
-                                    probability=float(prob),
-                                    unobserved_probability=float(prob)  # if trigger fails
-                                    )
-            db_etile.event = db_event
-            db_etile.surveyTile = db_tile
-
-            # Get default Mpointing infomation and add event name and coords
+            # Get default Mpointing infomation and add event name
             if event.type == 'GW':
                 mp_data = GW_MPOINTING.copy()
             else:
                 mp_data = DEFAULT_MPOINTING.copy()
-            mp_data['userKey'] = userkey
-            mp_data['objectName'] = event.name + '_' + tilename
-            mp_data['ra'] = ra.deg
-            mp_data['decl'] = dec.deg
+            mp_data['object_name'] = event.name + '_' + tilename
 
             # Time to start immedietly after the event, expire after X days if not completed
-            mp_data['startUTC'] = event.time
+            mp_data['start_time'] = event.time
             if event.type == 'GW':
-                mp_data['stopUTC'] = None
+                mp_data['stop_time'] = None
             else:
-                mp_data['stopUTC'] = event.time + params.VALID_DAYS * u.day
+                mp_data['stop_time'] = event.time + params.VALID_DAYS * u.day
 
             # Create Mpointing
-            db_mpointing = db.Mpointing(**mp_data)
+            db_mpointing = db.Mpointing(**mp_data, user=user)
+            db_mpointing.grid_tile = db_grid_tile
+            db_mpointing.survey_tile = db_survey_tile
             db_mpointing.event = db_event
-            db_mpointing.eventTile = db_etile
-            db_mpointing.surveyTile = db_tile
 
             # Get default Exposure Set infomation
             if event.type == 'GW':
@@ -312,16 +308,16 @@ def add_tiles(event, grid, log):
                 db_mpointing.exposure_sets.append(db_exposure_set)
 
             # Update mintime
-            total_exptime = sum([(es['expTime'] + 30) * es['numexp'] for es in expsets_data])
-            db_mpointing.minTime = total_exptime
+            total_exptime = sum([(es['exptime'] + 30) * es['num_exp'] for es in expsets_data])
+            db_mpointing.min_time = total_exptime
 
             # Create the first pointing (i.e. preempt the caretaker)
             db_pointing = db_mpointing.get_next_pointing()
 
             # Attach the tiles, because get_next_pointing uses IDs but they don't have them yet!
+            db_pointing.grid_tile = db_grid_tile
+            db_pointing.survey_tile = db_survey_tile
             db_pointing.event = db_event
-            db_pointing.eventTile = db_etile
-            db_pointing.surveyTile = db_tile
 
             db_mpointing.pointings.append(db_pointing)
 
@@ -361,12 +357,8 @@ def db_insert(event, log, delete_old=True, on_grid=True):
             add_single_pointing(event, log)
         else:
             # Add a series of on-grid pointings based on a Gaussian skymap
-            # TODO: We should load the grid from the database
-            fov = {'ra': params.GRID_FOV[0] * u.deg, 'dec': params.GRID_FOV[1] * u.deg}
-            overlap = {'ra': params.GRID_OVERLAP[0], 'dec': params.GRID_OVERLAP[1]}
-            grid = SkyGrid(fov, overlap, kind='minverlap')
-
-            add_tiles(event, grid, log)
+            # We load the latest all-sky grid from the database
+            add_tiles(event, log)
         log.info('Database insersion complete')
 
     except Exception as err:

@@ -63,8 +63,6 @@ MIN_GALACTIC_DISTANCE = config['MIN_GALACTIC_DISTANCE']
 
 # Database parameters
 ON_GRID = config['ON_GRID']
-GRID_FOV = config['GRID_FOV']
-GRID_OVERLAP = config['GRID_OVERLAP']
 MIN_TILE_PROB = config['MIN_TILE_PROB']
 MAX_TILES = config['MAX_TILES']
 VALID_DAYS = config['VALID_DAYS']
