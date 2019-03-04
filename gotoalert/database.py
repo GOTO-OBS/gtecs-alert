@@ -35,8 +35,8 @@ DEFAULT_MPOINTING = {'object_name': None,
                      'min_alt': 30,
                      }
 
-DEFAULT_EXPSET = {'num_exp': 5,
-                  'exptime': 120,
+DEFAULT_EXPSET = {'num_exp': 3,
+                  'exptime': 60,
                   'filt': 'L',
                   'binning': 1,
                   'imgtype': 'SCIENCE',
