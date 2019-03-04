@@ -218,8 +218,9 @@ def add_tiles(event, log):
         table.reverse()
 
         # Mask the table based on tile probs
-        # TODO: Different selection options for different event types
-        if params.MIN_TILE_PROB:
+        if event.type == 'GW':
+            mask = table['prob'] > 0.01
+        elif params.MIN_TILE_PROB:
             mask = table['prob'] > params.MIN_TILE_PROB
         else:
             # Still remove super-low probability tiles (0.01%)
@@ -227,8 +228,9 @@ def add_tiles(event, log):
         masked_table = table[mask]
 
         # Limit the number of tiles added
-        # TODO: Different limits for different event types
-        if params.MAX_TILES:
+        if event.type == 'GW':
+            masked_table = masked_table[:50]
+        elif params.MAX_TILES:
             masked_table = masked_table[:params.MAX_TILES]
 
         # Store table on the Event
