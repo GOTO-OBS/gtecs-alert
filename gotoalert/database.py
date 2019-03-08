@@ -122,7 +122,7 @@ def remove_previous_events(event, log):
             session.commit()
 
             if len(db_mpointings) > 0 or len(db_pointings) > 0:
-                log.info('Deleted {} mpointings and {} pointings from previous event {}'.format(
+                log.info('Deleted {} Mpointings and {} Pointings from previous Event {}'.format(
                          len(db_mpointings), len(db_pointings), db_event.ivorn))
 
 
@@ -195,10 +195,11 @@ def add_tiles(event, log):
         # Find the current Grid in the database
         db_grids = session.query(db.Grid).all()
         if not db_grids:
-            raise ValueError('No defined grids found!')
+            raise ValueError('No defined Grids found!')
         else:
             # Might have multiple grids defined, just take the latest...
             db_grid = db_grids[-1]
+            log.info('Applying to Grid {}'.format(db_grid.name))
 
         # Create a SkyGrid from the database Grid
         fov = {'ra': db_grid.ra_fov * u.deg, 'dec': db_grid.dec_fov * u.deg}
@@ -330,7 +331,7 @@ def add_tiles(event, log):
         try:
             db.insert_items(session, mpointings)
             session.commit()
-            log.debug('Added {} mpointings'.format(len(mpointings)))
+            log.info('Added {} Mpointings'.format(len(mpointings)))
         except Exception as err:
             session.rollback()
             raise
