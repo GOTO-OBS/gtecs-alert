@@ -31,9 +31,9 @@ def get_skymap(log):
     log.info('Checking 4pisky database')
     event_list = []
     try:
-        my_filters = {vdb.FilterKeys.role: 'test',
+        my_filters = {vdb.FilterKeys.role: 'observation',
                       vdb.FilterKeys.ivorn_contains: 'LVC',
-                      vdb.FilterKeys.ivorn_contains: 'Initial'}
+                      }
         event_list = vdb.list_ivorn(filters=my_filters,
                                     order=vdb.OrderValues.author_datetime_desc,
                                     n_max=1)
