@@ -55,10 +55,28 @@ def check_obs_params(site_data, log):
     log.info('Target is up for longer than 1:30 tonight at {}'.format(name))
 
 
-def event_handler(event, log=None, write_html=True, send_messages=False):
+def event_handler(event, force_process=False, write_html=False, send_messages=False, log=None):
     """Handle a new Event.
 
     Returns the Event if it is interesting, or None if it's been rejected.
+
+    Parameters
+    ----------
+    force_process : bool, optional
+        If True, ignore the event filters (e.g. event roles, obs parameters) and process anyway.
+        Note if the Packet_Type is not in events.EVENT_DICTONARY then it still can't be
+        processed. This is more for testing events that we would usually process, not for
+        handling completely new events.
+        Default is False.
+
+    write_html : bool, optional
+        If True, write out HTML web pages to params.HTML_PATH.
+        Default is False.
+
+    send_messages : bool, optional
+        If True, send Slack messages.
+        Default is False.
+
     """
     # Create a logger if one isn't given
     if log is None:
@@ -66,19 +84,21 @@ def event_handler(event, log=None, write_html=True, send_messages=False):
         log = logging.getLogger('goto-alert')
 
     # Check if it's an event we want to process
-    try:
-        check_event_type(event, log)
-    except Exception as err:
-        log.warning(err)
-        return None
+    if not force_process:
+        try:
+            check_event_type(event, log)
+        except Exception as err:
+            log.warning(err)
+            return None
 
     # Check if it's too close to the galaxy
-    try:
-        if params.MIN_GALACTIC_LATITUDE or params.MIN_GALACTIC_DISTANCE:
-            check_event_position(event, log)
-    except Exception as err:
-        log.warning(err)
-        return None
+    if not force_process:
+        try:
+            if params.MIN_GALACTIC_LATITUDE or params.MIN_GALACTIC_DISTANCE:
+                check_event_position(event, log)
+        except Exception as err:
+            log.warning(err)
+            return None
 
     # It's an interesting event!
 
@@ -94,11 +114,12 @@ def event_handler(event, log=None, write_html=True, send_messages=False):
         site_data = obs_data[site_name]
 
         # Check if it's observable
-        try:
-            check_obs_params(site_data, log)
-        except Exception as err:
-            log.warning(err)
-            continue
+        if not force_process:
+            try:
+                check_obs_params(site_data, log)
+            except Exception as err:
+                log.warning(err)
+                continue
 
         # Create and update web pages
         if write_html:
