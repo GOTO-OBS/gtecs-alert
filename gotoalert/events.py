@@ -77,7 +77,7 @@ class Event(object):
         try:
             top_params = vp.get_toplevel_params(self.voevent)
             self.packet_type = int(top_params['Packet_Type']['value'])
-        except Exception:
+        except KeyError:
             # Some test events don't have packet types
             return
 
@@ -160,11 +160,7 @@ class Event(object):
     @classmethod
     def from_ivorn(cls, ivorn):
         """Create an Event by querying the 4pisky VOEvent database."""
-        try:
-            payload = vdb.packet_xml(ivorn)
-        except Exception:
-            raise 'Failed get event from VOEvent database'
-
+        payload = vdb.packet_xml(ivorn)
         event = cls(payload)
         return event
 
