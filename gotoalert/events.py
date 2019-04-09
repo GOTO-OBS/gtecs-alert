@@ -164,7 +164,7 @@ class Event(object):
         event = cls(payload)
         return event
 
-    def archive(self, path, log=None):
+    def archive(self, path):
         """Archive this event in the config directory."""
         if not os.path.exists(path):
             os.mkdir(path)
@@ -172,9 +172,6 @@ class Event(object):
         filename = quote_plus(self.ivorn)
         with open(path + filename, 'wb') as f:
             f.write(self.payload)
-
-        if log:
-            log.info('Archived to {}'.format(path))
 
     def get_skymap(self, nside=128):
         """Create a GOTO-tile SkyMap for the event.
