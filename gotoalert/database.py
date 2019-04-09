@@ -213,7 +213,10 @@ def add_tiles(event, log):
         grid = SkyGrid(fov, overlap, kind=db_grid.algorithm)
 
         # Get the Event skymap and apply it to the grid
-        log.debug('Fetching skymap')
+        if event.skymap_url:
+            log.debug('Fetching skymap from {}'.format(event.skymap_url))
+        else:
+            log.debug('Creating skymap')
         skymap = event.get_skymap()
         log.debug('Applying skymap to grid')
         grid.apply_skymap(skymap)
