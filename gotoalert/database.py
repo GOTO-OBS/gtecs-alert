@@ -93,6 +93,8 @@ def remove_previous_events(event, log):
             raise ValueError('ivorn={} already exists in the database'.format(event.ivorn))
 
         # So there is (at least one) previous entry for this event
+        log.debug('Event {} has {} previous entries in the database'.format(event.name,
+                                                                            len(db_events)))
         for db_event in db_events:
             # Get any Mpointings for this event
             # Note both scheduled and unscheduled, but we don't care about completed or expired
@@ -140,6 +142,7 @@ def add_single_pointing(event, log):
                             name=event.name,
                             source=event.source,
                             )
+        log.debug('Adding Event to database')
         try:
             session.add(db_event)
             session.commit()
@@ -175,6 +178,7 @@ def add_single_pointing(event, log):
         db_mpointing.min_time = total_exptime
 
         # Add Mpointing to the database
+        log.debug('Adding Mpointing to database')
         try:
             session.add(db_mpointing)
             session.commit()
@@ -209,7 +213,9 @@ def add_tiles(event, log):
         grid = SkyGrid(fov, overlap, kind=db_grid.algorithm)
 
         # Get the Event skymap and apply it to the grid
+        log.debug('Fetching skymap')
         skymap = event.get_skymap()
+        log.debug('Applying skymap to grid')
         grid.apply_skymap(skymap)
 
         # Store grid on the Event
@@ -221,6 +227,7 @@ def add_tiles(event, log):
         table.reverse()
 
         # Mask the table based on tile probs
+        log.debug('Masking tile table')
         if event.type == 'GW':
             mask = table['prob'] > 0.01
         elif params.MIN_TILE_PROB:
@@ -237,12 +244,13 @@ def add_tiles(event, log):
             masked_table = masked_table[:params.MAX_TILES]
 
         # Store table on the Event
+        log.debug('Masked tile table has {} entries'.format(len(masked_table)))
         event.tile_table = masked_table
         event.full_table = table
 
         # We might have excluded all of our tiles, if so exit
         if not len(masked_table):
-            log.warning('No tiles passed filtering')
+            log.warning('No tiles passed filtering, no pointings to add')
             return
 
         # Create Event and add it to the database
@@ -253,6 +261,7 @@ def add_tiles(event, log):
                             time=event.time,
                             skymap=event.skymap_url,
                             )
+        log.debug('Adding Event to database')
         try:
             session.add(db_event)
             session.commit()
@@ -265,6 +274,7 @@ def add_tiles(event, log):
         db_survey = db.Survey(name=event.name)
         db_survey.grid = db_grid
         db_survey.event = db_event
+        log.debug('Adding Survey to database')
         session.add(db_survey)
 
         # Create Mpointings for each tile
@@ -331,10 +341,11 @@ def add_tiles(event, log):
             mpointings.append(db_mpointing)
 
         # Add Mpointings to the database
+        log.debug('Adding Mpointings to database')
         try:
             db.insert_items(session, mpointings)
             session.commit()
-            log.info('Added {} Mpointings'.format(len(mpointings)))
+            log.info('Added {} Mpointings to database'.format(len(mpointings)))
         except Exception as err:
             log.exception(err)
             session.rollback()
@@ -356,15 +367,18 @@ def db_insert(event, log, delete_old=True, on_grid=True):
         # First we need to see if there's a previous instance of the same event already in the db
         # If so, then delete any still pending pointings and mpointings assosiated with the event
         if delete_old:
+            log.debug('Checking for previous events in database')
             remove_previous_events(event, log)
 
         # Then add the new pointings
         if not on_grid:
             # Add a single pointing at the event centre
+            log.debug('Adding a single pointing to database')
             add_single_pointing(event, log)
         else:
             # Add a series of on-grid pointings based on a Gaussian skymap
             # We load the latest all-sky grid from the database
+            log.debug('Adding on-grid pointings to database')
             add_tiles(event, log)
         log.info('Database insersion complete')
 
