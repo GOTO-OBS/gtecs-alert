@@ -12,6 +12,8 @@ from gototile.skymap import SkyMap
 
 import numpy as np
 
+import voeventdb.remote.apiv1 as vdb
+
 import voeventparse as vp
 
 # Define interesting events we want to process
@@ -22,11 +24,11 @@ EVENT_DICTONARY = {  # Swift GRBs
                           'source': 'Swift',
                           'systematic_error': 0,
                           },
-                     67: {'notice': 'SWIFT_XRT_POS',
-                          'type': 'GRB',
-                          'source': 'Swift',
-                          'systematic_error': 0,
-                          },
+                     # 67: {'notice': 'SWIFT_XRT_POS',
+                     #      'type': 'GRB',
+                     #      'source': 'Swift',
+                     #      'systematic_error': 0,
+                     #      },
                      # Fermi GRBs
                      112: {'notice': 'FERMI_GBM_GND_POS',
                            'type': 'GRB',
@@ -154,6 +156,17 @@ class Event(object):
 
     def __repr__(self):
             return 'Event(name={}, notice={}, type={})'.format(self.name, self.notice, self.type)
+
+    @classmethod
+    def from_ivorn(cls, ivorn):
+        """Create an Event by querying the 4pisky VOEvent database."""
+        try:
+            payload = vdb.packet_xml(ivorn)
+        except Exception:
+            raise 'Failed get event from VOEvent database'
+
+        event = cls(payload)
+        return event
 
     def archive(self, path, log=None):
         """Archive this event in the config directory."""

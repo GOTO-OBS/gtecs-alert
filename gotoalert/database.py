@@ -35,8 +35,8 @@ DEFAULT_MPOINTING = {'object_name': None,
                      'min_alt': 30,
                      }
 
-DEFAULT_EXPSET = {'num_exp': 5,
-                  'exptime': 120,
+DEFAULT_EXPSET = {'num_exp': 3,
+                  'exptime': 60,
                   'filt': 'L',
                   'binning': 1,
                   'imgtype': 'SCIENCE',
@@ -122,7 +122,7 @@ def remove_previous_events(event, log):
             session.commit()
 
             if len(db_mpointings) > 0 or len(db_pointings) > 0:
-                log.info('Deleted {} mpointings and {} pointings from previous event {}'.format(
+                log.info('Deleted {} Mpointings and {} Pointings from previous Event {}'.format(
                          len(db_mpointings), len(db_pointings), db_event.ivorn))
 
 
@@ -195,10 +195,11 @@ def add_tiles(event, log):
         # Find the current Grid in the database
         db_grids = session.query(db.Grid).all()
         if not db_grids:
-            raise ValueError('No defined grids found!')
+            raise ValueError('No defined Grids found!')
         else:
             # Might have multiple grids defined, just take the latest...
             db_grid = db_grids[-1]
+            log.info('Applying to Grid {}'.format(db_grid.name))
 
         # Create a SkyGrid from the database Grid
         fov = {'ra': db_grid.ra_fov * u.deg, 'dec': db_grid.dec_fov * u.deg}
@@ -218,8 +219,9 @@ def add_tiles(event, log):
         table.reverse()
 
         # Mask the table based on tile probs
-        # TODO: Different selection options for different event types
-        if params.MIN_TILE_PROB:
+        if event.type == 'GW':
+            mask = table['prob'] > 0.01
+        elif params.MIN_TILE_PROB:
             mask = table['prob'] > params.MIN_TILE_PROB
         else:
             # Still remove super-low probability tiles (0.01%)
@@ -227,8 +229,9 @@ def add_tiles(event, log):
         masked_table = table[mask]
 
         # Limit the number of tiles added
-        # TODO: Different limits for different event types
-        if params.MAX_TILES:
+        if event.type == 'GW':
+            masked_table = masked_table[:50]
+        elif params.MAX_TILES:
             masked_table = masked_table[:params.MAX_TILES]
 
         # Store table on the Event
@@ -328,7 +331,7 @@ def add_tiles(event, log):
         try:
             db.insert_items(session, mpointings)
             session.commit()
-            log.debug('Added {} mpointings'.format(len(mpointings)))
+            log.info('Added {} Mpointings'.format(len(mpointings)))
         except Exception as err:
             session.rollback()
             raise

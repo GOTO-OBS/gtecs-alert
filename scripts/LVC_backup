@@ -1,0 +1,383 @@
+#!/usr/bin/env python3.6
+"""The backup script for LVC events."""
+
+import sys
+
+from astropy import units as u
+from astropy.time import Time
+
+from gotoalert.database import DEFAULT_NAME, DEFAULT_PW, DEFAULT_USER
+from gotoalert.database import GW_EXPSET, GW_MPOINTING
+
+from gototile.grid import SkyGrid
+from gototile.skymap import SkyMap
+
+from gtecs import misc
+from gtecs.logger import get_logger
+from gtecs.slack import send_slack_msg
+
+import obsdb as db
+
+import voeventdb.remote.apiv1 as vdb
+
+import voeventparse as vp
+
+
+def get_skymap(log):
+    """Try and get the LVC sky map."""
+    # Attempt 1: Check the VOEventDB
+    print('Checking for LVC GCNs in the 4pisky database...')
+
+    log.info('Checking 4pisky database')
+    event_list = []
+    try:
+        my_filters = {vdb.FilterKeys.role: 'observation',
+                      vdb.FilterKeys.ivorn_contains: 'LVC',
+                      }
+        event_list = vdb.list_ivorn(filters=my_filters,
+                                    order=vdb.OrderValues.author_datetime_desc,
+                                    n_max=1)
+        log.info('VOEventDB returned: {}'.format(event_list))
+    except Exception:
+        log.error('Failed to check VOEventDB', exc_info=True)
+
+    skymap_url = None
+    if len(event_list) > 0:
+        ivorn = event_list[0]
+        log.info('Found a VOEvent: {}'.format(ivorn))
+        print('Found the latest LVC VOEvent: {}'.format(ivorn))
+
+        # Get the payload, extract the SkyMap
+        try:
+            payload = vdb.packet_xml(ivorn)
+            voevent = vp.loads(payload)
+            group_params = vp.get_grouped_params(voevent)
+            skymap_url = group_params['bayestar']['skymap_fits']['value']
+            log.info('Extracted sky map url: {}'.format(skymap_url))
+            print('Found sky map url: {}'.format(skymap_url))
+        except Exception:
+            log.error('Failed to extract sky map url', exc_info=True)
+            print('ERROR: Failed to get sky map url from VOEvent')
+
+    else:
+        log.warning('No LVC VOEvent found')
+        print('No LVC VOEvent found')
+
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~
+    while skymap_url is None:
+        # Attempt 2: Just ask for the URL
+        log.info('Asking user for url...')
+        print('Could not find LVC sky map')
+        print('Backup: Please enter a url to the location where the skymap can be found.')
+        print('It should look something like')
+        print('https://gracedb.ligo.org/api/superevents/<XXXXXX>/files/bayestar.fits.gz')
+        skymap_url = input('Please enter the url: ')
+    log.info('User entered "{}"'.format(skymap_url))
+
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~
+    # Try and create a GOTO-tile skymap
+    skymap = None
+    log.info('Creating GOTO-tile SkyMap from url {}'.format(skymap_url))
+    print('Downloading sky map...')
+    try:
+        skymap = SkyMap.from_fits(skymap_url)
+        skymap.regrade(128)
+        return skymap
+    except Exception:
+        log.error('Failed to create SkyMap', exc_info=True)
+        print('ERROR: Could not create Sky Map from url {}'.format(skymap_url))
+
+        skymap_path = None
+        while skymap_path is None:
+            # Attempt 3: Let them download it!
+            log.info('Asking user for path...')
+            print('Unable to download sky map automatically')
+            print('Last resort: please download the sky map yourself and save it to this computer')
+            print('If you have already done that, please enter the path to the sky map below')
+            print('If you have not then kill this script (Ctrl+C), do it, and run the script again')
+            skymap_path = input('Please enter the path: ')
+        log.info('User entered "{}"'.format(skymap_path))
+
+        log.info('Creating GOTO-tile SkyMap from path {}'.format(skymap_path))
+        print('Creating sky map...')
+        try:
+            skymap = SkyMap.from_fits(skymap_path)
+            skymap.regrade(128)
+            return skymap
+        except Exception:
+            log.error('Failed to create SkyMap', exc_info=True)
+            print('ERROR: Could not create Sky Map from path {}'.format(skymap_path))
+            return None
+
+
+def get_tile_table(skymap, log):
+    """Apply the skymap to a grid and get the masked table back."""
+    try:
+        with db.open_session() as session:
+            # Find the current Grid in the database
+            db_grids = session.query(db.Grid).all()
+            if not db_grids:
+                raise ValueError('No defined grids found!')
+            else:
+                # Might have multiple grids defined, just take the latest...
+                db_grid = db_grids[-1]
+            log.info('Found database grid {}'.format(db_grid))
+
+            # Create a SkyGrid from the database Grid
+            fov = {'ra': db_grid.ra_fov * u.deg, 'dec': db_grid.dec_fov * u.deg}
+            overlap = {'ra': db_grid.ra_overlap, 'dec': db_grid.dec_overlap}
+            grid = SkyGrid(fov, overlap, kind=db_grid.algorithm)
+            grid.db_id = db_grid.db_id
+            log.info('Created grid {}'.format(grid))
+
+        print('Using grid {}'.format(grid.name))
+
+        # Apply the sky map to the grid
+        grid.apply_skymap(skymap)
+
+        # Get the table of tiles and contained probability
+        table = grid.get_table()
+        table.sort('prob')
+        table.reverse()
+
+        # Mask the table based on tile probs (same as in goto-alert)
+        mask = table['prob'] > 0.01
+        masked_table = table[mask][:50]
+
+        # Print the table rows
+        log.info('Created table:')
+        print('Created tile table:')
+        formatted_table = masked_table.copy()
+        formatted_table['ra'].format = '.6f'
+        formatted_table['dec'].format = '.6f'
+        formatted_table['prob'].format = '.4f'
+        table_arr = formatted_table.pformat(max_lines=-1, max_width=-1)
+        for row in table_arr:
+            log.info(row)
+            print(row)
+
+        return masked_table, grid
+
+    except Exception:
+        log.error('Failed to apply SkyMap to SkyGrid', exc_info=True)
+        print('ERROR: failed to apply SkyMap to SkyGrid')
+        return None
+
+
+def add_to_db(skymap, grid, table, log):
+    """Add the skymap tiles to the database."""
+    # First, check if there's already an event in the database
+    # This is the equivilent of "remove_previous_events" in goto-alert, but we don't have an Event
+    # we only have a SkyMap
+    with db.open_session() as session:
+        # Create the target name
+        event_name = 'LVC_' + skymap.object
+
+        # Check the events table for any previous entries of the same event
+        query = session.query(db.Event).filter(db.Event.name == event_name,
+                                               db.Event.source == 'LVC')
+        db_events = query.all()
+
+        if not db_events:
+            # Nothing to worry about, it's a new event
+            log.info('No previous event found in the database')
+            print('No previous event found in the database')
+
+        else:
+            # There is (at least one) previous entry for this event
+            log.info('Found previous events: {}'.format(db_events))
+            log.info('Asking user for permission to overwrite...')
+            print('{} existing events found in the database for {}:'.format(len(db_events),
+                                                                            event_name))
+            for db_event in db_events:
+                print('  IVORN: {}'.format(db_event.ivorn))
+            print('Should we overwrite those previous events?')
+            print('It is best to do so, so we update existing skymaps.')
+            print('It also means the scheduler will be less confused.')
+            yn = input('Delete existing pointings [Y/n]? ')
+            if yn in ['n', 'no', 'N', 'No', 'NO']:
+                log.warning('User said No')
+                print('Okay, leaving existing pointings alone.')
+            else:
+                log.info('User said Yes')
+                print('Okay, deleting any existing pending pointings...')
+
+                for db_event in db_events:
+                    try:
+                        log.info('Deleting enteries for event {}'.format(db_event))
+                        query = session.query(db.Mpointing)
+                        query = query.filter(db.Mpointing.event == db_event,
+                                             db.Mpointing.status.in_(('scheduled', 'unscheduled')))
+                        db_mpointings = query.all()
+
+                        # Delete the Mpointings
+                        for db_mpointing in db_mpointings:
+                            db_mpointing.status = 'deleted'
+                        if len(db_mpointings) > 0:
+                            log.info('Deleted {} mpointings'.format(len(db_mpointings)))
+
+                        # Get any pending pointings related to this event
+                        query = session.query(db.Pointing)
+                        query = query.filter(db.Pointing.event == db_event,
+                                             db.Pointing.status == 'pending')
+                        db_pointings = query.all()
+
+                        # Delete the Pointings
+                        for db_pointing in db_pointings:
+                            db_pointing.status = 'deleted'
+                        if len(db_pointings) > 0:
+                            log.info('Deleted {} pointings'.format(len(db_pointings)))
+
+                        # Commit changes
+                        session.commit()
+
+                    except Exception:
+                        log.error('Failed to delete entries', exc_info=True)
+                        log.warning('Rolling back database')
+                        session.rollback()
+                        print('Failed to clear event {}'.format(db_event.ivorn))
+
+    # Now we need to add out new Event, Mpointings and Pointings
+    # This is the equivilent of "add_tiles" in goto-alert
+    with db.open_session() as session:
+        # Get the User, or make it if it doesn't exist
+        try:
+            user = db.get_user(session, username=DEFAULT_USER)
+        except ValueError:
+            user = db.User(DEFAULT_USER, DEFAULT_PW, DEFAULT_NAME)
+
+        try:
+            # Create Event and add it to the database
+            # This is awkward, because we only have a goto-tile SkyMap not a goto-alert Event
+            # Fake the IVORN for now based on the time
+            now = Time.now()
+            db_event = db.Event(name=event_name,
+                                ivorn='GOTO:LVC_backup:{}'.format(now.fits),
+                                source='LVC',
+                                event_type='GW',
+                                time=now,
+                                )
+            log.info('Created Event: {}'.format(db_event))
+
+            session.add(db_event)
+            session.commit()
+            log.info('Added Event')
+
+            # Create Survey and add it to the database
+            db_survey = db.Survey(name=event_name)
+            db_survey.grid_id = grid.db_id
+            db_survey.event = db_event
+            session.add(db_survey)
+
+            # Create Mpointings for each tile in the table
+            # NB no coords, we get them from the GridTile
+            mpointings = []
+            for tilename, _, _, prob in table:
+                # Find the matching GridTile
+                query = session.query(db.GridTile)
+                query = query.filter(db.GridTile.grid_id == grid.db_id,
+                                     db.GridTile.name == tilename)
+                db_grid_tile = query.one_or_none()
+
+                # Create a SurveyTile
+                db_survey_tile = db.SurveyTile(weight=float(prob))
+                db_survey_tile.survey = db_survey
+                db_survey_tile.grid_tile = db_grid_tile
+
+                # Get default Mpointing infomation and add event name and coords
+                mp_data = GW_MPOINTING.copy()
+                mp_data['object_name'] = event_name + '_' + tilename
+
+                # Time to start immedietly after the event, expire after X days if not completed
+                mp_data['start_time'] = now
+                mp_data['stop_time'] = None
+
+                # Create Mpointing
+                db_mpointing = db.Mpointing(**mp_data, user=user)
+                db_mpointing.grid_tile = db_grid_tile
+                db_mpointing.survey_tile = db_survey_tile
+                db_mpointing.event = db_event
+
+                # Get default Exposure Set infomation
+                expsets_data = [GW_EXPSET.copy()]
+
+                # Create Exposure Sets
+                for expset_data in expsets_data:
+                    db_exposure_set = db.ExposureSet(**expset_data)
+                    db_mpointing.exposure_sets.append(db_exposure_set)
+
+                # Update mintime
+                total_exptime = sum([(es['exptime'] + 30) * es['num_exp'] for es in expsets_data])
+                db_mpointing.min_time = total_exptime
+
+                # Create the first pointing (i.e. preempt the caretaker)
+                db_pointing = db_mpointing.get_next_pointing()
+
+                # Attach the tiles, because get_next_pointing uses IDs but they don't have them yet!
+                db_pointing.grid_tile = db_grid_tile
+                db_pointing.survey_tile = db_survey_tile
+                db_pointing.event = db_event
+
+                db_mpointing.pointings.append(db_pointing)
+
+                # Add to list
+                mpointings.append(db_mpointing)
+
+            log.info('Created Mpointings: {}'.format(mpointings))
+            # Add Mpointings to the database
+            db.insert_items(session, mpointings)
+            session.commit()
+            log.info('Added {} Mpointings'.format(len(mpointings)))
+            print('Added {} Mpointings into the database'.format(len(mpointings)))
+
+        except Exception:
+            log.error('Failed to insert into database', exc_info=True)
+            log.warning('Rolling back database')
+            session.rollback()
+            print('Failed to insert into database')
+
+
+def run():
+    """Run backup functions."""
+    # Create a log, make sure everything is saved
+    log = get_logger('backstop', log_stdout=False, log_to_file=True, log_to_stdout=False)
+    log.info('Backup script started')
+    send_slack_msg('Backup script started')
+    print('Welcome to the LVC backup script.')
+
+    # Create the SkyMap
+    print('#### Phase 1 ####')
+    print('First, we need the LVC skymap...')
+    skymap = get_skymap(log)
+
+    # Apply the SkyMap to the grid
+    if skymap is not None:
+        print('#### Phase 2 ####')
+        print('Applying skymap to the all-sky grid...')
+        table, grid = get_tile_table(skymap, log)
+    else:
+        print('Skipping Phase 2...')
+        log.warning('Skipping Phase 2')
+
+    # Enter the table pointings into the database
+    if skymap is not None and table is not None:
+        print('#### Phase 3 ####')
+        print('Entering table into database...')
+        add_to_db(skymap, grid, table, log)
+    else:
+        print('Skipping Phase 3...')
+        log.warning('Skipping Phase 3')
+
+    log.info('Done')
+    print('Done')
+
+
+if __name__ == '__main__':
+    # We only want this script to be run once!
+    pid = misc.get_pid('backstop')
+    if pid:
+        print('Someone else is already running the backstop script!')
+        sys.exit()
+    else:
+        with misc.make_pid_file('backstop'):
+            run()
