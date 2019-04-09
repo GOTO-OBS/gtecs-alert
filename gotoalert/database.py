@@ -146,8 +146,8 @@ def add_single_pointing(event, log):
         try:
             session.add(db_event)
             session.commit()
-        except Exception as err:
-            log.exception(err)
+        except Exception:
+            # Undo database changes before raising
             session.rollback()
             raise
 
@@ -183,8 +183,8 @@ def add_single_pointing(event, log):
             session.add(db_mpointing)
             session.commit()
             log.debug(db_mpointing)
-        except Exception as err:
-            log.exception(err)
+        except Exception:
+            # Undo database changes before raising
             session.rollback()
             raise
 
@@ -265,8 +265,8 @@ def add_tiles(event, log):
         try:
             session.add(db_event)
             session.commit()
-        except Exception as err:
-            log.exception(err)
+        except Exception:
+            # Undo database changes before raising
             session.rollback()
             raise
 
@@ -346,8 +346,8 @@ def add_tiles(event, log):
             db.insert_items(session, mpointings)
             session.commit()
             log.info('Added {} Mpointings to database'.format(len(mpointings)))
-        except Exception as err:
-            log.exception(err)
+        except Exception:
+            # Undo database changes before raising
             session.rollback()
             raise
 
@@ -382,6 +382,6 @@ def db_insert(event, log, delete_old=True, on_grid=True):
             add_tiles(event, log)
         log.info('Database insersion complete')
 
-    except Exception as err:
-        log.exception(err)
+    except Exception:
         log.warning('Unable to insert event into database')
+        raise
