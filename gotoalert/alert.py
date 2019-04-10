@@ -50,8 +50,8 @@ def event_handler(event, force_process=False, write_html=False, send_messages=Fa
             return None
 
         # Check type
-        if event.type is 'Unknown':
-            log.warning('Ignoring unrecognised event type: {}'.format(event.ivorn))
+        if not hasattr(event, 'type') or event.type is 'Unknown':
+            log.warning('Ignoring unknown event type')
             return None
         log.info('Recognised event type: {} ({})'.format(event.notice, event.type))
 
