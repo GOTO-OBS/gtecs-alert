@@ -254,6 +254,7 @@ def add_tiles(event, log):
         # We might have excluded all of our tiles, if so exit
         if not len(masked_table):
             log.warning('No tiles passed filtering, no pointings to add')
+            log.debug('Highest tile has {:.3f}%'.format(table[0]['prob'] * 100))
             return
 
         # Create Event and add it to the database
