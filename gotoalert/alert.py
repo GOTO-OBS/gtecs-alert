@@ -13,48 +13,6 @@ from .events import Event
 from .output import create_webpages
 
 
-def check_event_type(event, log):
-    """Check if the event is something we want to process."""
-    # Check role
-    log.info('Event is marked as "{}"'.format(event.role))
-    if event.role in params.IGNORE_ROLES:
-        raise ValueError('Ignoring {} event'.format(event.role))
-
-    # Get alert name
-    if event.type is 'Unknown':
-        raise ValueError('Ignoring unrecognised event type: {}'.format(event.ivorn))
-    log.info('Recognised event type: {} ({})'.format(event.notice, event.type))
-
-
-def check_event_position(event, log):
-    """Check if the event position is too close to the galaxy ."""
-    # Check galactic latitude
-    if event.gal_lat and abs(event.gal_lat) < params.MIN_GALACTIC_LATITUDE:
-        raise ValueError('Event too close to the galactic plane (Lat {:.2f})'.format(event.gal_lat))
-
-    # Check distance from galactic center
-    if event.gal_dist and event.gal_dist < params.MIN_GALACTIC_DISTANCE:
-        raise ValueError('Event too close to the galactic centre (Dist {})'.format(event.gal_dist))
-
-    log.info('Event sufficiently far away from the galactic plane')
-
-
-def check_obs_params(site_data, log):
-    """Check if the event is observable from a paticular site."""
-    observer = site_data['observer']
-    name = observer.name
-
-    # Check if the target rises above the horizon
-    if not site_data['alt_observable']:
-        raise ValueError('Target does not rise above minimum altitude at {}'.format(name))
-    log.info('Target is visible tonight at {}'.format(name))
-
-    # Check if the target is visible for enough time
-    if (site_data['observation_end'] - site_data['observation_start']) < 1.5 * u.hour:
-        raise ValueError('Target is not up longer then 1:30 at {} during the night'.format(name))
-    log.info('Target is up for longer than 1:30 tonight at {}'.format(name))
-
-
 def event_handler(event, force_process=False, write_html=False, send_messages=False, log=None):
     """Handle a new Event.
 
@@ -85,22 +43,31 @@ def event_handler(event, force_process=False, write_html=False, send_messages=Fa
 
     # Check if it's an event we want to process
     if not force_process:
-        try:
-            check_event_type(event, log)
-        except Exception as err:
-            log.warning(err)
+        # Check role
+        log.info('Event is marked as "{}"'.format(event.role))
+        if event.role in params.IGNORE_ROLES:
+            log.warning('Ignoring {} event'.format(event.role))
             return None
 
-    # Check if it's too close to the galaxy
-    if not force_process:
-        try:
-            if params.MIN_GALACTIC_LATITUDE or params.MIN_GALACTIC_DISTANCE:
-                check_event_position(event, log)
-        except Exception as err:
-            log.warning(err)
+        # Check type
+        if not hasattr(event, 'type') or event.type is 'Unknown':
+            log.warning('Ignoring unknown event type')
+            return None
+        log.info('Recognised event type: {} ({})'.format(event.notice, event.type))
+
+        # Check galactic latitude
+        if (params.MIN_GALACTIC_LATITUDE and event.gal_lat and
+                abs(event.gal_lat) < params.MIN_GALACTIC_LATITUDE):
+            log.warning('Event too close to the galactic plane (Lat {:.2f})'.format(event.gal_lat))
             return None
 
-    # It's an interesting event!
+        # Check distance from galactic center
+        if (params.MIN_GALACTIC_DISTANCE and event.gal_dist and
+                event.gal_dist < params.MIN_GALACTIC_DISTANCE):
+            log.warning('Event too close to the galactic centre (Dist {})'.format(event.gal_dist))
+            return None
+
+    # It passed the checks: it's an interesting event!
 
     # Add the event into the GOTO observation DB
     db_insert(event, log, on_grid=params.ON_GRID)
@@ -115,11 +82,17 @@ def event_handler(event, force_process=False, write_html=False, send_messages=Fa
 
         # Check if it's observable
         if not force_process:
-            try:
-                check_obs_params(site_data, log)
-            except Exception as err:
-                log.warning(err)
+            # Check if the target rises above the horizon
+            if not site_data['alt_observable']:
+                log.warning('Target does not rise above minimum altitude at {}'.format(site_name))
                 continue
+            log.info('Target is visible tonight at {}'.format(site_name))
+
+            # Check if the target is visible for enough time
+            if (site_data['observation_end'] - site_data['observation_start']) < 1.5 * u.hour:
+                log.warning('Target is not up longer then 1:30 at {} tonight'.format(site_name))
+                continue
+            log.info('Target is up for longer than 1:30 tonight at {}'.format(site_name))
 
         # Create and update web pages
         if write_html:
