@@ -14,62 +14,6 @@ DEFAULT_USER = 'goto'
 DEFAULT_PW = 'gotoobs'
 DEFAULT_NAME = 'GOTO automated alerts'
 
-DEFAULT_MPOINTING = {'object_name': None,
-                     'ra': None,
-                     'dec': None,
-                     # auto filled values
-                     'min_time': None,
-                     'start_time': None,
-                     'stop_time': None,
-                     # put in at rank 6, marked as ToO
-                     'too': True,
-                     'start_rank': 106,
-                     # default to 3 pointings, at least hour apart, valid for a day
-                     'num_todo': 3,
-                     'valid_time': 24 * 60,
-                     'wait_time': 60,
-                     # default values
-                     'max_sunalt': -15,
-                     'max_moon': 'B',
-                     'min_moonsep': 30,
-                     'min_alt': 30,
-                     }
-
-DEFAULT_EXPSET = {'num_exp': 3,
-                  'exptime': 60,
-                  'filt': 'L',
-                  'binning': 1,
-                  'imgtype': 'SCIENCE',
-                  }
-
-GW_MPOINTING = {'object_name': None,
-                'ra': None,
-                'dec': None,
-                # auto filled values
-                'min_time': None,
-                'start_time': None,
-                'stop_time': None,
-                # put in at rank 6, marked as ToO
-                'too': True,
-                'start_rank': 1,
-                # default to 3 pointings, at least hour apart, valid for a day
-                'num_todo': 99,
-                'valid_time': -1,
-                'wait_time': -1,
-                # default values
-                'max_sunalt': -12,
-                'max_moon': 'B',
-                'min_moonsep': 10,
-                'min_alt': 30,
-                }
-
-GW_EXPSET = {'num_exp': 3,
-             'exptime': 60,
-             'filt': 'L',
-             'binning': 1,
-             'imgtype': 'SCIENCE',
-             }
-
 
 def remove_previous_events(event, log):
     """Check the database Events table to see if there's a previous instance of the event.
@@ -128,6 +72,84 @@ def remove_previous_events(event, log):
                          len(db_mpointings), len(db_pointings), db_event.ivorn))
 
 
+def get_mpointing_info(event):
+    """Format all the infomation needed for a database Mpointing and ExposureSets.
+
+    Parameters will vary depending on the type of Event.
+    """
+    # Create blank ExposureSet dict
+    exp_data = {}
+
+    # ExposureSets are currently the same for all events
+    exp_data['num_exp'] = 3
+    exp_data['exptime'] = 60
+    exp_data['filt'] = 'L'
+    exp_data['binning'] = 1
+    exp_data['imgtype'] = 'SCIENCE'
+
+    # Create the blank Mpointing data dict
+    mp_data = {}
+
+    # Add blank object name and coordinates
+    # They will depend on if it's on grid or not
+    mp_data['object_name'] = None
+    mp_data['ra'] = None
+    mp_data['dec'] = None
+
+    # The Mpointing shoudl be valid immediately after the event time
+    mp_data['start_time'] = event.time
+
+    # The stop time depends on the type of event:
+    #  - If it's a GW event then there's no stop time set
+    #  - Otherwise it will stop after X days, defined in params
+    if event.type == 'GW':
+        mp_data['stop_time'] = None
+    else:
+        mp_data['stop_time'] = event.time + params.VALID_DAYS * u.day
+
+    # All Events should be Targets of Opportunity, that's the point!
+    mp_data['too'] = True
+
+    # Start rank depends on type:
+    #  - If it's a GW event then enter at rank 1
+    #  - Otherwise enter at rank 106
+    if event.type == 'GW':
+        mp_data['start_rank'] = 1
+    else:
+        mp_data['start_rank'] = 106
+
+    # Candence also depends on type (note times in minutes!):
+    #  - If it's a GW event then do as many as possible, valid forever and immediately
+    #    re-enter into the queue when done
+    #  - Otherwise do three, a day apart
+    if event.type == 'GW':
+        mp_data['num_todo'] = 99
+        mp_data['wait_time'] = -1
+        mp_data['valid_time'] = -1
+    else:
+        mp_data['num_todo'] = 3
+        mp_data['wait_time'] = 60
+        mp_data['valid_time'] = 60 * 24
+
+    # The minimum pointing time is based on the ExposureSet
+    # +30s for readout, probably generous
+    mp_data['min_time'] = (exp_data['exptime'] + 30) * exp_data['num_exp']
+
+    # Constraints are more lenient for GW events
+    if event.type == 'GW':
+        mp_data['max_sunalt'] = -12
+        mp_data['min_alt'] = 30
+        mp_data['min_moonsep'] = 10
+        mp_data['max_moon'] = 'B'
+    else:
+        mp_data['max_sunalt'] = -15
+        mp_data['min_alt'] = 30
+        mp_data['min_moonsep'] = 30
+        mp_data['max_moon'] = 'B'
+
+    return mp_data, exp_data
+
+
 def add_single_pointing(event, log):
     """Simply add a single pointing at the coordinates given in the alert."""
     with db.open_session() as session:
@@ -151,31 +173,26 @@ def add_single_pointing(event, log):
             session.rollback()
             raise
 
-        # Get default Mpointing infomation and add event name and coords
-        mp_data = DEFAULT_MPOINTING.copy()
+        # Get default Mpointing and ExposureSet infomation
+        mp_data, exp_data = get_mpointing_info(event)
+
+        # Set the object name and coordinates
         mp_data['object_name'] = event.name
         mp_data['ra'] = event.coord.ra.value
         mp_data['dec'] = event.coord.dec.value
-
-        # Time to start immedietly after the event, expire after 4 days if not completed
-        mp_data['start_time'] = event.time
-        mp_data['stop_time'] = event.time + 4 * u.day
 
         # Create Mpointing
         db_mpointing = db.Mpointing(**mp_data, user=user)
         db_mpointing.event = db_event
 
-        # Get default Exposure Set infomation
-        expsets_data = [DEFAULT_EXPSET.copy()]
-
         # Create Exposure Sets
-        for expset_data in expsets_data:
-            db_exposure_set = db.ExposureSet(**expset_data)
-            db_mpointing.exposure_sets.append(db_exposure_set)
+        db_exposure_set = db.ExposureSet(**exp_data)
+        db_mpointing.exposure_sets.append(db_exposure_set)
 
-        # Update mintime
-        total_exptime = sum([(es['exptime'] + 30) * es['num_exp'] for es in expsets_data])
-        db_mpointing.min_time = total_exptime
+        # Create the first Pointing (i.e. preempt the caretaker)
+        db_pointing = db_mpointing.get_next_pointing()
+        db_pointing.event = db_event
+        db_mpointing.pointings.append(db_pointing)
 
         # Add Mpointing to the database
         log.debug('Adding Mpointing to database')
@@ -296,19 +313,11 @@ def add_tiles(event, log):
             db_survey_tile.survey = db_survey
             db_survey_tile.grid_tile = db_grid_tile
 
-            # Get default Mpointing infomation and add event name
-            if event.type == 'GW':
-                mp_data = GW_MPOINTING.copy()
-            else:
-                mp_data = DEFAULT_MPOINTING.copy()
-            mp_data['object_name'] = event.name + '_' + tilename
+            # Get default Mpointing and ExposureSet infomation
+            mp_data, exp_data = get_mpointing_info(event)
 
-            # Time to start immedietly after the event, expire after X days if not completed
-            mp_data['start_time'] = event.time
-            if event.type == 'GW':
-                mp_data['stop_time'] = None
-            else:
-                mp_data['stop_time'] = event.time + params.VALID_DAYS * u.day
+            # Set the object name, combination of event name and tile name
+            mp_data['object_name'] = event.name + '_' + tilename
 
             # Create Mpointing
             db_mpointing = db.Mpointing(**mp_data, user=user)
@@ -316,22 +325,11 @@ def add_tiles(event, log):
             db_mpointing.survey_tile = db_survey_tile
             db_mpointing.event = db_event
 
-            # Get default Exposure Set infomation
-            if event.type == 'GW':
-                expsets_data = [GW_EXPSET.copy()]
-            else:
-                expsets_data = [DEFAULT_EXPSET.copy()]
-
             # Create Exposure Sets
-            for expset_data in expsets_data:
-                db_exposure_set = db.ExposureSet(**expset_data)
-                db_mpointing.exposure_sets.append(db_exposure_set)
+            db_exposure_set = db.ExposureSet(**exp_data)
+            db_mpointing.exposure_sets.append(db_exposure_set)
 
-            # Update mintime
-            total_exptime = sum([(es['exptime'] + 30) * es['num_exp'] for es in expsets_data])
-            db_mpointing.min_time = total_exptime
-
-            # Create the first pointing (i.e. preempt the caretaker)
+            # Create the first Pointing (i.e. preempt the caretaker)
             db_pointing = db_mpointing.get_next_pointing()
 
             # Attach the tiles, because get_next_pointing uses IDs but they don't have them yet!
