@@ -96,16 +96,10 @@ def get_mpointing_info(event):
     mp_data['ra'] = None
     mp_data['dec'] = None
 
-    # The Mpointing shoudl be valid immediately after the event time
+    # The Mpointing should be valid immediately after the event time
+    # The stop time depends is defined in params
     mp_data['start_time'] = event.time
-
-    # The stop time depends on the type of event:
-    #  - If it's a GW event then there's no stop time set
-    #  - Otherwise it will stop after X days, defined in params
-    if event.type == 'GW':
-        mp_data['stop_time'] = None
-    else:
-        mp_data['stop_time'] = event.time + params.VALID_DAYS * u.day
+    mp_data['stop_time'] = event.time + params.VALID_DAYS * u.day
 
     # All Events should be Targets of Opportunity, that's the point!
     mp_data['too'] = True
@@ -118,18 +112,17 @@ def get_mpointing_info(event):
     else:
         mp_data['start_rank'] = 106
 
-    # Candence also depends on type (note times in minutes!):
-    #  - If it's a GW event then do as many as possible, valid forever and immediately
-    #    re-enter into the queue when done
-    #  - Otherwise do three, a day apart
+    # Candence also depends on type (note times are in minutes!):
+    #  - If it's a GW event then do as many as possible before the stop time, one every 3 hours
+    #  - Otherwise do three, with 4 hours after the first then a day between the others
     if event.type == 'GW':
         mp_data['num_todo'] = 99
-        mp_data['wait_time'] = -1
-        mp_data['valid_time'] = -1
+        mp_data['wait_time'] = 3 * 60
     else:
         mp_data['num_todo'] = 3
-        mp_data['wait_time'] = 60
-        mp_data['valid_time'] = 60 * 24
+        mp_data['wait_time'] = [4 * 60, 12 * 60, 12 * 60]
+    # Valid time is not an issue, stay valid while in the queue
+    mp_data['valid_time'] = -1
 
     # The minimum pointing time is based on the ExposureSet
     # +30s for readout, probably generous
