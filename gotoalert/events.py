@@ -133,13 +133,12 @@ class Event(object):
 
         # Get skymap url, if there is one
         group_params = vp.get_grouped_params(self.voevent)
-        try:
-            self.skymap_url = group_params['bayestar']['skymap_fits']['value']
-        except KeyError:
-            try:
-                self.skymap_url = group_params['LALInference']['skymap_fits']['value']
-            except KeyError:
-                self.skymap_url = None
+        self.skymap_url = None
+        self.skymap_type = None
+        for group in group_params:
+            if 'skymap_fits' in group_params[group]:
+                self.skymap_url = group_params[group]['skymap_fits']['value']
+                self.skymap_type = group
         self.skymap = None
 
         # Get the trigger ID, if there is one
@@ -190,11 +189,14 @@ class Event(object):
             # HealPIX can download from a URL
             self.skymap = SkyMap.from_fits(self.skymap_url)
             self.skymap.regrade(nside)
-        else:
+        elif self.coord:
+            # Make a Gaussian one
             self.skymap = SkyMap.from_position(self.coord.ra.deg,
                                                self.coord.dec.deg,
                                                self.total_error.deg,
                                                nside)
+        else:
+            raise ValueError('No skymap_url or central coordinate')
 
         # Add some basic info
         self.skymap.object = self.name
