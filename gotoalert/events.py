@@ -189,11 +189,14 @@ class Event(object):
             # HealPIX can download from a URL
             self.skymap = SkyMap.from_fits(self.skymap_url)
             self.skymap.regrade(nside)
-        else:
+        elif self.coord:
+            # Make a Gaussian one
             self.skymap = SkyMap.from_position(self.coord.ra.deg,
                                                self.coord.dec.deg,
                                                self.total_error.deg,
                                                nside)
+        else:
+            raise ValueError('No skymap_url or central coordinate')
 
         # Add some basic info
         self.skymap.object = self.name
