@@ -136,7 +136,10 @@ class Event(object):
         try:
             self.skymap_url = group_params['bayestar']['skymap_fits']['value']
         except KeyError:
-            self.skymap_url = None
+            try:
+                self.skymap_url = group_params['LALInference']['skymap_fits']['value']
+            except KeyError:
+                self.skymap_url = None
         self.skymap = None
 
         # Get the trigger ID, if there is one
