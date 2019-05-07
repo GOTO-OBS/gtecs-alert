@@ -242,7 +242,7 @@ def add_tiles(event, log):
         # Mask the table based on tile probs
         log.debug('Masking tile table')
         if event.type == 'GW':
-            mask = table['prob'] > 0.01
+            mask = table['prob'] > 0.001
         elif params.MIN_TILE_PROB:
             mask = table['prob'] > params.MIN_TILE_PROB
         else:
