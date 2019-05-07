@@ -252,7 +252,7 @@ def add_tiles(event, log):
 
         # Limit the number of tiles added
         if event.type == 'GW':
-            masked_table = masked_table[:50]
+            masked_table = masked_table[:200]
         elif params.MAX_TILES:
             masked_table = masked_table[:params.MAX_TILES]
 
