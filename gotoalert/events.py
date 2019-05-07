@@ -172,7 +172,8 @@ class Event(object):
             os.mkdir(path)
 
         filename = quote_plus(self.ivorn)
-        with open(path + filename, 'wb') as f:
+        savepath = os.path.join(path, filename)
+        with open(savepath, 'wb') as f:
             f.write(self.payload)
 
     def get_skymap(self, nside=128):
