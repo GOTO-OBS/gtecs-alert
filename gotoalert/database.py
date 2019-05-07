@@ -242,7 +242,11 @@ def add_tiles(event, log):
         # Mask the table based on tile probs
         log.debug('Masking tile table')
         if event.type == 'GW':
-            mask = table['prob'] > 0.001
+            # as an initial best fit, take the fraction based on the 50% confidence area
+            # see https://github.com/GOTO-OBS/goto-alert/issues/26
+            frac = len(skymap._pixels_within_contour(0.5)) / skymap.npix
+            x = 0.00003
+            mask = table['prob'] > x / frac
         elif params.MIN_TILE_PROB:
             mask = table['prob'] > params.MIN_TILE_PROB
         else:
