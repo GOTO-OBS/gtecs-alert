@@ -2,6 +2,7 @@
 """Functions to add events into the GOTO Observation Database."""
 
 import astropy.units as u
+from astropy.coordinates import SkyCoord
 
 from gototile.grid import SkyGrid
 
@@ -242,12 +243,15 @@ def add_tiles(event, log):
         # Mask the table based on tile probs
         log.debug('Masking tile table')
         if event.type == 'GW':
-            # as an initial best fit, take the fraction based on the 50% confidence area
             # see https://github.com/GOTO-OBS/goto-alert/issues/26
-            frac = len(skymap._pixels_within_contour(0.5)) / skymap.npix
-            x = 0.00003
-            mask = table['prob'] > x / frac
+
+            # make new coord, can't use grid.coords as we sorted the table...
+            coords = SkyCoord(table['ra'], table['dec'], unit='deg')
+
+            # mask based on 90% contour
+            mask = skymap.within_contour(coords, 0.9)
         elif params.MIN_TILE_PROB:
+            # mask based on min tile prob
             mask = table['prob'] > params.MIN_TILE_PROB
         else:
             # Still remove super-low probability tiles (0.01%)
