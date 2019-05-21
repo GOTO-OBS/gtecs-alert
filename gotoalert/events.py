@@ -63,49 +63,72 @@ class Event(object):
     """A simple class to represent a single VOEvent."""
 
     def __init__(self, payload):
+        # Store the creation time
         self.creation_time = Time.now()
+
+        # Store the payload
         self.payload = payload
 
         # Load the payload using voeventparse
         self.voevent = vp.loads(self.payload)
+        top_params = vp.get_toplevel_params(self.voevent)
+        group_params = vp.get_grouped_params(self.voevent)
 
-        # Get key attributes
+        # Get key attributes:
+        # IVORN
         self.ivorn = self.voevent.attrib['ivorn']
+        # Using the official IVOA terms (ivo://authorityID/resourceKey#local_ID):
+        self.authorityID = self.ivorn.split('/')[2]
+        self.resourceKey = self.ivorn.split('/')[3].split('#')[0]
+        self.local_ID = self.ivorn.split('/')[3].split('#')[1]
+        # Using some easier terms to understand:
+        self.authority = self.authorityID
+        self.publisher = self.resourceKey
+        self.name = self.local_ID
+
+        # Role (observation/test/...)
         self.role = self.voevent.attrib['role']
 
-        # Get packet type
+        # Event time
+        event_time = vp.convenience.get_event_time_as_utc(self.voevent, index=0)
+        if event_time:
+            self.time = Time(event_time)
+        else:
+            # Some test events don't have times
+            self.time = None
+
+        # Contact email
         try:
-            top_params = vp.get_toplevel_params(self.voevent)
+            self.contact = self.voevent.Who.Author.contactEmail
+        except AttributeError:
+            self.contact = None
+
+        # GCN packet type
+        try:
             self.packet_type = int(top_params['Packet_Type']['value'])
         except KeyError:
-            # Some test events don't have packet types
+            # If it's not a GCN it won't have a Packet_Type (e.g. Gaia alerts)
+            self.packet_type = None
             return
 
-        if self.packet_type not in EVENT_DICTONARY:
-            # The event doesn't match any ones we care about
+        # If the packet type isn't in the event dictionary (or it doesn't have one)
+        # then it's not an interesting event to us.
+        # Set some defaults and return here.
+        if not self.packet_type or (self.packet_type not in EVENT_DICTONARY):
             self.interesting = False
             self.notice = 'Unknown'
             self.type = 'Unknown'
             self.source = 'Unknown'
             self.systematic_error = Angle(0, unit='deg')
-        else:
-            # The packet type must match one of the events we're looking for
-            self.interesting = True
-            self.notice = EVENT_DICTONARY[self.packet_type]['notice']
-            self.type = EVENT_DICTONARY[self.packet_type]['type']
-            self.source = EVENT_DICTONARY[self.packet_type]['source']
-            self.systematic_error = Angle(EVENT_DICTONARY[self.packet_type]['systematic_error'],
-                                          unit='deg')
-
-        # Get event time
-        event_time = vp.convenience.get_event_time_as_utc(self.voevent, index=0)
-        if event_time is None:
-            # Sometimes we might get system test events from the server.
-            # They (annoyingly) don't actually have an event attached, even a fake one,
-            # so don't have a time. Just return here, the handler will ignore it.
-            self.time = None
             return
-        self.time = Time(event_time)
+
+        # If we're still here then the packet type must match one of the events we're looking for
+        self.interesting = True
+        self.notice = EVENT_DICTONARY[self.packet_type]['notice']
+        self.type = EVENT_DICTONARY[self.packet_type]['type']
+        self.source = EVENT_DICTONARY[self.packet_type]['source']
+        self.systematic_error = Angle(EVENT_DICTONARY[self.packet_type]['systematic_error'],
+                                      unit='deg')
 
         # Get event position
         try:
@@ -132,7 +155,6 @@ class Event(object):
             self.gal_dist = None
 
         # Get skymap url, if there is one
-        group_params = vp.get_grouped_params(self.voevent)
         self.skymap_url = None
         self.skymap_type = None
         for group in group_params:
@@ -150,21 +172,14 @@ class Event(object):
             self.id = '0'
         self.name = '{}_{}'.format(self.source, self.id)
 
-        # Get contact email, if there is one
-        try:
-            self.contact = self.voevent.Who.Author.contactEmail
-        except AttributeError:
-            self.contact = None
-
     def __repr__(self):
-            return 'Event(name={}, notice={}, type={})'.format(self.name, self.notice, self.type)
+        return 'Event(ivorn={})'.format(self.ivorn)
 
     @classmethod
     def from_ivorn(cls, ivorn):
         """Create an Event by querying the 4pisky VOEvent database."""
         payload = vdb.packet_xml(ivorn)
-        event = cls(payload)
-        return event
+        return cls(payload)
 
     def archive(self, path):
         """Archive this event in the config directory."""
