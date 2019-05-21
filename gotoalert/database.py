@@ -119,7 +119,7 @@ def get_mpointing_info(event):
     #  - Otherwise do three, with 4 hours after the first then a day between the others
     if event.type == 'GW':
         mp_data['num_todo'] = 99
-        mp_data['wait_time'] = 3 * 60
+        mp_data['wait_time'] = 0
     else:
         mp_data['num_todo'] = 3
         mp_data['wait_time'] = [4 * 60, 12 * 60, 12 * 60]
