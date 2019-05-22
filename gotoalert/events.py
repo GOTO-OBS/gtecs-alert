@@ -176,7 +176,22 @@ class GWEvent(Event):
         # Create our own event name (e.g. LVC_S190510g)
         self.name = '{}_{}'.format(self.source, self.id)
 
-        # Get skymap url
+        # Get info from the VOEvent
+        self.far = float(self.top_params['FAR']['value'])
+        self.gracedb_url = self.top_params['EventPage']['value']
+        self.instruments = self.top_params['Instruments']['value']
+
+        # Get classification probabilities and properties
+        self.classification = {}
+        classification_dict = self.group_params.allitems()[1][1]  # Horrible, but blame XML
+        for key in classification_dict.keys():
+            self.classification[key] = float(classification_dict[key]['value'])
+        self.properties = {}
+        properties_dict = self.group_params.allitems()[2][1]  # Uggg
+        for key in properties_dict.keys():
+            self.properties[key] = float(properties_dict[key]['value'])
+
+        # Get skymap URL
         for group in self.group_params:
             if 'skymap_fits' in self.group_params[group]:
                 self.skymap_url = self.group_params[group]['skymap_fits']['value']
@@ -184,10 +199,26 @@ class GWEvent(Event):
 
         # Download the skymap
         self.skymap = SkyMap.from_fits(self.skymap_url)
-        # Store basic info
+        # Don't regrade here, let the user do that if they want to
+
+        # Store basic info on the skymap
         self.skymap.object = self.name
         self.skymap.objid = self.id
-        # Don't regrade here, let the user do that if they want to
+
+        # Get info from the skymap header
+        try:
+            self.distance = self.skymap.header['distmean']
+            self.distance_error = self.skymap.header['diststd']
+        except KeyError:
+            # older skymaps might not have distances
+            self.distance = None
+            self.distance_error = None
+
+        # Get info from the skymap itself
+        self.contour_areas = {}
+        for contour in [0.5, 0.9]:
+            npix = len(self.skymap._pixels_within_contour(contour))
+            self.contour_areas[contour] = npix * self.skymap.pixel_area
 
 
 class GRBEvent(Event):
