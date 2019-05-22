@@ -98,45 +98,52 @@ def get_mpointing_info(event):
     mp_data['ra'] = None
     mp_data['dec'] = None
 
+    # All Events should be Targets of Opportunity, that's the point!
+    mp_data['too'] = True
+
+    # The minimum pointing time is based on the ExposureSet +30s for readout, probably generous
+    mp_data['min_time'] = (exp_data['exptime'] + 30) * exp_data['num_exp']
+
     # The Mpointing should be valid immediately after the event time
     # The stop time depends is defined in params
     mp_data['start_time'] = event.time
     mp_data['stop_time'] = event.time + params.VALID_DAYS * u.day
 
-    # All Events should be Targets of Opportunity, that's the point!
-    mp_data['too'] = True
-
-    # Start rank depends on type:
-    #  - If it's a GW event then enter at rank 1
-    #  - Otherwise enter at rank 106
+    # Everything else can depend on the type of event
     if event.type == 'GW':
+        # LVC gravitational wave detections
+        # Rank:
+        # Always rank 1, the highest possible (aside from S-rank 0)
         mp_data['start_rank'] = 1
-    else:
-        mp_data['start_rank'] = 106
 
-    # Candence also depends on type (note times are in minutes!):
-    #  - If it's a GW event then do as many as possible before the stop time, one every 3 hours
-    #  - Otherwise do three, with 4 hours after the first then a day between the others
-    if event.type == 'GW':
+        # Candence:
+        # Do as many as possible before the stop time, with no delay
+        # (Note times are in minutes!)
         mp_data['num_todo'] = 99
         mp_data['wait_time'] = 0
-    else:
-        mp_data['num_todo'] = 3
-        mp_data['wait_time'] = [4 * 60, 12 * 60, 12 * 60]
-    # Valid time is not an issue, stay valid while in the queue
-    mp_data['valid_time'] = -1
+        mp_data['valid_time'] = -1  # Not needed, always valid
 
-    # The minimum pointing time is based on the ExposureSet
-    # +30s for readout, probably generous
-    mp_data['min_time'] = (exp_data['exptime'] + 30) * exp_data['num_exp']
-
-    # Constraints are more lenient for GW events
-    if event.type == 'GW':
+        # Constraints:
+        # More lenient for GW events
         mp_data['max_sunalt'] = -12
         mp_data['min_alt'] = 30
         mp_data['min_moonsep'] = 10
         mp_data['max_moon'] = 'B'
     else:
+        # Should only be GRB detections
+        # Rank:
+        # Always rank 106, so it's well out of the way of the GW events
+        mp_data['start_rank'] = 1
+
+        # Candence:
+        # Do three, (ideally) two on the first night and then one on the next
+        # (Note times are in minutes!)
+        mp_data['num_todo'] = 3
+        mp_data['wait_time'] = [4 * 60, 12 * 60]
+        mp_data['valid_time'] = -1  # Not needed, always valid
+
+        # Constraints:
+        # Normal defaults
         mp_data['max_sunalt'] = -15
         mp_data['min_alt'] = 30
         mp_data['min_moonsep'] = 30
