@@ -239,6 +239,17 @@ class GRBEvent(Event):
         # Create our own event name (e.g. Fermi_579943502)
         self.name = '{}_{}'.format(self.source, self.id)
 
+        # Get properties from the VOEvent
+        self.properties = {}
+        if self.source == 'Fermi':
+            properties_dict = self.group_params['Trigger_ID']
+            for key in properties_dict.keys():
+                self.properties[key] = properties_dict[key]['value']
+        elif self.source == 'Swift':
+            properties_dict = self.group_params['Solution_Status']
+            for key in properties_dict.keys():
+                self.properties[key] = properties_dict[key]['value']
+
         # Position coordinates
         self.position = vp.get_event_position(self.voevent)
         self.coord = SkyCoord(ra=self.position.ra, dec=self.position.dec, unit=self.position.units)
@@ -263,6 +274,7 @@ class GRBEvent(Event):
                                            self.coord.dec.deg,
                                            self.total_error.deg,
                                            nside=128)
-        # Store basic info
+
+        # Store basic info on the skymap
         self.skymap.object = self.name
         self.skymap.objid = self.id
