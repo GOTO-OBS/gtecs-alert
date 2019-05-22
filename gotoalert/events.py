@@ -63,8 +63,6 @@ class Event(object):
 
         # Load the payload using voeventparse
         self.voevent = vp.loads(self.payload)
-        self.top_params = vp.get_toplevel_params(self.voevent)
-        self.group_params = vp.get_grouped_params(self.voevent)
 
         # Get key attributes:
         # IVORN
@@ -169,6 +167,11 @@ class GWEvent(Event):
     def __init__(self, payload):
         super().__init__(payload)
 
+        # Get XML param dicts
+        # NB: you can't store these on the Event because they're unpickleable.
+        top_params = vp.get_toplevel_params(self.voevent)
+        group_params = vp.get_grouped_params(self.voevent)
+
         # Default params
         self.interesting = True
         self.notice = EVENT_DICTONARY[self.packet_type]['notice_type']
@@ -176,28 +179,28 @@ class GWEvent(Event):
         self.source = EVENT_DICTONARY[self.packet_type]['source']
 
         # Get the event ID (e.g. S190510g)
-        self.id = self.top_params['GraceID']['value']
+        self.id = top_params['GraceID']['value']
 
         # Create our own event name (e.g. LVC_S190510g)
         self.name = '{}_{}'.format(self.source, self.id)
 
         # Get info from the VOEvent
-        self.far = float(self.top_params['FAR']['value'])
-        self.gracedb_url = self.top_params['EventPage']['value']
-        self.instruments = self.top_params['Instruments']['value']
+        self.far = float(top_params['FAR']['value'])
+        self.gracedb_url = top_params['EventPage']['value']
+        self.instruments = top_params['Instruments']['value']
 
         # Get classification probabilities and properties
-        classification_dict = self.group_params.allitems()[1][1]  # Horrible, but blame XML
+        classification_dict = group_params.allitems()[1][1]  # Horrible, but blame XML
         self.classification = {key: float(classification_dict[key]['value'])
                                for key in classification_dict}
-        properties_dict = self.group_params.allitems()[2][1]
+        properties_dict = group_params.allitems()[2][1]
         self.properties = {key: float(properties_dict[key]['value'])
                            for key in properties_dict}
 
         # Get skymap URL
-        for group in self.group_params:
-            if 'skymap_fits' in self.group_params[group]:
-                self.skymap_url = self.group_params[group]['skymap_fits']['value']
+        for group in group_params:
+            if 'skymap_fits' in group_params[group]:
+                self.skymap_url = group_params[group]['skymap_fits']['value']
                 self.skymap_type = group
 
         # Download the skymap
@@ -230,6 +233,11 @@ class GRBEvent(Event):
     def __init__(self, payload):
         super().__init__(payload)
 
+        # Get XML param dicts
+        # NB: you can't store these on the Event because they're unpickleable.
+        top_params = vp.get_toplevel_params(self.voevent)
+        group_params = vp.get_grouped_params(self.voevent)
+
         # Default params
         self.interesting = True
         self.notice = EVENT_DICTONARY[self.packet_type]['notice_type']
@@ -237,24 +245,24 @@ class GRBEvent(Event):
         self.source = EVENT_DICTONARY[self.packet_type]['source']
 
         # Get the event ID (e.g. 579943502)
-        self.id = self.top_params['TrigID']['value']
+        self.id = top_params['TrigID']['value']
 
         # Create our own event name (e.g. Fermi_579943502)
         self.name = '{}_{}'.format(self.source, self.id)
 
         # Get properties from the VOEvent
         if self.source == 'Fermi':
-            self.properties = {key: self.group_params['Trigger_ID'][key]['value']
-                               for key in self.group_params['Trigger_ID']
+            self.properties = {key: group_params['Trigger_ID'][key]['value']
+                               for key in group_params['Trigger_ID']
                                if key != 'Long_short'}
             try:
-                self.duration = self.group_params['Trigger_ID']['Long_short']['value']
+                self.duration = group_params['Trigger_ID']['Long_short']['value']
             except KeyError:
                 # Some don't have the duration
                 self.duration = 'unknown'
         elif self.source == 'Swift':
-            self.properties = {key: self.group_params['Solution_Status'][key]['value']
-                               for key in self.group_params['Solution_Status']}
+            self.properties = {key: group_params['Solution_Status'][key]['value']
+                               for key in group_params['Solution_Status']}
         for key in self.properties:
             if self.properties[key] == 'true':
                 self.properties[key] = True
@@ -285,7 +293,7 @@ class GRBEvent(Event):
             # Get the possible skymap URL
             # Fermi haven't actually updated their alerts to include the URL to the HEALPix skymap,
             # but we can try and create it based on the typical location.
-            old_url = self.top_params['LightCurve_URL']['value']
+            old_url = top_params['LightCurve_URL']['value']
             skymap_url = old_url.replace('lc_medres34', 'healpix_all').replace('.gif', '.fit')
             try:
                 self.skymap = SkyMap.from_fits(skymap_url)
