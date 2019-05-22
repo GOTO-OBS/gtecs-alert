@@ -108,9 +108,7 @@ def get_mpointing_info(event):
     mp_data['valid_time'] = -1
 
     # The Mpointing should be valid immediately after the event time
-    # The stop time depends is defined in params
     mp_data['start_time'] = event.time
-    mp_data['stop_time'] = event.time + params.VALID_DAYS * u.day
 
     # Everything else can depend on the type of event
     if event.type == 'GW':
@@ -150,6 +148,10 @@ def get_mpointing_info(event):
             mp_data['num_todo'] = 2
             mp_data['wait_time'] = [12 * 60]  # 12h means it will always wait for tomorrow night
 
+        # Stop time (after the event trigger time):
+        # Pointings are valid for at most 3 days
+        mp_data['stop_time'] = event.time + 3 * u.day
+
         # Constraints:
         # More lenient for GW events
         mp_data['max_sunalt'] = -12
@@ -173,6 +175,10 @@ def get_mpointing_info(event):
         # Do three, (ideally) two on the first night and then one on the next
         mp_data['num_todo'] = 3
         mp_data['wait_time'] = [4 * 60, 12 * 60]
+
+        # Stop time (after the event trigger time):
+        # Pointings are valid for at most 2 days
+        mp_data['stop_time'] = event.time + 2 * u.day
 
         # Constraints:
         # Normal defaults
