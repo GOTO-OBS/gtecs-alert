@@ -247,7 +247,11 @@ class GRBEvent(Event):
             self.properties = {key: self.group_params['Trigger_ID'][key]['value']
                                for key in self.group_params['Trigger_ID']
                                if key != 'Long_short'}
-            self.duration = self.group_params['Trigger_ID']['Long_short']['value']
+            try:
+                self.duration = self.group_params['Trigger_ID']['Long_short']['value']
+            except KeyError:
+                # Some don't have the duration
+                self.duration = 'unknown'
         elif self.source == 'Swift':
             self.properties = {key: self.group_params['Solution_Status'][key]['value']
                                for key in self.group_params['Solution_Status']}
