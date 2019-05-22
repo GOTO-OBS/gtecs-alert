@@ -104,6 +104,10 @@ class Event(object):
         self.notice = 'Unknown'
         self.type = 'Unknown'
         self.source = 'Unknown'
+        self.position = None
+        self.coord = None
+        self.target = None
+        self.skymap = None
         self.properties = {}
 
     def __repr__(self):
