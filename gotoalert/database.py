@@ -118,19 +118,32 @@ def get_mpointing_info(event):
         # Split based on event type: whether it has a neutron star or not
         if event.properties['HasNS'] > 0.25:
             # (More) likly to be EM bright
-            # Rank:
-            # Rank 2, higher than BH events
-            mp_data['start_rank'] = 2
+            # Split based on distance (Mpc)
+            if event.distance < 400:
+                # Rank:
+                # Rank 2, close NS events are highest priority
+                mp_data['start_rank'] = 2
+            else:
+                # Rank:
+                # Rank 4, lower for further events
+                mp_data['start_rank'] = 4
 
             # Candence (times in minutes):
             # Do as many as possible before the stop time, with no delay
             mp_data['num_todo'] = 99
             mp_data['wait_time'] = 0
+
         else:
             # Less likly to be EM bright
-            # Rank:
-            # Rank 3, lower than NS events
-            mp_data['start_rank'] = 3
+            # Split based on distance (Mpc)
+            if event.distance < 400:
+                # Rank:
+                # Rank 3, lower than NS events
+                mp_data['start_rank'] = 3
+            else:
+                # Rank:
+                # Rank 5, far BH events are lowest priority of GW events
+                mp_data['start_rank'] = 5
 
             # Candence (times in minutes):
             # Do one a night for two nights
