@@ -17,154 +17,140 @@ import voeventdb.remote.apiv1 as vdb
 import voeventparse as vp
 
 # Define interesting events we want to process
-# Primary key is the VOEvent Packet_Type
-EVENT_DICTONARY = {  # Swift GRBs
-                     61: {'notice': 'SWIFT_BAT_GRB_POS',
-                          'type': 'GRB',
-                          'source': 'Swift',
-                          'systematic_error': 0,
-                          },
-                     # 67: {'notice': 'SWIFT_XRT_POS',
-                     #      'type': 'GRB',
-                     #      'source': 'Swift',
-                     #      'systematic_error': 0,
-                     #      },
-                     # Fermi GRBs
-                     112: {'notice': 'FERMI_GBM_GND_POS',
-                           'type': 'GRB',
-                           'source': 'Fermi',
-                           'systematic_error': 3.71,
-                           },
-                     115: {'notice': 'FERMI_GBM_FIN_POS',
-                           'type': 'GRB',
-                           'source': 'Fermi',
-                           'systematic_error': 3.71,  # Might be different
-                           },
-                     # LVC GW events
-                     150: {'notice': 'LVC_PRELIMINARY',
-                           'type': 'GW',
-                           'source': 'LVC',
-                           'systematic_error': 0,
-                           },
-                     151: {'notice': 'LVC_INITIAL',
-                           'type': 'GW',
-                           'source': 'LVC',
-                           'systematic_error': 0,
-                           },
-                     152: {'notice': 'LVC_UPDATE',
-                           'type': 'GW',
-                           'source': 'LVC',
-                           'systematic_error': 0,
-                           },
-}
+# Primary key is the GCN Packet_Type
+# This should be in params
+EVENT_DICTONARY = {150: {'notice_type': 'LVC_PRELIMINARY',
+                         'event_type': 'GW',
+                         'source': 'LVC',
+                         },
+                   151: {'notice_type': 'LVC_INITIAL',
+                         'event_type': 'GW',
+                         'source': 'LVC',
+                         },
+                   152: {'notice_type': 'LVC_UPDATE',
+                         'event_type': 'GW',
+                         'source': 'LVC',
+                         },
+                   112: {'notice_type': 'FERMI_GBM_GND_POS',
+                         'event_type': 'GRB',
+                         'source': 'Fermi',
+                         },
+                   115: {'notice_type': 'FERMI_GBM_FIN_POS',
+                         'event_type': 'GRB',
+                         'source': 'Fermi',
+                         },
+                   61: {'notice_type': 'SWIFT_BAT_GRB_POS',
+                        'event_type': 'GRB',
+                        'source': 'Swift',
+                        },
+                   }
 
 
 class Event(object):
-    """A simple class to represent a single VOEvent."""
+    """A class to represent a single VOEvent.
+
+    Some Events are better represented as one of the more specalised subclasses.
+
+    Use Event.from_payload() or Event.from_ivorn() to create an appropriate event.
+    """
 
     def __init__(self, payload):
+        # Store the creation time
         self.creation_time = Time.now()
+
+        # Store the payload
         self.payload = payload
 
         # Load the payload using voeventparse
         self.voevent = vp.loads(self.payload)
+        self.top_params = vp.get_toplevel_params(self.voevent)
+        self.group_params = vp.get_grouped_params(self.voevent)
 
-        # Get key attributes
+        # Get key attributes:
+        # IVORN
         self.ivorn = self.voevent.attrib['ivorn']
+        # Using the official IVOA terms (ivo://authorityID/resourceKey#local_ID):
+        self.authorityID = self.ivorn.split('/')[2]
+        self.resourceKey = self.ivorn.split('/')[3].split('#')[0]
+        self.local_ID = self.ivorn.split('/')[3].split('#')[1]
+        # Using some easier terms to understand:
+        self.authority = self.authorityID
+        self.publisher = self.resourceKey
+        self.title = self.local_ID
+
+        # Role (observation/test/...)
         self.role = self.voevent.attrib['role']
 
-        # Get packet type
-        try:
-            top_params = vp.get_toplevel_params(self.voevent)
-            self.packet_type = int(top_params['Packet_Type']['value'])
-        except KeyError:
-            # Some test events don't have packet types
-            return
-
-        if self.packet_type not in EVENT_DICTONARY:
-            # The event doesn't match any ones we care about
-            self.interesting = False
-            self.notice = 'Unknown'
-            self.type = 'Unknown'
-            self.source = 'Unknown'
-            self.systematic_error = Angle(0, unit='deg')
-        else:
-            # The packet type must match one of the events we're looking for
-            self.interesting = True
-            self.notice = EVENT_DICTONARY[self.packet_type]['notice']
-            self.type = EVENT_DICTONARY[self.packet_type]['type']
-            self.source = EVENT_DICTONARY[self.packet_type]['source']
-            self.systematic_error = Angle(EVENT_DICTONARY[self.packet_type]['systematic_error'],
-                                          unit='deg')
-
-        # Get event time
+        # Event time
         event_time = vp.convenience.get_event_time_as_utc(self.voevent, index=0)
-        if event_time is None:
-            # Sometimes we might get system test events from the server.
-            # They (annoyingly) don't actually have an event attached, even a fake one,
-            # so don't have a time. Just return here, the handler will ignore it.
-            self.time = None
-            return
-        self.time = Time(event_time)
-
-        # Get event position
-        try:
-            # (RA/DEC)
-            position = vp.get_event_position(self.voevent)
-            self.coord = SkyCoord(ra=position.ra, dec=position.dec, unit=position.units)
-            self.target = FixedTarget(self.coord)
-
-            # Error
-            self.coord_error = Angle(position.err, unit=position.units)
-            self.total_error = Angle(np.sqrt(self.coord_error ** 2 + self.systematic_error ** 2),
-                                     unit='deg')
-
-            # (Galactic)
-            self.gal_lat = self.coord.galactic.b.value
-            galactic_center = SkyCoord(l=0, b=0, unit='deg,deg', frame='galactic')
-            self.gal_dist = self.coord.galactic.separation(galactic_center).value
-        except AttributeError:
-            # Probably a LVC skympap
-            self.coord = None
-            self.coord_error = None
-            self.target = None
-            self.gal_lat = None
-            self.gal_dist = None
-
-        # Get skymap url, if there is one
-        group_params = vp.get_grouped_params(self.voevent)
-        self.skymap_url = None
-        self.skymap_type = None
-        for group in group_params:
-            if 'skymap_fits' in group_params[group]:
-                self.skymap_url = group_params[group]['skymap_fits']['value']
-                self.skymap_type = group
-        self.skymap = None
-
-        # Get the trigger ID, if there is one
-        if self.type == 'GRB':
-            self.id = top_params['TrigID']['value']
-        elif self.type == 'GW':
-            self.id = top_params['GraceID']['value']
+        if event_time:
+            self.time = Time(event_time)
         else:
-            self.id = '0'
-        self.name = '{}_{}'.format(self.source, self.id)
+            # Some test events don't have times
+            self.time = None
 
-        # Get contact email, if there is one
+        # Contact email
         try:
             self.contact = self.voevent.Who.Author.contactEmail
         except AttributeError:
             self.contact = None
 
+        # GCN packet type
+        self.packet_type = self._get_packet_type(payload)
+
+        # Set default attirbutes
+        # The subclasses for "interesting" events will overwrite these
+        self.interesting = False
+        self.notice = 'Unknown'
+        self.type = 'Unknown'
+        self.source = 'Unknown'
+        self.position = None
+        self.coord = None
+        self.target = None
+        self.skymap = None
+        self.properties = {}
+
     def __repr__(self):
-            return 'Event(name={}, notice={}, type={})'.format(self.name, self.notice, self.type)
+        return '{}(ivorn={})'.format(self.__class__.__name__, self.ivorn)
+
+    @staticmethod
+    def _get_packet_type(payload):
+        """Get the packet type from a VOEvent payload."""
+        voevent = vp.loads(payload)
+        top_params = vp.get_toplevel_params(voevent)
+        try:
+            packet_type = int(top_params['Packet_Type']['value'])
+        except KeyError:
+            # If it's a VOEvent but not a GCN it won't have a packet type (e.g. Gaia alerts)
+            packet_type = None
+        return packet_type
+
+    @classmethod
+    def from_payload(cls, payload):
+        """Create an Event from a VOEvent payload."""
+        # Chose a more detailed subclass based on GCN Packet Type, if there is one
+        packet_type = cls._get_packet_type(payload)
+        if not packet_type or packet_type not in EVENT_DICTONARY:
+            # Not a GCN, or not a recognised packet type
+            event_class = Event
+        else:
+            event_type = EVENT_DICTONARY[packet_type]['event_type']
+            if event_type == 'GW':
+                event_class = GWEvent
+            elif event_type == 'GRB':
+                event_class = GRBEvent
+            else:
+                # This shouldn't happen?
+                event_class = Event
+
+        # Create and return the instance
+        return event_class(payload)
 
     @classmethod
     def from_ivorn(cls, ivorn):
         """Create an Event by querying the 4pisky VOEvent database."""
         payload = vdb.packet_xml(ivorn)
-        event = cls(payload)
-        return event
+        return cls.from_payload(payload)
 
     def archive(self, path):
         """Archive this event in the config directory."""
@@ -176,31 +162,145 @@ class Event(object):
         with open(savepath, 'wb') as f:
             f.write(self.payload)
 
-    def get_skymap(self, nside=128):
-        """Create a GOTO-tile SkyMap for the event.
 
-        If the Event is from the LVC then it should have a skymap url,
-        if not then a Gaussian skymap is created based on the position error.
+class GWEvent(Event):
+    """A class to represent a Gravitational Wave Event."""
 
-        """
-        if self.skymap:
-            return self.skymap
+    def __init__(self, payload):
+        super().__init__(payload)
 
-        if self.skymap_url:
-            # HealPIX can download from a URL
-            self.skymap = SkyMap.from_fits(self.skymap_url)
-            self.skymap.regrade(nside)
-        elif self.coord:
-            # Make a Gaussian one
-            self.skymap = SkyMap.from_position(self.coord.ra.deg,
-                                               self.coord.dec.deg,
-                                               self.total_error.deg,
-                                               nside)
-        else:
-            raise ValueError('No skymap_url or central coordinate')
+        # Default params
+        self.interesting = True
+        self.notice = EVENT_DICTONARY[self.packet_type]['notice_type']
+        self.type = 'GW'
+        self.source = EVENT_DICTONARY[self.packet_type]['source']
 
-        # Add some basic info
+        # Get the event ID (e.g. S190510g)
+        self.id = self.top_params['GraceID']['value']
+
+        # Create our own event name (e.g. LVC_S190510g)
+        self.name = '{}_{}'.format(self.source, self.id)
+
+        # Get info from the VOEvent
+        self.far = float(self.top_params['FAR']['value'])
+        self.gracedb_url = self.top_params['EventPage']['value']
+        self.instruments = self.top_params['Instruments']['value']
+
+        # Get classification probabilities and properties
+        classification_dict = self.group_params.allitems()[1][1]  # Horrible, but blame XML
+        self.classification = {key: float(classification_dict[key]['value'])
+                               for key in classification_dict}
+        properties_dict = self.group_params.allitems()[2][1]
+        self.properties = {key: float(properties_dict[key]['value'])
+                           for key in properties_dict}
+
+        # Get skymap URL
+        for group in self.group_params:
+            if 'skymap_fits' in self.group_params[group]:
+                self.skymap_url = self.group_params[group]['skymap_fits']['value']
+                self.skymap_type = group
+
+        # Download the skymap
+        self.skymap = SkyMap.from_fits(self.skymap_url)
+        # Don't regrade here, let the user do that if they want to
+
+        # Store basic info on the skymap
         self.skymap.object = self.name
         self.skymap.objid = self.id
 
-        return self.skymap
+        # Get info from the skymap header
+        try:
+            self.distance = self.skymap.header['distmean']
+            self.distance_error = self.skymap.header['diststd']
+        except KeyError:
+            # older skymaps might not have distances
+            self.distance = None
+            self.distance_error = None
+
+        # Get info from the skymap itself
+        self.contour_areas = {}
+        for contour in [0.5, 0.9]:
+            npix = len(self.skymap._pixels_within_contour(contour))
+            self.contour_areas[contour] = npix * self.skymap.pixel_area
+
+
+class GRBEvent(Event):
+    """A class to represent a Gamma-Ray Burst Event."""
+
+    def __init__(self, payload):
+        super().__init__(payload)
+
+        # Default params
+        self.interesting = True
+        self.notice = EVENT_DICTONARY[self.packet_type]['notice_type']
+        self.type = 'GRB'
+        self.source = EVENT_DICTONARY[self.packet_type]['source']
+
+        # Get the event ID (e.g. 579943502)
+        self.id = self.top_params['TrigID']['value']
+
+        # Create our own event name (e.g. Fermi_579943502)
+        self.name = '{}_{}'.format(self.source, self.id)
+
+        # Get properties from the VOEvent
+        if self.source == 'Fermi':
+            self.properties = {key: self.group_params['Trigger_ID'][key]['value']
+                               for key in self.group_params['Trigger_ID']
+                               if key != 'Long_short'}
+            try:
+                self.duration = self.group_params['Trigger_ID']['Long_short']['value']
+            except KeyError:
+                # Some don't have the duration
+                self.duration = 'unknown'
+        elif self.source == 'Swift':
+            self.properties = {key: self.group_params['Solution_Status'][key]['value']
+                               for key in self.group_params['Solution_Status']}
+        for key in self.properties:
+            if self.properties[key] == 'true':
+                self.properties[key] = True
+            elif self.properties[key] == 'false':
+                self.properties[key] = False
+
+        # Position coordinates
+        self.position = vp.get_event_position(self.voevent)
+        self.coord = SkyCoord(ra=self.position.ra, dec=self.position.dec, unit=self.position.units)
+        self.target = FixedTarget(self.coord)
+
+        # Position error
+        self.coord_error = Angle(self.position.err, unit=self.position.units)
+        if self.source == 'Fermi':
+            self.systematic_error = Angle(3.71, unit='deg')
+        else:
+            self.systematic_error = Angle(0, unit='deg')
+        self.total_error = Angle(np.sqrt(self.coord_error ** 2 + self.systematic_error ** 2),
+                                 unit='deg')
+
+        # Galactic coordinates
+        self.gal_lat = self.coord.galactic.b.value
+        galactic_center = SkyCoord(l=0, b=0, unit='deg,deg', frame='galactic')
+        self.gal_dist = self.coord.galactic.separation(galactic_center).value
+
+        # Try downloading the Fermi skymap
+        if self.source == 'Fermi':
+            # Get the possible skymap URL
+            # Fermi haven't actually updated their alerts to include the URL to the HEALPix skymap,
+            # but we can try and create it based on the typical location.
+            old_url = self.top_params['LightCurve_URL']['value']
+            skymap_url = old_url.replace('lc_medres34', 'healpix_all').replace('.gif', '.fit')
+            try:
+                self.skymap = SkyMap.from_fits(skymap_url)
+                self.skymap_url = skymap_url
+            except Exception:
+                # Worth a try, fall back to creating our own
+                pass
+
+        # Create a Gaussian skymap (if we didn't download one above)
+        if not self.skymap:
+            self.skymap = SkyMap.from_position(self.coord.ra.deg,
+                                               self.coord.dec.deg,
+                                               self.total_error.deg,
+                                               nside=128)
+
+        # Store basic info on the skymap
+        self.skymap.object = self.name
+        self.skymap.objid = self.id
