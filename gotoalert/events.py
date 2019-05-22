@@ -104,6 +104,7 @@ class Event(object):
         self.notice = 'Unknown'
         self.type = 'Unknown'
         self.source = 'Unknown'
+        self.properties = {}
 
     def __repr__(self):
         return '{}(ivorn={})'.format(self.__class__.__name__, self.ivorn)
@@ -182,14 +183,12 @@ class GWEvent(Event):
         self.instruments = self.top_params['Instruments']['value']
 
         # Get classification probabilities and properties
-        self.classification = {}
         classification_dict = self.group_params.allitems()[1][1]  # Horrible, but blame XML
-        for key in classification_dict.keys():
-            self.classification[key] = float(classification_dict[key]['value'])
-        self.properties = {}
-        properties_dict = self.group_params.allitems()[2][1]  # Uggg
-        for key in properties_dict.keys():
-            self.properties[key] = float(properties_dict[key]['value'])
+        self.classification = {key: float(classification_dict[key]['value'])
+                               for key in classification_dict}
+        properties_dict = self.group_params.allitems()[2][1]
+        self.properties = {key: float(properties_dict[key]['value'])
+                           for key in properties_dict}
 
         # Get skymap URL
         for group in self.group_params:
@@ -240,15 +239,19 @@ class GRBEvent(Event):
         self.name = '{}_{}'.format(self.source, self.id)
 
         # Get properties from the VOEvent
-        self.properties = {}
         if self.source == 'Fermi':
-            properties_dict = self.group_params['Trigger_ID']
-            for key in properties_dict.keys():
-                self.properties[key] = properties_dict[key]['value']
+            self.properties = {key: self.group_params['Trigger_ID'][key]['value']
+                               for key in self.group_params['Trigger_ID']
+                               if key != 'Long_short'}
+            self.duration = self.group_params['Trigger_ID']['Long_short']['value']
         elif self.source == 'Swift':
-            properties_dict = self.group_params['Solution_Status']
-            for key in properties_dict.keys():
-                self.properties[key] = properties_dict[key]['value']
+            self.properties = {key: self.group_params['Solution_Status'][key]['value']
+                               for key in self.group_params['Solution_Status']}
+        for key in self.properties:
+            if self.properties[key] == 'true':
+                self.properties[key] = True
+            elif self.properties[key] == 'false':
+                self.properties[key] = False
 
         # Position coordinates
         self.position = vp.get_event_position(self.voevent)
