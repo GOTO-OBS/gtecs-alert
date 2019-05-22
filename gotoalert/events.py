@@ -280,11 +280,26 @@ class GRBEvent(Event):
         galactic_center = SkyCoord(l=0, b=0, unit='deg,deg', frame='galactic')
         self.gal_dist = self.coord.galactic.separation(galactic_center).value
 
-        # Create a Gaussian skymap
-        self.skymap = SkyMap.from_position(self.coord.ra.deg,
-                                           self.coord.dec.deg,
-                                           self.total_error.deg,
-                                           nside=128)
+        # Try downloading the Fermi skymap
+        if self.source == 'Fermi':
+            # Get the possible skymap URL
+            # Fermi haven't actually updated their alerts to include the URL to the HEALPix skymap,
+            # but we can try and create it based on the typical location.
+            old_url = self.top_params['LightCurve_URL']['value']
+            skymap_url = old_url.replace('lc_medres34', 'healpix_all').replace('.gif', '.fit')
+            try:
+                self.skymap = SkyMap.from_fits(skymap_url)
+                self.skymap_url = skymap_url
+            except Exception:
+                # Worth a try, fall back to creating our own
+                pass
+
+        # Create a Gaussian skymap (if we didn't download one above)
+        if not self.skymap:
+            self.skymap = SkyMap.from_position(self.coord.ra.deg,
+                                               self.coord.dec.deg,
+                                               self.total_error.deg,
+                                               nside=128)
 
         # Store basic info on the skymap
         self.skymap.object = self.name
