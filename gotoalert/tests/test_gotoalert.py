@@ -17,5 +17,5 @@ if __name__ == '__main__':
         print('~~~~~~~~~~~~~~~')
         with open(os.path.join(test_path, test_file), "rb") as f:
             payload = f.read()
-            event = Event(payload)
+            event = Event.from_payload(payload)
             event_handler(event)

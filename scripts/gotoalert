@@ -9,5 +9,5 @@ from gotoalert.events import Event
 
 if __name__ == '__main__':
     payload = sys.stdin.buffer.read()
-    event = Event(payload)
+    event = Event.from_payload(payload)
     event_handler(event)
