@@ -159,9 +159,15 @@ def get_mpointing_info(event):
 
     else:
         # Should only be GRB detections
-        # Rank:
-        # Always rank 106, so it's well out of the way of the GW events
-        mp_data['start_rank'] = 1
+        # Split based on source
+        if event.source == 'Swift':
+            # Rank:
+            # Rank 7, out of the way of GW events (first pass) but higher than Fermi
+            mp_data['start_rank'] = 7
+        else:
+            # Rank:
+            # Rank 8, less than Swift due to typically larger skymaps
+            mp_data['start_rank'] = 8
 
         # Candence (times in minutes):
         # Do three, (ideally) two on the first night and then one on the next
