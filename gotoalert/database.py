@@ -113,40 +113,52 @@ def get_mpointing_info(event):
     # Everything else can depend on the type of event
     if event.type == 'GW':
         # LVC gravitational wave detections
-        # Split based on event type: whether it has a neutron star or not
-        if event.properties['HasNS'] > 0.25:
-            # (More) likly to be EM bright
-            # Split based on distance (Mpc)
-            if event.distance < 400:
-                # Rank:
-                # Rank 2, close NS events are highest priority
-                mp_data['start_rank'] = 2
+        # Split based on CBC or burst:
+        if event.group == 'CBC':
+            # Split based on event type: whether it has a neutron star or not
+            if event.properties['HasNS'] > 0.25:
+                # (More) likly to be EM bright
+                # Split based on distance (Mpc)
+                if event.distance < 400:
+                    # Rank:
+                    # Rank 2, close NS events are highest priority
+                    mp_data['start_rank'] = 2
+                else:
+                    # Rank:
+                    # Rank 4, lower for further events
+                    mp_data['start_rank'] = 4
+
+                # Candence (times in minutes):
+                # Do as many as possible before the stop time, with no delay
+                mp_data['num_todo'] = 99
+                mp_data['wait_time'] = 0
+
             else:
-                # Rank:
-                # Rank 4, lower for further events
-                mp_data['start_rank'] = 4
+                # Less likly to be EM bright
+                # Split based on distance (Mpc)
+                if event.distance < 400:
+                    # Rank:
+                    # Rank 3, lower than NS events
+                    mp_data['start_rank'] = 3
+                else:
+                    # Rank:
+                    # Rank 5, far BH events are lowest priority of GW events
+                    mp_data['start_rank'] = 5
+
+                # Candence (times in minutes):
+                # Do one a night for two nights
+                mp_data['num_todo'] = 2
+                mp_data['wait_time'] = [12 * 60]  # 12h means it will always wait for tomorrow night
+        else:
+            # No idea really. Put in at a medium priority.
+            # Rank:
+            # Rank 4, below close CBC
+            mp_data['start_rank'] = 4
 
             # Candence (times in minutes):
             # Do as many as possible before the stop time, with no delay
             mp_data['num_todo'] = 99
             mp_data['wait_time'] = 0
-
-        else:
-            # Less likly to be EM bright
-            # Split based on distance (Mpc)
-            if event.distance < 400:
-                # Rank:
-                # Rank 3, lower than NS events
-                mp_data['start_rank'] = 3
-            else:
-                # Rank:
-                # Rank 5, far BH events are lowest priority of GW events
-                mp_data['start_rank'] = 5
-
-            # Candence (times in minutes):
-            # Do one a night for two nights
-            mp_data['num_todo'] = 2
-            mp_data['wait_time'] = [12 * 60]  # 12h means it will always wait for tomorrow night
 
         # Stop time (after the event trigger time):
         # Pointings are valid for at most 3 days

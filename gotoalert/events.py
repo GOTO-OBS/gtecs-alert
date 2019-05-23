@@ -185,17 +185,24 @@ class GWEvent(Event):
         self.name = '{}_{}'.format(self.source, self.id)
 
         # Get info from the VOEvent
+        # See https://emfollow.docs.ligo.org/userguide/content.html#notice-contents
         self.far = float(top_params['FAR']['value'])
         self.gracedb_url = top_params['EventPage']['value']
         self.instruments = top_params['Instruments']['value']
+        self.group = top_params['Group']['value']  # CBC or Burst
+        self.pipeline = top_params['Pipeline']['value']
 
         # Get classification probabilities and properties
-        classification_dict = group_params.allitems()[1][1]  # Horrible, but blame XML
-        self.classification = {key: float(classification_dict[key]['value'])
-                               for key in classification_dict}
-        properties_dict = group_params.allitems()[2][1]
-        self.properties = {key: float(properties_dict[key]['value'])
-                           for key in properties_dict}
+        if self.group == 'CBC':
+            classification_dict = group_params.allitems()[1][1]  # Horrible, but blame XML
+            self.classification = {key: float(classification_dict[key]['value'])
+                                   for key in classification_dict}
+            properties_dict = group_params.allitems()[2][1]
+            self.properties = {key: float(properties_dict[key]['value'])
+                               for key in properties_dict}
+        else:
+            self.classification = {}
+            self.properties = {}
 
         # Get skymap URL
         for group in group_params:
@@ -216,7 +223,7 @@ class GWEvent(Event):
             self.distance = self.skymap.header['distmean']
             self.distance_error = self.skymap.header['diststd']
         except KeyError:
-            # older skymaps might not have distances
+            # Older skymaps (& Burst?) might not have distances
             self.distance = None
             self.distance_error = None
 
