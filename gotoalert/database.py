@@ -121,39 +121,41 @@ def get_mpointing_info(event):
                 # Split based on distance (Mpc)
                 if event.distance < 400:
                     # Rank:
-                    # Rank 2, close NS events are highest priority
+                    # Close NS events are highest priority
                     mp_data['start_rank'] = 2
                 else:
                     # Rank:
-                    # Rank 4, lower for further events
-                    mp_data['start_rank'] = 4
+                    # Slightly lower for further events and still allowing two passes
+                    # of the closer ones
+                    mp_data['start_rank'] = 13
 
                 # Candence (times in minutes):
-                # Do as many as possible before the stop time, with no delay
+                # Do as many as possible before the stop time (3 days), with no delay
                 mp_data['num_todo'] = 99
                 mp_data['wait_time'] = 0
 
             else:
-                # Less likly to be EM bright
+                # BBH, unlikly to be EM bright
                 # Split based on distance (Mpc)
-                if event.distance < 400:
+                if event.distance < 100:
+                    # Really close
                     # Rank:
-                    # Rank 3, lower than NS events
-                    mp_data['start_rank'] = 3
+                    # Still lower than all NS events but worth having a look.
+                    mp_data['start_rank'] = 24
                 else:
                     # Rank:
-                    # Rank 5, far BH events are lowest priority of GW events
-                    mp_data['start_rank'] = 5
+                    # Far BH events are lowest priority of GW events.
+                    mp_data['start_rank'] = 105
 
                 # Candence (times in minutes):
                 # Do one a night for two nights
                 mp_data['num_todo'] = 2
                 mp_data['wait_time'] = [12 * 60]  # 12h means it will always wait for tomorrow night
         else:
-            # No idea really. Put in at a medium priority.
+            # No idea really.
             # Rank:
-            # Rank 4, below close CBC
-            mp_data['start_rank'] = 4
+            # Below close CBC
+            mp_data['start_rank'] = 52
 
             # Candence (times in minutes):
             # Do as many as possible before the stop time, with no delay
@@ -176,12 +178,12 @@ def get_mpointing_info(event):
         # Split based on source
         if event.source == 'Swift':
             # Rank:
-            # Rank 7, out of the way of GW events (first pass) but higher than Fermi
-            mp_data['start_rank'] = 7
+            # Out of the way of GW events but higher than Fermi.
+            mp_data['start_rank'] = 207
         else:
             # Rank:
-            # Rank 8, less than Swift due to typically larger skymaps
-            mp_data['start_rank'] = 8
+            # Fermi is lower than Swift due to typically larger skymaps.
+            mp_data['start_rank'] = 218
 
         # Candence (times in minutes):
         # Do three, (ideally) two on the first night and then one on the next
