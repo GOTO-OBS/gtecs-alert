@@ -224,8 +224,8 @@ class GWEvent(Event):
             self.distance_error = self.skymap.header['diststd']
         except KeyError:
             # Older skymaps (& Burst?) might not have distances
-            self.distance = None
-            self.distance_error = None
+            self.distance = np.inf
+            self.distance_error = 0
 
         # Get info from the skymap itself
         self.contour_areas = {}
