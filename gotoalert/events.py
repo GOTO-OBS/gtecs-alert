@@ -210,9 +210,21 @@ class GWEvent(Event):
                 self.skymap_url = group_params[group]['skymap_fits']['value']
                 self.skymap_type = group
 
+        # Don't download the skymap here, it may well be very large.
+        # Only do it when it's absolutely necessary
+        # These params will only be set once the skymap is downloaded
+        self.distance = None
+        self.distance_error = None
+        self.contour_areas = {0.5: None, 0.9: None}
+
+    def get_skymap(self, nside=128):
+        """Download the Event skymap and return it as a `gototile.skymap.SkyMap object."""
+        if self.skymap:
+            return self.skymap
+
         # Download the skymap
         self.skymap = SkyMap.from_fits(self.skymap_url)
-        # Don't regrade here, let the user do that if they want to
+        self.skymap.regrade(nside)
 
         # Store basic info on the skymap
         self.skymap.object = self.name
@@ -232,6 +244,8 @@ class GWEvent(Event):
         for contour in [0.5, 0.9]:
             npix = len(self.skymap._pixels_within_contour(contour))
             self.contour_areas[contour] = npix * self.skymap.pixel_area
+
+        return self.skymap
 
 
 class GRBEvent(Event):
@@ -295,16 +309,32 @@ class GRBEvent(Event):
         galactic_center = SkyCoord(l=0, b=0, unit='deg,deg', frame='galactic')
         self.gal_dist = self.coord.galactic.separation(galactic_center).value
 
-        # Try downloading the Fermi skymap
-        if self.source == 'Fermi':
-            # Get the possible skymap URL
-            # Fermi haven't actually updated their alerts to include the URL to the HEALPix skymap,
-            # but we can try and create it based on the typical location.
+        # Try creating the Fermi skymap url
+        # Fermi haven't actually updated their alerts to include the URL to the HEALPix skymap,
+        # but we can try and create it based on the typical location.
+        try:
             old_url = top_params['LightCurve_URL']['value']
             skymap_url = old_url.replace('lc_medres34', 'healpix_all').replace('.gif', '.fit')
+            self.skymap_url = skymap_url
+        except Exception:
+            # Worth a try, fall back to creating our own
+            self.skymap_url = None
+
+        # Don't create or download the skymap here, it may well be very large.
+        # Only do it when it's absolutely necessary
+        # These params will only be set once the skymap is downloaded
+        self.contour_areas = {0.5: None, 0.9: None}
+
+    def get_skymap(self, nside=128):
+        """Download the Event skymap and return it as a `gototile.skymap.SkyMap object."""
+        if self.skymap:
+            return self.skymap
+
+        # Try downloading the Fermi skymap
+        if self.skymap_url:
             try:
-                self.skymap = SkyMap.from_fits(skymap_url)
-                self.skymap_url = skymap_url
+                self.skymap = SkyMap.from_fits(self.skymap_url)
+                self.skymap.regrade(nside)
             except Exception:
                 # Worth a try, fall back to creating our own
                 pass
@@ -314,8 +344,16 @@ class GRBEvent(Event):
             self.skymap = SkyMap.from_position(self.coord.ra.deg,
                                                self.coord.dec.deg,
                                                self.total_error.deg,
-                                               nside=128)
+                                               nside=nside)
 
         # Store basic info on the skymap
         self.skymap.object = self.name
         self.skymap.objid = self.id
+
+        # Get info from the skymap itself
+        self.contour_areas = {}
+        for contour in [0.5, 0.9]:
+            npix = len(self.skymap._pixels_within_contour(contour))
+            self.contour_areas[contour] = npix * self.skymap.pixel_area
+
+        return self.skymap

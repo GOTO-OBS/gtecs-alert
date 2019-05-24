@@ -284,8 +284,13 @@ def add_tiles(event, log):
         grid = SkyGrid(fov, overlap, kind=db_grid.algorithm)
 
         # Get the Event skymap and apply it to the grid
+        if event.skymap_url:
+            log.debug('Fetching skymap from {}'.format(event.skymap_url))
+        else:
+            log.debug('Creating skymap')
+        skymap = event.get_skymap()
         log.debug('Applying skymap to grid')
-        grid.apply_skymap(event.skymap)
+        grid.apply_skymap(skymap)
 
         # Store grid on the Event
         event.grid = grid
@@ -298,7 +303,7 @@ def add_tiles(event, log):
         if event.type == 'GW':
             # see https://github.com/GOTO-OBS/goto-alert/issues/26
             # mask based on if the mean tile pixel value is within the 90% contour
-            mask = [np.mean(event.skymap.contours[tile]) < 0.9 for tile in grid.pixels]
+            mask = [np.mean(skymap.contours[tile]) < 0.9 for tile in grid.pixels]
         elif params.MIN_TILE_PROB:
             # mask based on min tile prob
             mask = table['prob'] > params.MIN_TILE_PROB
