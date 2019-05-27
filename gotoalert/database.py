@@ -429,6 +429,11 @@ def db_insert(event, log, delete_old=True, on_grid=True):
             log.debug('Checking for previous events in database')
             remove_previous_events(event, log)
 
+        # If it's a retraction event that's all we need to do
+        # TODO: shouldn't we still store the Event in the database to show we processed it?
+        if event.type == 'GW_RETRACTION':
+            return
+
         # Then add the new pointings
         if not on_grid:
             # Add a single pointing at the event centre

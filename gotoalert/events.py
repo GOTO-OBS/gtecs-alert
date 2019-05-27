@@ -31,6 +31,10 @@ EVENT_DICTONARY = {150: {'notice_type': 'LVC_PRELIMINARY',
                          'event_type': 'GW',
                          'source': 'LVC',
                          },
+                   164: {'notice_type': 'LVC_RETRACTION',
+                         'event_type': 'GW_RETRACTION',
+                         'source': 'LVC',
+                         },
                    112: {'notice_type': 'FERMI_GBM_GND_POS',
                          'event_type': 'GRB',
                          'source': 'Fermi',
@@ -135,6 +139,8 @@ class Event(object):
             event_type = EVENT_DICTONARY[packet_type]['event_type']
             if event_type == 'GW':
                 event_class = GWEvent
+            elif event_type == 'GW_RETRACTION':
+                event_class = GWRetractionEvent
             elif event_type == 'GRB':
                 event_class = GRBEvent
             else:
@@ -246,6 +252,29 @@ class GWEvent(Event):
             self.contour_areas[contour] = npix * self.skymap.pixel_area
 
         return self.skymap
+
+
+class GWRetractionEvent(Event):
+    """A class to represent a Gravitational Wave Retraction alert."""
+
+    def __init__(self, payload):
+        super().__init__(payload)
+
+        # Get XML param dicts
+        # NB: you can't store these on the Event because they're unpickleable.
+        top_params = vp.get_toplevel_params(self.voevent)
+
+        # Default params
+        self.interesting = True
+        self.notice = EVENT_DICTONARY[self.packet_type]['notice_type']
+        self.type = 'GW_RETRACTION'
+        self.source = EVENT_DICTONARY[self.packet_type]['source']
+
+        # Get the event ID (e.g. S190510g)
+        self.id = top_params['GraceID']['value']
+
+        # Create our own event name (e.g. LVC_S190510g)
+        self.name = '{}_{}'.format(self.source, self.id)
 
 
 class GRBEvent(Event):
