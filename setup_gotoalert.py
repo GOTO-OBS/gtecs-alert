@@ -25,15 +25,19 @@ print('Using config file {}/.gotoalert.conf'.format(params.CONFIG_FILE_PATH))
 print('')
 
 # Check HTML path
-if params.HTML_PATH in ['/path/goes/here/', 'path_not_set', None]:
-    print('ERROR: HTML_PATH not set')
+if params.FILE_PATH in ['/path/goes/here/', 'path_not_set', None]:
+    print('ERROR: FILE_PATH not set')
     print('       You need to edit .gotoalert.conf')
     sys.exit(1)
-print('HTML_PATH is set to: "{}"'.format(params.HTML_PATH))
+print('FILE_PATH is set to: "{}"'.format(params.FILE_PATH))
 print('')
 
 # Create directories
 try:
+    if not os.path.exists(params.FILE_PATH):
+        os.mkdir(params.FILE_PATH)
+    print('Created ', params.FILE_PATH)
+
     if not os.path.exists(params.HTML_PATH):
         os.mkdir(params.HTML_PATH)
     print('Created ', params.HTML_PATH)
@@ -50,8 +54,8 @@ try:
                 os.mkdir(subsubpath)
                 print('Created ', subsubpath)
 except Exception:
-    print('ERROR: Failed to create HTML directories')
-    print('       Try creating {} yourself then re-running this script'.format(params.HTML_PATH))
+    print('ERROR: Failed to create directories')
+    print('       Try creating {} yourself then re-running this script'.format(params.FILE_PATH))
     traceback.print_exc()
     sys.exit(1)
 print('')

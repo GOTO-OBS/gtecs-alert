@@ -53,8 +53,12 @@ if result is not True:
 # Module parameters
 VERSION = __version__
 
-# HTML webpage path
+# Directory paths
+FILE_PATH = config['FILE_PATH']
 HTML_PATH = config['HTML_PATH']
+if HTML_PATH == '/path/goes/here/':
+    # Not set, default to FILE_PATH
+    HTML_PATH = FILE_PATH
 
 # Filter parameters
 IGNORE_ROLES = config['IGNORE_ROLES']
@@ -65,3 +69,9 @@ MIN_GALACTIC_DISTANCE = config['MIN_GALACTIC_DISTANCE']
 ON_GRID = config['ON_GRID']
 MIN_TILE_PROB = config['MIN_TILE_PROB']
 MAX_TILES = config['MAX_TILES']
+
+# Slack bot parameters
+ENABLE_SLACK = config['ENABLE_SLACK']
+SLACK_BOT_NAME = config['SLACK_BOT_NAME']
+SLACK_BOT_TOKEN = config['SLACK_BOT_TOKEN']
+SLACK_BOT_CHANNEL = config['SLACK_BOT_CHANNEL']

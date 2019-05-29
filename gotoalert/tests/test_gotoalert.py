@@ -3,6 +3,7 @@
 
 import os
 
+from gotoalert import params
 from gotoalert.alert import event_handler
 from gotoalert.events import Event
 
@@ -18,4 +19,4 @@ if __name__ == '__main__':
         with open(os.path.join(test_path, test_file), "rb") as f:
             payload = f.read()
             event = Event.from_payload(payload)
-            event_handler(event)
+            event_handler(event, send_messages=params.ENABLE_SLACK)

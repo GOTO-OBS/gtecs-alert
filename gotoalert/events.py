@@ -276,6 +276,10 @@ class GWRetractionEvent(Event):
         # Create our own event name (e.g. LVC_S190510g)
         self.name = '{}_{}'.format(self.source, self.id)
 
+        # Get info from the VOEvent
+        # Retractions have far fewer params
+        self.gracedb_url = top_params['EventPage']['value']
+
 
 class GRBEvent(Event):
     """A class to represent a Gamma-Ray Burst Event."""

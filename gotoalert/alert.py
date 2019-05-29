@@ -6,11 +6,11 @@ import logging
 import astropy.units as u
 
 from . import params
-from .comms import send_email, send_slackmessage
 from .database import db_insert
 from .definitions import get_obs_data, goto_north, goto_south
 from .events import Event
 from .output import create_webpages
+from .slack import send_event_message
 
 
 def event_handler(event, force_process=False, write_html=False, send_messages=False, log=None):
@@ -68,6 +68,20 @@ def event_handler(event, force_process=False, write_html=False, send_messages=Fa
             return None
 
     # It passed the checks: it's an interesting event!
+    log.info('Processing interesting Event: {}'.format(event.ivorn))
+
+    # Fetch the event skymap
+    if hasattr(event, 'get_skymap'):
+        # Not all "interesting" events will have a skymap (e.g. retractions)
+        log.debug('Fetching event skymap')
+        event.get_skymap()
+        log.debug('Skymap created')
+
+    # Send a Slack report
+    if send_messages:
+        log.debug('Sending Slack report')
+        send_event_message(event)
+        log.debug('Slack report sent')
 
     # Add the event into the GOTO observation DB
     db_insert(event, log, on_grid=params.ON_GRID)
@@ -98,30 +112,6 @@ def event_handler(event, force_process=False, write_html=False, send_messages=Fa
         if write_html:
             create_webpages(event, obs_data, site_name, web_path=params.HTML_PATH)
             log.debug('HTML page written for {}'.format(site_name))
-
-        # Send messages
-        if send_messages:
-            file_name = event.name
-            file_path = params.HTML_PATH + "{}_transients/".format(site_name)
-
-            # Send email
-            email_subject = "Detection from {}".format(site_name)
-            email_link = 'http://118.138.235.166/~obrads'
-            email_body = "{} Detection: See more at {}".format(event.type, email_link)
-
-            send_email(fromaddr="lapalmaobservatory@gmail.com",
-                       toaddr="aobr10@student.monash.edu",
-                       subject=email_subject,
-                       body=email_body,
-                       password="lapalmaobservatory1",
-                       file_path=file_path,
-                       file_name=file_name)
-            log.debug('Sent email alert for {}'.format(site_name))
-
-            # Send message to Slack
-            if site_name == "goto_north":
-                send_slackmessage(event, file_name)
-                log.debug('Sent slack message for {}'.format(site_name))
 
     log.info('Event {} processed'.format(event.name))
     return event
