@@ -13,20 +13,13 @@ from .output import create_webpages
 from .slack import send_event_message
 
 
-def event_handler(event, force_process=False, write_html=False, send_messages=False, log=None):
+def event_handler(event, write_html=False, send_messages=False, log=None):
     """Handle a new Event.
 
     Returns the Event if it is interesting, or None if it's been rejected.
 
     Parameters
     ----------
-    force_process : bool, optional
-        If True, ignore the event filters (e.g. event roles, obs parameters) and process anyway.
-        Note if the Packet_Type is not in events.EVENT_DICTONARY then it still can't be
-        processed. This is more for testing events that we would usually process, not for
-        handling completely new events.
-        Default is False.
-
     write_html : bool, optional
         If True, write out HTML web pages to params.HTML_PATH.
         Default is False.
@@ -42,30 +35,29 @@ def event_handler(event, force_process=False, write_html=False, send_messages=Fa
         log = logging.getLogger('goto-alert')
 
     # Check if it's an event we want to process
-    if not force_process:
-        # Check role
-        log.info('Event is marked as "{}"'.format(event.role))
-        if event.role in params.IGNORE_ROLES:
-            log.warning('Ignoring {} event'.format(event.role))
-            return None
+    # Check role
+    log.info('Event is marked as "{}"'.format(event.role))
+    if event.role in params.IGNORE_ROLES:
+        log.warning('Ignoring {} event'.format(event.role))
+        return None
 
-        # Check type
-        if not hasattr(event, 'type') or event.type is 'Unknown':
-            log.warning('Ignoring unknown event type')
-            return None
-        log.info('Recognised event type: {} ({})'.format(event.notice, event.type))
+    # Check type
+    if not hasattr(event, 'type') or event.type is 'Unknown':
+        log.warning('Ignoring unknown event type')
+        return None
+    log.info('Recognised event type: {} ({})'.format(event.notice, event.type))
 
-        # Check galactic latitude
-        if (params.MIN_GALACTIC_LATITUDE and event.gal_lat and
-                abs(event.gal_lat) < params.MIN_GALACTIC_LATITUDE):
-            log.warning('Event too close to the galactic plane (Lat {:.2f})'.format(event.gal_lat))
-            return None
+    # Check galactic latitude
+    if (params.MIN_GALACTIC_LATITUDE and event.gal_lat and
+            abs(event.gal_lat) < params.MIN_GALACTIC_LATITUDE):
+        log.warning('Event too close to the galactic plane (Lat {:.2f})'.format(event.gal_lat))
+        return None
 
-        # Check distance from galactic center
-        if (params.MIN_GALACTIC_DISTANCE and event.gal_dist and
-                event.gal_dist < params.MIN_GALACTIC_DISTANCE):
-            log.warning('Event too close to the galactic centre (Dist {})'.format(event.gal_dist))
-            return None
+    # Check distance from galactic center
+    if (params.MIN_GALACTIC_DISTANCE and event.gal_dist and
+            event.gal_dist < params.MIN_GALACTIC_DISTANCE):
+        log.warning('Event too close to the galactic centre (Dist {})'.format(event.gal_dist))
+        return None
 
     # It passed the checks: it's an interesting event!
     log.info('Processing interesting Event: {}'.format(event.ivorn))
@@ -95,18 +87,17 @@ def event_handler(event, force_process=False, write_html=False, send_messages=Fa
         site_data = obs_data[site_name]
 
         # Check if it's observable
-        if not force_process:
-            # Check if the target rises above the horizon
-            if not site_data['alt_observable']:
-                log.warning('Target does not rise above minimum altitude at {}'.format(site_name))
-                continue
-            log.info('Target is visible tonight at {}'.format(site_name))
+        # Check if the target rises above the horizon
+        if not site_data['alt_observable']:
+            log.warning('Target does not rise above minimum altitude at {}'.format(site_name))
+            continue
+        log.info('Target is visible tonight at {}'.format(site_name))
 
-            # Check if the target is visible for enough time
-            if (site_data['observation_end'] - site_data['observation_start']) < 1.5 * u.hour:
-                log.warning('Target is not up longer then 1:30 at {} tonight'.format(site_name))
-                continue
-            log.info('Target is up for longer than 1:30 tonight at {}'.format(site_name))
+        # Check if the target is visible for enough time
+        if (site_data['observation_end'] - site_data['observation_start']) < 1.5 * u.hour:
+            log.warning('Target is not up longer then 1:30 at {} tonight'.format(site_name))
+            continue
+        log.info('Target is up for longer than 1:30 tonight at {}'.format(site_name))
 
         # Create and update web pages
         if write_html:
