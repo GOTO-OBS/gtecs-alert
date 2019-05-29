@@ -62,8 +62,6 @@ if HTML_PATH == '/path/goes/here/':
 
 # Filter parameters
 IGNORE_ROLES = config['IGNORE_ROLES']
-MIN_GALACTIC_LATITUDE = config['MIN_GALACTIC_LATITUDE']
-MIN_GALACTIC_DISTANCE = config['MIN_GALACTIC_DISTANCE']
 
 # Database parameters
 ON_GRID = config['ON_GRID']

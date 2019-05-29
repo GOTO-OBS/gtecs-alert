@@ -34,33 +34,19 @@ def event_handler(event, write_html=False, send_messages=False, log=None):
         logging.basicConfig(level=logging.DEBUG)
         log = logging.getLogger('goto-alert')
 
-    # Check if it's an event we want to process
-    # Check role
-    log.info('Event is marked as "{}"'.format(event.role))
+    # Log IVORN
+    log.info('Handling Event {}'.format(event.ivorn))
+
+    # Check if it's an event we want to process, otherwise return None
     if event.role in params.IGNORE_ROLES:
         log.warning('Ignoring {} event'.format(event.role))
         return None
-
-    # Check type
-    if not hasattr(event, 'type') or event.type is 'Unknown':
-        log.warning('Ignoring unknown event type')
-        return None
-    log.info('Recognised event type: {} ({})'.format(event.notice, event.type))
-
-    # Check galactic latitude
-    if (params.MIN_GALACTIC_LATITUDE and event.gal_lat and
-            abs(event.gal_lat) < params.MIN_GALACTIC_LATITUDE):
-        log.warning('Event too close to the galactic plane (Lat {:.2f})'.format(event.gal_lat))
-        return None
-
-    # Check distance from galactic center
-    if (params.MIN_GALACTIC_DISTANCE and event.gal_dist and
-            event.gal_dist < params.MIN_GALACTIC_DISTANCE):
-        log.warning('Event too close to the galactic centre (Dist {})'.format(event.gal_dist))
+    elif not event.interesting:
+        log.warning('Ignoring uninteresting event')
         return None
 
     # It passed the checks: it's an interesting event!
-    log.info('Processing interesting Event: {}'.format(event.ivorn))
+    log.info('Processing interesting {} Event {}'.format(event.type, event.name))
 
     # Fetch the event skymap
     if hasattr(event, 'get_skymap'):
