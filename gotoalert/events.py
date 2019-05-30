@@ -219,8 +219,8 @@ class GWEvent(Event):
         # Don't download the skymap here, it may well be very large.
         # Only do it when it's absolutely necessary
         # These params will only be set once the skymap is downloaded
-        self.distance = None
-        self.distance_error = None
+        self.distance = np.inf
+        self.distance_error = 0
         self.contour_areas = {0.5: None, 0.9: None}
 
     def get_skymap(self, nside=128):
