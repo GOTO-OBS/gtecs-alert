@@ -74,20 +74,23 @@ def remove_previous_events(event, log):
                          len(db_mpointings), len(db_pointings), db_event.ivorn))
 
 
-def get_mpointing_info(event):
+def get_mpointing_info(strategy_dict):
     """Format all the infomation needed for a database Mpointing and ExposureSets.
 
     Parameters will vary depending on the type of Event.
     """
-    # Create blank ExposureSet dict
-    exp_data = {}
-
-    # ExposureSets are currently the same for all events
-    exp_data['num_exp'] = 3
-    exp_data['exptime'] = 60
-    exp_data['filt'] = 'L'
-    exp_data['binning'] = 1
-    exp_data['imgtype'] = 'SCIENCE'
+    # Fill out ExposureSet info
+    # (do this first as it's needed for the mintime)
+    expsets = []
+    for expset_dict in strategy_dict['exposure_sets_dict']:
+        exp_data = {}
+        exp_data['num_exp'] = int(expset_dict['num_exp'])
+        exp_data['exptime'] = float(expset_dict['exptime'])
+        exp_data['filt'] = str(expset_dict['filt'])
+        # These are always the same
+        exp_data['binning'] = 1
+        exp_data['imgtype'] = 'SCIENCE'
+        expsets.append(exp_data)
 
     # Create the blank Mpointing data dict
     mp_data = {}
@@ -102,109 +105,31 @@ def get_mpointing_info(event):
     mp_data['too'] = True
 
     # The minimum pointing time is based on the ExposureSet +30s for readout, probably generous
-    mp_data['min_time'] = (exp_data['exptime'] + 30) * exp_data['num_exp']
+    mp_data['min_time'] = np.sum((exp_data['exptime'] + 30) * exp_data['num_exp']
+                                 for exp_data in expsets)
 
     # The valid time is always infinite, not needed for these sort of events
     mp_data['valid_time'] = -1
 
-    # The Mpointing should be valid immediately after the event time
-    mp_data['start_time'] = event.time
+    # Everything else comes from the strategy_dict and it's subdicts
+    mp_data['start_time'] = str(strategy_dict['start_time'])
+    mp_data['start_rank'] = int(strategy_dict['rank'])
 
-    # Everything else can depend on the type of event
-    if event.type == 'GW':
-        # LVC gravitational wave detections
-        # Split based on CBC or burst:
-        if event.group == 'CBC':
-            # Split based on event type: whether it has a neutron star or not
-            if event.properties['HasNS'] > 0.25:
-                # (More) likly to be EM bright
-                # Split based on distance (Mpc)
-                if event.distance < 400:
-                    # Rank:
-                    # Close NS events are highest priority
-                    mp_data['start_rank'] = 2
-                else:
-                    # Rank:
-                    # Slightly lower for further events and still allowing two passes
-                    # of the closer ones
-                    mp_data['start_rank'] = 13
+    cadence_dict = strategy_dict['cadence_dict']
+    mp_data['num_todo'] = int(cadence_dict['num_todo'])
+    mp_data['wait_time'] = cadence_dict['wait_time']  # Can be a list of floats
+    mp_data['stop_time'] = strategy_dict['start_time'] + cadence_dict['valid_days'] * u.day
 
-                # Candence (times in minutes):
-                # Do as many as possible before the stop time (3 days), with no delay
-                mp_data['num_todo'] = 99
-                mp_data['wait_time'] = 0
+    constraints_dict = strategy_dict['constraints_dict']
+    mp_data['max_sunalt'] = float(constraints_dict['max_sunalt'])
+    mp_data['min_alt'] = float(constraints_dict['min_alt'])
+    mp_data['min_moonsep'] = float(constraints_dict['min_moonsep'])
+    mp_data['max_moon'] = str(constraints_dict['max_moon'])
 
-            else:
-                # BBH, unlikly to be EM bright
-                # Split based on distance (Mpc)
-                if event.distance < 100:
-                    # Really close
-                    # Rank:
-                    # Still lower than all NS events but worth having a look.
-                    mp_data['start_rank'] = 24
-                else:
-                    # Rank:
-                    # Far BH events are lowest priority of GW events.
-                    mp_data['start_rank'] = 105
-
-                # Candence (times in minutes):
-                # Do one a night for two nights
-                mp_data['num_todo'] = 2
-                mp_data['wait_time'] = [12 * 60]  # 12h means it will always wait for tomorrow night
-        else:
-            # No idea really.
-            # Rank:
-            # Below close CBC
-            mp_data['start_rank'] = 52
-
-            # Candence (times in minutes):
-            # Do as many as possible before the stop time, with no delay
-            mp_data['num_todo'] = 99
-            mp_data['wait_time'] = 0
-
-        # Stop time (after the event trigger time):
-        # Pointings are valid for at most 3 days
-        mp_data['stop_time'] = event.time + 3 * u.day
-
-        # Constraints:
-        # More lenient for GW events
-        mp_data['max_sunalt'] = -12
-        mp_data['min_alt'] = 30
-        mp_data['min_moonsep'] = 10
-        mp_data['max_moon'] = 'B'
-
-    else:
-        # Should only be GRB detections
-        # Split based on source
-        if event.source == 'Swift':
-            # Rank:
-            # Out of the way of GW events but higher than Fermi.
-            mp_data['start_rank'] = 207
-        else:
-            # Rank:
-            # Fermi is lower than Swift due to typically larger skymaps.
-            mp_data['start_rank'] = 218
-
-        # Candence (times in minutes):
-        # Do three, (ideally) two on the first night and then one on the next
-        mp_data['num_todo'] = 3
-        mp_data['wait_time'] = [4 * 60, 12 * 60]
-
-        # Stop time (after the event trigger time):
-        # Pointings are valid for at most 2 days
-        mp_data['stop_time'] = event.time + 2 * u.day
-
-        # Constraints:
-        # Normal defaults
-        mp_data['max_sunalt'] = -15
-        mp_data['min_alt'] = 30
-        mp_data['min_moonsep'] = 30
-        mp_data['max_moon'] = 'B'
-
-    return mp_data, exp_data
+    return mp_data, expsets
 
 
-def add_single_pointing(event, log):
+def add_single_pointing(event, strategy_dict, log):
     """Simply add a single pointing at the coordinates given in the alert."""
     with db.open_session() as session:
         # Get the User, or make it if it doesn't exist
@@ -228,7 +153,7 @@ def add_single_pointing(event, log):
             raise
 
         # Get default Mpointing and ExposureSet infomation
-        mp_data, exp_data = get_mpointing_info(event)
+        mp_data, expsets = get_mpointing_info(strategy_dict)
 
         # Set the object name and coordinates
         mp_data['object_name'] = event.name
@@ -240,8 +165,9 @@ def add_single_pointing(event, log):
         db_mpointing.event = db_event
 
         # Create Exposure Sets
-        db_exposure_set = db.ExposureSet(**exp_data)
-        db_mpointing.exposure_sets.append(db_exposure_set)
+        for exp_data in expsets:
+            db_exposure_set = db.ExposureSet(**exp_data)
+            db_mpointing.exposure_sets.append(db_exposure_set)
 
         # Create the first Pointing (i.e. preempt the caretaker)
         db_pointing = db_mpointing.get_next_pointing()
@@ -260,7 +186,7 @@ def add_single_pointing(event, log):
             raise
 
 
-def add_tiles(event, log):
+def add_tiles(event, strategy_dict, log):
     """Use GOTO-tile to add pointings based on the alert."""
     with db.open_session() as session:
         # Get the User, or make it if it doesn't exist
@@ -371,7 +297,7 @@ def add_tiles(event, log):
             db_survey_tile.grid_tile = db_grid_tile
 
             # Get default Mpointing and ExposureSet infomation
-            mp_data, exp_data = get_mpointing_info(event)
+            mp_data, expsets = get_mpointing_info(strategy_dict)
 
             # Set the object name, combination of event name and tile name
             mp_data['object_name'] = event.name + '_' + tilename
@@ -383,8 +309,9 @@ def add_tiles(event, log):
             db_mpointing.event = db_event
 
             # Create Exposure Sets
-            db_exposure_set = db.ExposureSet(**exp_data)
-            db_mpointing.exposure_sets.append(db_exposure_set)
+            for exp_data in expsets:
+                db_exposure_set = db.ExposureSet(**exp_data)
+                db_mpointing.exposure_sets.append(db_exposure_set)
 
             # Create the first Pointing (i.e. preempt the caretaker)
             db_pointing = db_mpointing.get_next_pointing()
@@ -409,43 +336,3 @@ def add_tiles(event, log):
             # Undo database changes before raising
             session.rollback()
             raise
-
-
-def db_insert(event, log, delete_old=True, on_grid=True):
-    """Insert an event into the ObsDB.
-
-    If delete_old is True thenremove any existing (m)pointings assosiated with an event of the
-    same name.
-
-    If on_grid is True then work out which tiles the event covers using GOTO-tile.
-    If not then just add a single pointing at the event centre.
-    """
-    log.info('Inserting event {} into GOTO database'.format(event.name))
-
-    try:
-        # First we need to see if there's a previous instance of the same event already in the db
-        # If so, then delete any still pending pointings and mpointings assosiated with the event
-        if delete_old:
-            log.debug('Checking for previous events in database')
-            remove_previous_events(event, log)
-
-        # If it's a retraction event that's all we need to do
-        # TODO: shouldn't we still store the Event in the database to show we processed it?
-        if event.type == 'GW_RETRACTION':
-            return
-
-        # Then add the new pointings
-        if not on_grid:
-            # Add a single pointing at the event centre
-            log.debug('Adding a single pointing to database')
-            add_single_pointing(event, log)
-        else:
-            # Add a series of on-grid pointings based on a Gaussian skymap
-            # We load the latest all-sky grid from the database
-            log.debug('Adding on-grid pointings to database')
-            add_tiles(event, log)
-        log.info('Database insersion complete')
-
-    except Exception:
-        log.warning('Unable to insert event into database')
-        raise

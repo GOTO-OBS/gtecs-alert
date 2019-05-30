@@ -6,11 +6,12 @@ import logging
 import astropy.units as u
 
 from . import params
-from .database import db_insert
+from . import database as db
 from .definitions import get_obs_data, goto_north, goto_south
 from .events import Event
 from .output import create_webpages
 from .slack import send_event_message
+from .strategy import get_event_strategy
 
 
 def event_handler(event, write_html=False, send_messages=False, log=None):
@@ -61,8 +62,37 @@ def event_handler(event, write_html=False, send_messages=False, log=None):
         send_event_message(event)
         log.debug('Slack report sent')
 
+    # Get the observing strategy for this event
+    strategy_dict = get_event_strategy(event)
+
     # Add the event into the GOTO observation DB
-    db_insert(event, log, on_grid=params.ON_GRID)
+    log.info('Inserting event {} into GOTO database'.format(event.name))
+    try:
+        # First we need to see if there's a previous instance of the same event already in the db
+        # If so, then delete any still pending pointings and mpointings assosiated with the event
+        log.debug('Checking for previous events in database')
+        db.remove_previous_events(event, log)
+
+        # If it's a retraction event that's all we need to do
+        # TODO: shouldn't we still store the Event in the database to show we processed it?
+        if event.type == 'GW_RETRACTION':
+            return
+
+        # Then add the new pointings
+        if not params.ON_GRID:
+            # Add a single pointing at the event centre
+            log.debug('Adding a single pointing to database')
+            db.add_single_pointing(event, strategy_dict, log)
+        else:
+            # Add a series of on-grid pointings based on a Gaussian skymap
+            # We load the latest all-sky grid from the database
+            log.debug('Adding on-grid pointings to database')
+            db.add_tiles(event, strategy_dict, log)
+        log.info('Database insersion complete')
+
+    except Exception:
+        log.warning('Unable to insert event into database')
+        raise
 
     # Get observing data for the event at each site
     observers = [goto_north(), goto_south()]

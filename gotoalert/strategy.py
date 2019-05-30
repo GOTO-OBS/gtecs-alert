@@ -1,0 +1,125 @@
+"""Functions to define the observing strategy for different events."""
+
+# Define event strategy options
+# This should be in params too
+STRATEGY_DICTONARY = {'DEFAULT': {'rank': 309,
+                                  'cadence': 'TWO_NIGHTS',
+                                  'constraints': 'NORMAL',
+                                  'exposure_sets': '3x60L',
+                                  },
+                      'GW_CLOSE_NS': {'rank': 2,
+                                      'cadence': 'NO_DELAY',
+                                      'constraints': 'LENIENT',
+                                      'exposure_sets': '3x60L',
+                                      },
+                      'GW_FAR_NS': {'rank': 13,
+                                    'cadence': 'NO_DELAY',
+                                    'constraints': 'LENIENT',
+                                    'exposure_sets': '3x60L',
+                                    },
+                      'GW_CLOSE_BH': {'rank': 24,
+                                      'cadence': 'TWO_NIGHTS',
+                                      'constraints': 'LENIENT',
+                                      'exposure_sets': '3x60L',
+                                      },
+                      'GW_FAR_BH': {'rank': 105,
+                                    'cadence': 'TWO_NIGHTS',
+                                    'constraints': 'LENIENT',
+                                    'exposure_sets': '3x60L',
+                                    },
+                      'GW_BURST': {'rank': 52,
+                                   'cadence': 'NO_DELAY',
+                                   'constraints': 'LENIENT',
+                                   'exposure_sets': '3x60L',
+                                   },
+                      'GRB_SWIFT': {'rank': 207,
+                                    'cadence': 'TWO_FIRST_ONE_SECOND',
+                                    'constraints': 'NORMAL',
+                                    'exposure_sets': '3x60L',
+                                    },
+                      'GRB_FERMI': {'rank': 218,
+                                    'cadence': 'TWO_FIRST_ONE_SECOND',
+                                    'constraints': 'NORMAL',
+                                    'exposure_sets': '3x60L',
+                                    },
+                      }
+
+# Define possible cadence strategies
+CADENCE_DICTONARY = {'NO_DELAY': {'num_todo': 99,
+                                  'wait_time': 0,
+                                  'valid_days': 3,
+                                  },
+                     'TWO_NIGHTS': {'num_todo': 2,
+                                    'wait_time': 12 * 60,
+                                    'valid_days': 3,
+                                    },
+                     'TWO_FIRST_ONE_SECOND': {'num_todo': 3,
+                                              'wait_time': [4 * 60, 12 * 60],
+                                              'valid_days': 3,
+                                              },
+                     }
+
+# Define possible constraint sets
+CONSTRAINTS_DICTONARY = {'NORMAL': {'max_sunalt': -15,
+                                    'min_alt': 30,
+                                    'min_moonsep': 30,
+                                    'max_moon': 'B',
+                                    },
+                         'LENIENT': {'max_sunalt': -12,
+                                     'min_alt': 30,
+                                     'min_moonsep': 10,
+                                     'max_moon': 'B',
+                                     },
+                         }
+
+# Define possible exposure sets
+EXPOSURE_SETS_DICTIONARY = {'3x60L': [{'num_exp': 3, 'exptime': 60, 'filt': 'L'},
+                                      ],
+                            '3x60RBG': [{'num_exp': 1, 'exptime': 60, 'filt': 'R'},
+                                        {'num_exp': 1, 'exptime': 60, 'filt': 'G'},
+                                        {'num_exp': 1, 'exptime': 60, 'filt': 'B'},
+                                        ],
+                            }
+
+
+def get_event_strategy(event):
+    """Get the strategy for the given Event."""
+    if not event.interesting:
+        # Uninteresting events shouldn't be added to the database
+        return None
+
+    # Get the specific event strategy
+    strategy = 'DEFAULT'
+    if event.type == 'GW':
+        if event.group == 'CBC':
+            if event.properties['HasNS'] > 0.25:
+                if event.distance < 400:
+                    strategy = 'GW_CLOSE_NS'
+                else:
+                    strategy = 'GW_FAR_NS'
+            else:
+                if event.distance < 100:
+                    strategy = 'GW_CLOSE_BH'
+                else:
+                    strategy = 'GW_FAR_BH'
+        else:
+            strategy = 'GW_BURST'
+    elif event.type == 'GRB':
+        if event.source == 'Swift':
+            strategy = 'GRB_SWIFT'
+        else:
+            strategy = 'GRB_FERMI'
+
+    # Get the strategy dictionary
+    strategy_dict = STRATEGY_DICTONARY[strategy]
+    strategy_dict['strategy'] = strategy
+
+    # Fill out the other dicts
+    strategy_dict['cadence_dict'] = CADENCE_DICTONARY[strategy_dict['cadence']]
+    strategy_dict['constraints_dict'] = CONSTRAINTS_DICTONARY[strategy_dict['constraints']]
+    strategy_dict['exposure_sets_dict'] = EXPOSURE_SETS_DICTIONARY[strategy_dict['exposure_sets']]
+
+    # Store the event start time too
+    strategy_dict['start_time'] = event.time
+
+    return strategy_dict
