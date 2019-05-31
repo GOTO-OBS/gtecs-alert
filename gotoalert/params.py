@@ -63,11 +63,6 @@ if HTML_PATH == '/path/goes/here/':
 # Filter parameters
 IGNORE_ROLES = config['IGNORE_ROLES']
 
-# Database parameters
-ON_GRID = config['ON_GRID']
-MIN_TILE_PROB = config['MIN_TILE_PROB']
-MAX_TILES = config['MAX_TILES']
-
 # Slack bot parameters
 ENABLE_SLACK = config['ENABLE_SLACK']
 SLACK_BOT_NAME = config['SLACK_BOT_NAME']

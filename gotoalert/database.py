@@ -9,8 +9,6 @@ import numpy as np
 
 import obsdb as db
 
-from . import params
-
 
 DEFAULT_USER = 'goto'
 DEFAULT_PW = 'gotoobs'
@@ -226,25 +224,21 @@ def add_tiles(event, strategy_dict, log):
 
         # Mask the table based on tile probs
         log.debug('Masking tile table')
-        if event.type == 'GW':
-            # see https://github.com/GOTO-OBS/goto-alert/issues/26
-            # mask based on if the mean tile pixel value is within the 90% contour
-            mask = [np.mean(event.skymap.contours[tile]) < 0.9 for tile in grid.pixels]
-        elif params.MIN_TILE_PROB:
-            # mask based on min tile prob
-            mask = table['prob'] > params.MIN_TILE_PROB
-        else:
-            # Still remove super-low probability tiles (0.01%)
-            mask = table['prob'] > 0.0001
+        # see https://github.com/GOTO-OBS/goto-alert/issues/26
+        # mask based on if the mean tile pixel value is within the 90% contour
+        mask = [np.mean(event.skymap.contours[tile]) < 0.9 for tile in grid.pixels]
+        if sum(mask) < 1:
+            # The source is probably so well localised that no tile has a mean contour of < 90%
+            # This can happen for Swift GRBs.
+            # Instead just mask to any tiles with a contained probability of > 90%
+            # Probably just one, unless it's in an overlap region
+            mask = table['prob'] > 0.9
         masked_table = table[mask]
 
         # Limit the number of tiles added
         masked_table.sort('prob')
         masked_table.reverse()
-        if event.type == 'GW':
-            masked_table = masked_table[:200]
-        elif params.MAX_TILES:
-            masked_table = masked_table[:params.MAX_TILES]
+        masked_table = masked_table[:strategy_dict['tile_limit']]
 
         # Store table on the Event
         log.debug('Masked tile table has {} entries'.format(len(masked_table)))

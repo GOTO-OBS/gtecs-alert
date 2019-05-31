@@ -79,7 +79,7 @@ def event_handler(event, write_html=False, send_messages=False, log=None):
             return
 
         # Then add the new pointings
-        if not params.ON_GRID:
+        if not strategy_dict['on_grid']:
             # Add a single pointing at the event centre
             log.debug('Adding a single pointing to database')
             db.add_single_pointing(event, strategy_dict, log)
