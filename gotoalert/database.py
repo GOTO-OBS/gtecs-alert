@@ -105,12 +105,12 @@ def get_mpointing_info(event):
 
     # Everything else comes from the strategy dict and it's subdicts
     mp_data['start_time'] = str(event.strategy['start_time'])
+    mp_data['stop_time'] = str(event.strategy['stop_time'])
     mp_data['start_rank'] = int(event.strategy['rank'])
 
     cadence_dict = event.strategy['cadence_dict']
     mp_data['num_todo'] = int(cadence_dict['num_todo'])
     mp_data['wait_time'] = cadence_dict['wait_time']  # Can be a list of floats
-    mp_data['stop_time'] = event.strategy['start_time'] + cadence_dict['valid_days'] * u.day
 
     constraints_dict = event.strategy['constraints_dict']
     mp_data['max_sunalt'] = float(constraints_dict['max_sunalt'])

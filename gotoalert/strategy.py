@@ -1,5 +1,8 @@
 """Functions to define the observing strategy for different events."""
 
+import astropy.units as u
+
+
 # Define event strategy options
 # This should be in params too
 STRATEGY_DICTONARY = {'DEFAULT': {'rank': 309,
@@ -135,7 +138,9 @@ def get_event_strategy(event):
     strategy_dict['constraints_dict'] = CONSTRAINTS_DICTONARY[strategy_dict['constraints']]
     strategy_dict['exposure_sets_dict'] = EXPOSURE_SETS_DICTIONARY[strategy_dict['exposure_sets']]
 
-    # Store the event start time too
+    # Store the event start and stop time too
     strategy_dict['start_time'] = event.time
+    valid_days = strategy_dict['cadence_dict']['valid_days'] * u.day
+    strategy_dict['stop_time'] = event.time + valid_days
 
     return strategy_dict
