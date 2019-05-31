@@ -5,8 +5,8 @@ import logging
 
 from . import database as db
 from . import params
+from . import slack
 from .events import Event
-from .slack import send_event_message
 from .strategy import get_event_strategy
 
 
@@ -41,6 +41,13 @@ def event_handler(event, send_messages=False, log=None):
     # It passed the checks: it's an interesting event!
     log.info('Processing interesting {} Event {}'.format(event.type, event.name))
 
+    # Send initial Slack report
+    if send_messages:
+        log.debug('Sending initial Slack report')
+        msg = '*Processing new {} {} event: {}*'.format(event.source, event.type, event.id)
+        slack.send_slack_msg(msg)
+        log.debug('Slack report sent')
+
     # Fetch the event skymap
     if hasattr(event, 'get_skymap'):
         # Not all "interesting" events will have a skymap (e.g. retractions)
@@ -48,14 +55,20 @@ def event_handler(event, send_messages=False, log=None):
         event.get_skymap()
         log.debug('Skymap created')
 
-    # Send a Slack report
+    # Send Slack event report
     if send_messages:
-        log.debug('Sending Slack report')
-        send_event_message(event)
+        log.debug('Sending Slack event report')
+        slack.send_event_report(event)
         log.debug('Slack report sent')
 
     # Get the observing strategy for this event
     strategy_dict = get_event_strategy(event)
+
+    # Send Slack strategy report
+    if send_messages:
+        log.debug('Sending Slack strategy report')
+        slack.send_strategy_report(event, strategy_dict)
+        log.debug('Slack report sent')
 
     # Add the event into the GOTO observation DB
     log.info('Inserting event {} into GOTO database'.format(event.name))
@@ -70,8 +83,22 @@ def event_handler(event, send_messages=False, log=None):
         db.add_to_database(event, strategy_dict, log)
         log.info('Database insersion complete')
 
+        # Send Slack database report
+        if send_messages:
+            log.debug('Sending Slack database report')
+            slack.send_database_report(event, strategy_dict)
+            log.debug('Slack report sent')
+
     except Exception:
         log.warning('Unable to insert event into database')
+
+        # Send Slack error report
+        if send_messages:
+            log.debug('Sending Slack error report')
+            msg = '*ERROR*: Failed to insert event {} into database'.format(event.name)
+            slack.send_slack_msg(msg)
+            log.debug('Slack report sent')
+
         raise
 
     log.info('Event {} processed'.format(event.name))

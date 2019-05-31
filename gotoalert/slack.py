@@ -66,9 +66,9 @@ def send_slack_msg(text, attachments=None, filepath=None):
         print('Filepath:', filepath)
 
 
-def send_event_message(event):
+def send_event_report(event):
     """Send a message to Slack with the event details and skymap."""
-    title = ['*New {} {} event: {}*'.format(event.source, event.type, event.id)]
+    title = ['*Details for event {}*'.format(event.name)]
 
     # Basic details
     details = ['IVORN: {}'.format(event.ivorn),
@@ -130,3 +130,11 @@ def send_event_message(event):
 
     # Send the message, with the skymap file attached
     send_slack_msg(message_text, filepath=filepath)
+
+
+def send_strategy_report(event, strategy_dict):
+    pass
+
+
+def send_database_report(event, strategy_dict):
+    pass
