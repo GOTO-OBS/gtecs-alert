@@ -10,17 +10,13 @@ from .slack import send_event_message
 from .strategy import get_event_strategy
 
 
-def event_handler(event, write_html=False, send_messages=False, log=None):
+def event_handler(event, send_messages=False, log=None):
     """Handle a new Event.
 
     Returns the Event if it is interesting, or None if it's been rejected.
 
     Parameters
     ----------
-    write_html : bool, optional
-        If True, write out HTML web pages to params.HTML_PATH.
-        Default is False.
-
     send_messages : bool, optional
         If True, send Slack messages.
         Default is False.
@@ -82,7 +78,7 @@ def event_handler(event, write_html=False, send_messages=False, log=None):
     return event
 
 
-def payload_handler(payload, log=None, write_html=True, send_messages=False):
+def payload_handler(payload, send_messages=False):
     """Handle a VOEvent payload.
 
     Returns the Event if it is interesting, or None if it's been rejected.
@@ -91,4 +87,4 @@ def payload_handler(payload, log=None, write_html=True, send_messages=False):
     event = Event.from_payload(payload)
 
     # Run the event handler
-    event_handler(event, log, write_html, send_messages)
+    event_handler(event, send_messages)
