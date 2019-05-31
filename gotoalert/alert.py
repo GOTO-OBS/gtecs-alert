@@ -7,7 +7,6 @@ from . import database as db
 from . import params
 from . import slack
 from .events import Event
-from .strategy import get_event_strategy
 
 
 def event_handler(event, send_messages=False, log=None):
@@ -61,9 +60,11 @@ def event_handler(event, send_messages=False, log=None):
         slack.send_event_report(event)
         log.debug('Slack report sent')
 
-    # Get the observing strategy for this event
-    # strategy_dict is stored on the event as event.strategy
-    get_event_strategy(event)
+    # Get the observing strategy for this event (stored on the event as event.strategy)
+    # NB we can only do this after getting the skymap, because for GW events we need the distance.
+    log.debug('Fetching event strategy')
+    event.get_strategy()
+    log.debug('Using strategy {}'.format(event.strategy['strategy']))
 
     # Send Slack strategy report
     if send_messages:

@@ -191,7 +191,7 @@ def add_to_database(event, log):
     """Add the Event into the database."""
     with db.open_session() as session:
         # Get Mpointing and ExposureSet infomation
-        mp_data, expsets = get_mpointing_info(event.strategy)
+        mp_data, expsets = get_mpointing_info(event)
 
         # Create Event
         db_event = db.Event(name=event.name,

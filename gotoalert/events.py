@@ -16,6 +16,9 @@ import voeventdb.remote.apiv1 as vdb
 
 import voeventparse as vp
 
+from .strategy import get_event_strategy
+
+
 # Define interesting events we want to process
 # Primary key is the GCN Packet_Type
 # This should be in params
@@ -111,6 +114,7 @@ class Event(object):
         self.target = None
         self.skymap = None
         self.properties = {}
+        self.strategy = None
 
     def __repr__(self):
         return '{}(ivorn={})'.format(self.__class__.__name__, self.ivorn)
@@ -165,6 +169,11 @@ class Event(object):
         savepath = os.path.join(path, filename)
         with open(savepath, 'wb') as f:
             f.write(self.payload)
+
+    def get_strategy(self):
+        """Get the event observing strategy."""
+        self.strategy = get_event_strategy(self)
+        return self.strategy
 
 
 class GWEvent(Event):
