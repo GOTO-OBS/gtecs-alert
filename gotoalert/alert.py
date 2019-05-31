@@ -3,13 +3,9 @@
 
 import logging
 
-import astropy.units as u
-
 from . import database as db
 from . import params
-from .definitions import get_obs_data, goto_north, goto_south
 from .events import Event
-from .output import create_webpages
 from .slack import send_event_message
 from .strategy import get_event_strategy
 
@@ -81,32 +77,6 @@ def event_handler(event, write_html=False, send_messages=False, log=None):
     except Exception:
         log.warning('Unable to insert event into database')
         raise
-
-    # Get observing data for the event at each site
-    observers = [goto_north(), goto_south()]
-    obs_data = get_obs_data(event.target, observers, event.creation_time)
-
-    # Parse the event for each site
-    for site_name in obs_data:
-        site_data = obs_data[site_name]
-
-        # Check if it's observable
-        # Check if the target rises above the horizon
-        if not site_data['alt_observable']:
-            log.warning('Target does not rise above minimum altitude at {}'.format(site_name))
-            continue
-        log.info('Target is visible tonight at {}'.format(site_name))
-
-        # Check if the target is visible for enough time
-        if (site_data['observation_end'] - site_data['observation_start']) < 1.5 * u.hour:
-            log.warning('Target is not up longer then 1:30 at {} tonight'.format(site_name))
-            continue
-        log.info('Target is up for longer than 1:30 tonight at {}'.format(site_name))
-
-        # Create and update web pages
-        if write_html:
-            create_webpages(event, obs_data, site_name, web_path=params.HTML_PATH)
-            log.debug('HTML page written for {}'.format(site_name))
 
     log.info('Event {} processed'.format(event.name))
     return event
