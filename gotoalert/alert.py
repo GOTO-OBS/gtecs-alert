@@ -62,12 +62,13 @@ def event_handler(event, send_messages=False, log=None):
         log.debug('Slack report sent')
 
     # Get the observing strategy for this event
-    strategy_dict = get_event_strategy(event)
+    # strategy_dict is stored on the event as event.strategy
+    get_event_strategy(event)
 
     # Send Slack strategy report
     if send_messages:
         log.debug('Sending Slack strategy report')
-        slack.send_strategy_report(event, strategy_dict)
+        slack.send_strategy_report(event)
         log.debug('Slack report sent')
 
     # Add the event into the GOTO observation DB
@@ -80,13 +81,13 @@ def event_handler(event, send_messages=False, log=None):
 
         # Then add the new pointings
         log.debug('Adding to database')
-        db.add_to_database(event, strategy_dict, log)
+        db.add_to_database(event, log)
         log.info('Database insersion complete')
 
         # Send Slack database report
         if send_messages:
             log.debug('Sending Slack database report')
-            slack.send_database_report(event, strategy_dict)
+            slack.send_database_report(event)
             log.debug('Slack report sent')
 
     except Exception:

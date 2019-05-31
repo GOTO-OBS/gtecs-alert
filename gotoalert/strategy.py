@@ -138,4 +138,7 @@ def get_event_strategy(event):
     # Store the event start time too
     strategy_dict['start_time'] = event.time
 
+    # Save the strategy dict on the event
+    event.strategy = strategy_dict
+
     return strategy_dict

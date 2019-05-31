@@ -132,11 +132,11 @@ def send_event_report(event):
     send_slack_msg(message_text, filepath=filepath)
 
 
-def send_strategy_report(event, strategy_dict):
-    """TODO."""
+def send_strategy_report(event):
+    """Send a message to Slack with the event details and skymap."""
     pass
 
 
-def send_database_report(event, strategy_dict):
+def send_database_report(event):
     """TODO."""
     pass

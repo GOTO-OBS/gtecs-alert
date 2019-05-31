@@ -72,7 +72,7 @@ def remove_previous_events(event, log):
                          len(db_mpointings), len(db_pointings), db_event.ivorn))
 
 
-def get_mpointing_info(strategy_dict):
+def get_mpointing_info(event):
     """Format all the infomation needed for a database Mpointing and ExposureSets.
 
     Parameters will vary depending on the type of Event.
@@ -80,7 +80,7 @@ def get_mpointing_info(strategy_dict):
     # Fill out ExposureSet info
     # (do this first as it's needed for the mintime)
     expsets = []
-    for expset_dict in strategy_dict['exposure_sets_dict']:
+    for expset_dict in event.strategy['exposure_sets_dict']:
         exp_data = {}
         exp_data['num_exp'] = int(expset_dict['num_exp'])
         exp_data['exptime'] = float(expset_dict['exptime'])
@@ -103,16 +103,16 @@ def get_mpointing_info(strategy_dict):
     # The valid time is always infinite, not needed for these sort of events
     mp_data['valid_time'] = -1
 
-    # Everything else comes from the strategy_dict and it's subdicts
-    mp_data['start_time'] = str(strategy_dict['start_time'])
-    mp_data['start_rank'] = int(strategy_dict['rank'])
+    # Everything else comes from the strategy dict and it's subdicts
+    mp_data['start_time'] = str(event.strategy['start_time'])
+    mp_data['start_rank'] = int(event.strategy['rank'])
 
-    cadence_dict = strategy_dict['cadence_dict']
+    cadence_dict = event.strategy['cadence_dict']
     mp_data['num_todo'] = int(cadence_dict['num_todo'])
     mp_data['wait_time'] = cadence_dict['wait_time']  # Can be a list of floats
-    mp_data['stop_time'] = strategy_dict['start_time'] + cadence_dict['valid_days'] * u.day
+    mp_data['stop_time'] = event.strategy['start_time'] + cadence_dict['valid_days'] * u.day
 
-    constraints_dict = strategy_dict['constraints_dict']
+    constraints_dict = event.strategy['constraints_dict']
     mp_data['max_sunalt'] = float(constraints_dict['max_sunalt'])
     mp_data['min_alt'] = float(constraints_dict['min_alt'])
     mp_data['min_moonsep'] = float(constraints_dict['min_moonsep'])
@@ -187,11 +187,11 @@ def get_grid_tiles(event, db_grid):
     return masked_table
 
 
-def add_to_database(event, strategy_dict, log):
+def add_to_database(event, log):
     """Add the Event into the database."""
     with db.open_session() as session:
         # Get Mpointing and ExposureSet infomation
-        mp_data, expsets = get_mpointing_info(strategy_dict)
+        mp_data, expsets = get_mpointing_info(event.strategy)
 
         # Create Event
         db_event = db.Event(name=event.name,
@@ -208,7 +208,7 @@ def add_to_database(event, strategy_dict, log):
         if event.type == 'GW_RETRACTION':
             return
 
-        if strategy_dict['on_grid']:
+        if event.strategy['on_grid']:
             # Find the current Grid in the database
             db_grid = get_grid(session)
             log.info('Applying to Grid {}'.format(db_grid.name))
@@ -217,7 +217,7 @@ def add_to_database(event, strategy_dict, log):
             masked_table = get_grid_tiles(event, db_grid)
 
             # Limit number of tiles
-            tile_table = masked_table[:strategy_dict['tile_limit']]
+            tile_table = masked_table[:event.strategy['tile_limit']]
             event.tile_table = tile_table
             log.debug('Masked tile table has {} entries'.format(len(tile_table)))
 
@@ -239,7 +239,7 @@ def add_to_database(event, strategy_dict, log):
 
         # Create Mpointing(s)
         mpointings = []
-        if not strategy_dict['on_grid']:
+        if not event.strategy['on_grid']:
             # Create a single Mpointing
             db_mpointing = db.Mpointing(object_name=event.name,
                                         ra=event.coord.ra.value,
