@@ -103,8 +103,8 @@ def get_mpointing_info(strategy_dict):
     mp_data['too'] = True
 
     # The minimum pointing time is based on the ExposureSet +30s for readout, probably generous
-    mp_data['min_time'] = np.sum((exp_data['exptime'] + 30) * exp_data['num_exp']
-                                 for exp_data in expsets)
+    mp_data['min_time'] = sum((exp_data['exptime'] + 30) * exp_data['num_exp']
+                              for exp_data in expsets)
 
     # The valid time is always infinite, not needed for these sort of events
     mp_data['valid_time'] = -1
