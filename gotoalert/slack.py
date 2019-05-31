@@ -133,8 +133,10 @@ def send_event_report(event):
 
 
 def send_strategy_report(event, strategy_dict):
+    """TODO."""
     pass
 
 
 def send_database_report(event, strategy_dict):
+    """TODO."""
     pass
