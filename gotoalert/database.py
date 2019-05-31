@@ -93,12 +93,6 @@ def get_mpointing_info(strategy_dict):
     # Create the blank Mpointing data dict
     mp_data = {}
 
-    # Add blank object name and coordinates
-    # They will depend on if it's on grid or not
-    mp_data['object_name'] = None
-    mp_data['ra'] = None
-    mp_data['dec'] = None
-
     # All Events should be Targets of Opportunity, that's the point!
     mp_data['too'] = True
 
@@ -127,131 +121,79 @@ def get_mpointing_info(strategy_dict):
     return mp_data, expsets
 
 
-def add_single_pointing(event, strategy_dict, log):
-    """Simply add a single pointing at the coordinates given in the alert."""
+def get_user(session):
+    """Get the database user, or create one if it doesn't exist."""
+    try:
+        user = db.get_user(session, username=DEFAULT_USER)
+    except ValueError:
+        user = db.User(DEFAULT_USER, DEFAULT_PW, DEFAULT_NAME)
+    return user
+
+
+def get_grid(session):
+    """Get the current grid from the database.
+
+    Returns
+    -------
+    grid : `gototile.grid.SkyGrid`
+        A SkyGrid object matching the current database grid.
+
+    """
+    # Get all the database grids
+    db_grids = session.query(db.Grid).all()
+    if not db_grids:
+        raise ValueError('No defined Grids found!')
+    else:
+        # Might have multiple grids defined, just take the latest...
+        db_grid = db_grids[-1]
+
+    return db_grid
+
+
+def get_grid_tiles(event, db_grid):
+    """Apply the Event skymap to the current grid and return a table of filtered tiles."""
+    # Create a SkyGrid from the database Grid
+    fov = {'ra': db_grid.ra_fov * u.deg, 'dec': db_grid.dec_fov * u.deg}
+    overlap = {'ra': db_grid.ra_overlap, 'dec': db_grid.dec_overlap}
+    grid = SkyGrid(fov, overlap, kind=db_grid.algorithm)
+
+    # Apply the Event skymap to the grid
+    if not event.skymap:
+        event.get_skymap()
+    grid.apply_skymap(event.skymap)
+
+    # Get the table of tiles and contained probability
+    table = grid.get_table()
+    table.sort('prob')
+    table.reverse()
+
+    # Mask the table based on tile probs
+    # see https://github.com/GOTO-OBS/goto-alert/issues/26
+    # mask based on if the mean tile pixel value is within the 90% contour
+    mask = [np.mean(event.skymap.contours[tile]) < 0.9 for tile in grid.pixels]
+    if sum(mask) < 1:
+        # The source is probably so well localised that no tile has a mean contour of < 90%
+        # This can happen for Swift GRBs.
+        # Instead just mask to any tiles with a contained probability of > 90%
+        # Probably just one, unless it's in an overlap region
+        mask = table['prob'] > 0.9
+    masked_table = table[mask]
+
+    # Store grid and tables on the Event
+    event.grid = grid
+    event.full_table = table
+    event.masked_table = masked_table
+
+    return masked_table
+
+
+def add_to_database(event, strategy_dict, log):
+    """Add the Event into the database."""
     with db.open_session() as session:
-        # Get the User, or make it if it doesn't exist
-        try:
-            user = db.get_user(session, username=DEFAULT_USER)
-        except ValueError:
-            user = db.User(DEFAULT_USER, DEFAULT_PW, DEFAULT_NAME)
-
-        # Create Event and add it to the database
-        db_event = db.Event(ivorn=event.ivorn,
-                            name=event.name,
-                            source=event.source,
-                            )
-        log.debug('Adding Event to database')
-        try:
-            session.add(db_event)
-            session.commit()
-        except Exception:
-            # Undo database changes before raising
-            session.rollback()
-            raise
-
-        # Get default Mpointing and ExposureSet infomation
+        # Get Mpointing and ExposureSet infomation
         mp_data, expsets = get_mpointing_info(strategy_dict)
 
-        # Set the object name and coordinates
-        mp_data['object_name'] = event.name
-        mp_data['ra'] = event.coord.ra.value
-        mp_data['dec'] = event.coord.dec.value
-
-        # Create Mpointing
-        db_mpointing = db.Mpointing(**mp_data, user=user)
-        db_mpointing.event = db_event
-
-        # Create Exposure Sets
-        for exp_data in expsets:
-            db_exposure_set = db.ExposureSet(**exp_data)
-            db_mpointing.exposure_sets.append(db_exposure_set)
-
-        # Create the first Pointing (i.e. preempt the caretaker)
-        db_pointing = db_mpointing.get_next_pointing()
-        db_pointing.event = db_event
-        db_mpointing.pointings.append(db_pointing)
-
-        # Add Mpointing to the database
-        log.debug('Adding Mpointing to database')
-        try:
-            session.add(db_mpointing)
-            session.commit()
-            log.debug(db_mpointing)
-        except Exception:
-            # Undo database changes before raising
-            session.rollback()
-            raise
-
-
-def add_tiles(event, strategy_dict, log):
-    """Use GOTO-tile to add pointings based on the alert."""
-    with db.open_session() as session:
-        # Get the User, or make it if it doesn't exist
-        try:
-            user = db.get_user(session, username=DEFAULT_USER)
-        except ValueError:
-            user = db.User(DEFAULT_USER, DEFAULT_PW, DEFAULT_NAME)
-
-        # Find the current Grid in the database
-        db_grids = session.query(db.Grid).all()
-        if not db_grids:
-            raise ValueError('No defined Grids found!')
-        else:
-            # Might have multiple grids defined, just take the latest...
-            db_grid = db_grids[-1]
-            log.info('Applying to Grid {}'.format(db_grid.name))
-
-        # Create a SkyGrid from the database Grid
-        fov = {'ra': db_grid.ra_fov * u.deg, 'dec': db_grid.dec_fov * u.deg}
-        overlap = {'ra': db_grid.ra_overlap, 'dec': db_grid.dec_overlap}
-        grid = SkyGrid(fov, overlap, kind=db_grid.algorithm)
-
-        # Check the Event has its skymap
-        if not event.skymap:
-            log.debug('Fetching skymap')
-            event.get_skymap()
-
-        # Apply the skymap to the grid
-        log.debug('Applying skymap to grid')
-        grid.apply_skymap(event.skymap)
-
-        # Store grid on the Event
-        event.grid = grid
-
-        # Get the table of tiles and contained probability
-        table = grid.get_table()
-
-        # Mask the table based on tile probs
-        log.debug('Masking tile table')
-        # see https://github.com/GOTO-OBS/goto-alert/issues/26
-        # mask based on if the mean tile pixel value is within the 90% contour
-        mask = [np.mean(event.skymap.contours[tile]) < 0.9 for tile in grid.pixels]
-        if sum(mask) < 1:
-            # The source is probably so well localised that no tile has a mean contour of < 90%
-            # This can happen for Swift GRBs.
-            # Instead just mask to any tiles with a contained probability of > 90%
-            # Probably just one, unless it's in an overlap region
-            mask = table['prob'] > 0.9
-        masked_table = table[mask]
-
-        # Limit the number of tiles added
-        masked_table.sort('prob')
-        masked_table.reverse()
-        masked_table = masked_table[:strategy_dict['tile_limit']]
-
-        # Store table on the Event
-        log.debug('Masked tile table has {} entries'.format(len(masked_table)))
-        event.tile_table = masked_table
-        event.full_table = table
-
-        # We might have excluded all of our tiles, if so exit
-        if not len(masked_table):
-            log.warning('No tiles passed filtering, no pointings to add')
-            log.debug('Highest tile has {:.3f}%'.format(table[0]['prob'] * 100))
-            return
-
-        # Create Event and add it to the database
+        # Create Event
         db_event = db.Event(name=event.name,
                             ivorn=event.ivorn,
                             source=event.source,
@@ -260,46 +202,50 @@ def add_tiles(event, strategy_dict, log):
                             skymap=event.skymap_url if hasattr(event, 'skymap_url') else None,
                             )
         log.debug('Adding Event to database')
-        try:
-            session.add(db_event)
-            session.commit()
-        except Exception:
-            # Undo database changes before raising
-            session.rollback()
-            raise
+        session.add(db_event)
 
-        # Create Survey and add it to the database
-        db_survey = db.Survey(name=event.name)
-        db_survey.grid = db_grid
-        db_survey.event = db_event
-        log.debug('Adding Survey to database')
-        session.add(db_survey)
+        # If it's a retraction event that's all we need to do
+        if event.type == 'GW_RETRACTION':
+            return
 
-        # Create Mpointings for each tile
-        # NB no coords, we get them from the GridTile
+        if strategy_dict['on_grid']:
+            # Find the current Grid in the database
+            db_grid = get_grid(session)
+            log.info('Applying to Grid {}'.format(db_grid.name))
+
+            # Get the masked tile table
+            masked_table = get_grid_tiles(event, db_grid)
+
+            # Limit number of tiles
+            tile_table = masked_table[:strategy_dict['tile_limit']]
+            event.tile_table = tile_table
+            log.debug('Masked tile table has {} entries'.format(len(tile_table)))
+
+            # We might have excluded all of our tiles, if so exit
+            if not len(tile_table):
+                log.warning('No tiles passed filtering, no pointings to add')
+                log.debug('Highest tile has {:.3f}%'.format(max(event.full_table['prob']) * 100))
+                return
+
+            # Create Survey
+            db_survey = db.Survey(name=event.name)
+            db_survey.grid = db_grid
+            db_survey.event = db_event
+            log.debug('Adding Survey to database')
+            session.add(db_survey)
+
+        # Get the database User, or make it if it doesn't exist
+        db_user = get_user(session)
+
+        # Create Mpointing(s)
         mpointings = []
-        for tilename, _, _, prob in masked_table:
-            # Find the matching GridTile
-            query = session.query(db.GridTile)
-            query = query.filter(db.GridTile.grid == db_grid,
-                                 db.GridTile.name == tilename)
-            db_grid_tile = query.one_or_none()
-
-            # Create a SurveyTile
-            db_survey_tile = db.SurveyTile(weight=float(prob))
-            db_survey_tile.survey = db_survey
-            db_survey_tile.grid_tile = db_grid_tile
-
-            # Get default Mpointing and ExposureSet infomation
-            mp_data, expsets = get_mpointing_info(strategy_dict)
-
-            # Set the object name, combination of event name and tile name
-            mp_data['object_name'] = event.name + '_' + tilename
-
-            # Create Mpointing
-            db_mpointing = db.Mpointing(**mp_data, user=user)
-            db_mpointing.grid_tile = db_grid_tile
-            db_mpointing.survey_tile = db_survey_tile
+        if not strategy_dict['on_grid']:
+            # Create a single Mpointing
+            db_mpointing = db.Mpointing(object_name=event.name,
+                                        ra=event.coord.ra.value,
+                                        dec=event.coord.dec.value,
+                                        **mp_data)
+            db_mpointing.user = db_user
             db_mpointing.event = db_event
 
             # Create Exposure Sets
@@ -307,25 +253,56 @@ def add_tiles(event, strategy_dict, log):
                 db_exposure_set = db.ExposureSet(**exp_data)
                 db_mpointing.exposure_sets.append(db_exposure_set)
 
-            # Create the first Pointing (i.e. preempt the caretaker)
-            db_pointing = db_mpointing.get_next_pointing()
-
-            # Attach the tiles, because get_next_pointing uses IDs but they don't have them yet!
-            db_pointing.grid_tile = db_grid_tile
-            db_pointing.survey_tile = db_survey_tile
-            db_pointing.event = db_event
-
-            db_mpointing.pointings.append(db_pointing)
-
             # Add to list
             mpointings.append(db_mpointing)
+        else:
+            # Create Mpointings for each tile
+            for tilename, _, _, weight in tile_table:
+                # Find the matching GridTile
+                query = session.query(db.GridTile)
+                query = query.filter(db.GridTile.grid == db_grid,
+                                     db.GridTile.name == tilename)
+                db_grid_tile = query.one_or_none()
+
+                # Create a SurveyTile
+                db_survey_tile = db.SurveyTile(weight=float(weight))
+                db_survey_tile.survey = db_survey
+                db_survey_tile.grid_tile = db_grid_tile
+
+                # Create Mpointing
+                db_mpointing = db.Mpointing(object_name='{}_{}'.format(event.name, tilename),
+                                            ra=None,
+                                            dec=None,
+                                            **mp_data)
+                db_mpointing.user = db_user
+                db_mpointing.grid_tile = db_grid_tile
+                db_mpointing.survey_tile = db_survey_tile
+                db_mpointing.event = db_event
+
+                # Add to list
+                mpointings.append(db_mpointing)
+
+        for db_mpointing in mpointings:
+            # Create Exposure Sets
+            for exp_data in expsets:
+                db_exposure_set = db.ExposureSet(**exp_data)
+                db_mpointing.exposure_sets.append(db_exposure_set)
+
+            # Create the first Pointing (i.e. preempt the caretaker)
+            # Note need to add objects, get_next_pointing uses IDs but they don't have them yet!
+            db_pointing = db_mpointing.get_next_pointing()
+            db_pointing.event = db_event
+            db_pointing.grid_tile = db_grid_tile
+            db_pointing.survey_tile = db_survey_tile
+            db_mpointing.pointings.append(db_pointing)
 
         # Add Mpointings to the database
-        log.debug('Adding Mpointings to database')
+        log.debug('Adding {} Mpointings to database'.format(len(mpointings)))
+        db.insert_items(session, mpointings)
+
+        # Commit changes
         try:
-            db.insert_items(session, mpointings)
             session.commit()
-            log.info('Added {} Mpointings to database'.format(len(mpointings)))
         except Exception:
             # Undo database changes before raising
             session.rollback()

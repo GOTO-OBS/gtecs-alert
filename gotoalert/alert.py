@@ -5,8 +5,8 @@ import logging
 
 import astropy.units as u
 
-from . import params
 from . import database as db
+from . import params
 from .definitions import get_obs_data, goto_north, goto_south
 from .events import Event
 from .output import create_webpages
@@ -73,21 +73,9 @@ def event_handler(event, write_html=False, send_messages=False, log=None):
         log.debug('Checking for previous events in database')
         db.remove_previous_events(event, log)
 
-        # If it's a retraction event that's all we need to do
-        # TODO: shouldn't we still store the Event in the database to show we processed it?
-        if event.type == 'GW_RETRACTION':
-            return
-
         # Then add the new pointings
-        if not strategy_dict['on_grid']:
-            # Add a single pointing at the event centre
-            log.debug('Adding a single pointing to database')
-            db.add_single_pointing(event, strategy_dict, log)
-        else:
-            # Add a series of on-grid pointings based on a Gaussian skymap
-            # We load the latest all-sky grid from the database
-            log.debug('Adding on-grid pointings to database')
-            db.add_tiles(event, strategy_dict, log)
+        log.debug('Adding to database')
+        db.add_to_database(event, strategy_dict, log)
         log.info('Database insersion complete')
 
     except Exception:
