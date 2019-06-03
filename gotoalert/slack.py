@@ -172,7 +172,7 @@ def send_strategy_report(event):
     details += ['On Grid: {}'.format(strategy['on_grid'])]
     if strategy['on_grid']:
         details += ['Tile number limit: {}'.format(strategy['tile_limit']),
-                    'Tile probability limit: {:.1f}'.format(strategy['prob_limit'] * 100),
+                    'Tile probability limit: {:.1f}%'.format(strategy['prob_limit'] * 100),
                     ]
 
     message_text = '\n'.join(title + details)
@@ -207,8 +207,17 @@ def send_database_report(event):
             details += ['Number of targets for this event: {}'.format(len(db_mpointings))]
 
             if len(db_mpointings) == 0:
-                # Uh-oh
-                details += ['*ERROR: No Mpointings found in database*']
+                # It might be because no tiles passed the filter
+                if (event.strategy['on_grid'] and
+                        event.strategy['prob_limit'] and
+                        max(event.full_table['prob']) < event.strategy['prob_limit']):
+                    details += ['- No tiles passed the probability limit ' +
+                                '({:.1f}%, '.format(event.strategy['prob_limit'] * 100) +
+                                'highest had {:.1f}%)'.format(max(event.full_table['prob']) * 100),
+                                ]
+                else:
+                    # Uh-oh
+                    details += ['- *ERROR: No Mpointings found in database*']
             else:
                 # Get the Mpointing coordinates
                 ras = [mpointing.ra for mpointing in db_mpointings]
