@@ -218,6 +218,13 @@ def send_database_report(event):
                 else:
                     # Uh-oh
                     details += ['- *ERROR: No Mpointings found in database*']
+
+            elif event.strategy['stop_time'] < Time.now():
+                # The Event pointings will have expired
+                delta = Time.now() - event.strategy['stop_time']
+                details += ['*Stop time passed {:.1f} days ago, '.format(delta.to('day').value) +
+                            'the event has expired*']
+
             else:
                 # Get the Mpointing coordinates
                 ras = [mpointing.ra for mpointing in db_mpointings]
@@ -277,11 +284,6 @@ def send_database_report(event):
                                         highlight_color=['blue', 'red'],
                                         color={tilename: '0.5' for tilename in tiles_notvisible},
                                         )
-
-        # Check if the event has expired
-        if event.strategy['stop_time'] < Time.now():
-            delta = Time.now() - event.strategy['stop_time']
-            details += ['*Note stop time passed {:.1f} days ago*'.format(delta.to('day').value)]
 
     message_text = '\n'.join(title + details)
 
