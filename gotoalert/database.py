@@ -164,8 +164,6 @@ def get_grid_tiles(event, db_grid):
 
     # Get the table of tiles and contained probability
     table = grid.get_table()
-    table.sort('prob')
-    table.reverse()
 
     # Mask the table based on tile probs
     # see https://github.com/GOTO-OBS/goto-alert/issues/26
@@ -178,6 +176,12 @@ def get_grid_tiles(event, db_grid):
         # Probably just one, unless it's in an overlap region
         mask = table['prob'] > 0.9
     masked_table = table[mask]
+
+    # Sort the tables
+    table.sort('prob')
+    table.reverse()
+    masked_table.sort('prob')
+    masked_table.reverse()
 
     # Store grid and tables on the Event
     event.grid = grid
