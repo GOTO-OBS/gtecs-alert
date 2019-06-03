@@ -169,6 +169,11 @@ def send_strategy_report(event):
                                                                                expset['filt'],
                                                                                expset['exptime'],
                                                                                ))
+    details += ['On Grid: {}'.format(strategy['on_grid'])]
+    if strategy['on_grid']:
+        details += ['Tile number limit: {}'.format(strategy['tile_limit']),
+                    'Tile probability limit: {:.1f}'.format(strategy['prob_limit'] * 100),
+                    ]
 
     message_text = '\n'.join(title + details)
 
@@ -181,9 +186,7 @@ def send_database_report(event):
     title = ['*Visibility for event {}*'.format(event.name)]
 
     # Basic details
-    details = ['Inserted on Grid: {}'.format(event.strategy['on_grid']),
-               'Expired: {}'.format(event.strategy['stop_time'] < Time.now())]
-
+    details = []
     filepath = None
     with db.open_session() as session:
         # Query Event table entries
@@ -265,6 +268,11 @@ def send_database_report(event):
                                         highlight_color=['blue', 'red'],
                                         color={tilename: '0.5' for tilename in tiles_notvisible},
                                         )
+
+        # Check if the event has expired
+        if event.strategy['stop_time'] < Time.now():
+            delta = Time.now() - event.strategy['stop_time']
+            details += ['*Note stop time passed {} days ago*'.format(delta.to('day').value)]
 
     message_text = '\n'.join(title + details)
 
