@@ -222,13 +222,19 @@ def add_to_database(event, log):
 
             # Limit number of tiles
             tile_table = masked_table[:event.strategy['tile_limit']]
+
+            # Limit probability, if given
+            if event.strategy['prob_limit']:
+                tile_table = tile_table[tile_table['prob'] > event.strategy['prob_limit']]
+
+            # Store final table
             event.tile_table = tile_table
             log.debug('Masked tile table has {} entries'.format(len(tile_table)))
 
             # We might have excluded all of our tiles, if so exit
             if not len(tile_table):
                 log.warning('No tiles passed filtering, no pointings to add')
-                log.debug('Highest tile has {:.3f}%'.format(max(event.full_table['prob']) * 100))
+                log.debug('Highest tile has {:.2f}%'.format(max(event.full_table['prob']) * 100))
                 return
 
             # Create Survey
