@@ -192,7 +192,7 @@ def send_database_report(event):
         # Query Event table entries
         db_events = session.query(db.Event).filter(db.Event.name == event.name).all()
 
-        details += ['Number of Events in database: {}'.format(len(db_events))]
+        details += ['Number of entries in the events table: {}'.format(len(db_events))]
 
         if len(db_events) == 0:
             # Uh-oh
