@@ -2,6 +2,15 @@
 
 import os
 
+from astroplan import AltitudeConstraint, AtNightConstraint, Observer, is_observable
+
+import astropy.units as u
+from astropy.coordinates import SkyCoord
+
+import numpy as np
+
+import obsdb as db
+
 from slackclient import SlackClient
 
 from . import params
@@ -165,5 +174,97 @@ def send_strategy_report(event):
 
 
 def send_database_report(event):
-    """TODO."""
-    pass
+    """Send a message to Slack with details of the database pointings and visibility."""
+    title = ['*Visibility for event {}*'.format(event.name)]
+
+    # Basic details
+    details = ['Insert on Grid: {}'.format(event.strategy['on_grid']),
+               ]
+
+    filepath = None
+    with db.open_session() as session:
+        # Query Event table entries
+        db_events = session.query(db.Event).filter(db.Event.name == event.name).all()
+
+        details += ['Number of Events in database: {}'.format(len(db_events))]
+
+        if len(db_events) == 0:
+            # Uh-oh
+            details += ['*ERROR: Nothing found in database*']
+        else:
+            # This event should be the latest added
+            db_event = db_events[-1]
+
+            # Get Mpointings
+            db_mpointings = db_event.mpointings
+
+            details += ['Number of targets for this event: {}'.format(len(db_mpointings))]
+
+            if len(db_mpointings) == 0:
+                # Uh-oh
+                details += ['*ERROR: No Mpointings found in database*']
+            else:
+                # Get the Mpointing coordinates
+                ras = [mpointing.ra for mpointing in db_mpointings]
+                decs = [mpointing.dec for mpointing in db_mpointings]
+                coords = SkyCoord(ras, decs, unit='deg')
+
+                for site in ['La Palma']:  # TODO: should be in params
+                    details += ['Predicted visibility from {}:'.format(site)]
+
+                    # Create Astroplan Observer
+                    observer = Observer.at_site(site.lower().replace(' ', ''))
+
+                    # Create visibility constraints
+                    min_alt = float(event.strategy['constraints_dict']['min_alt']) * u.deg
+                    max_sunalt = float(event.strategy['constraints_dict']['max_sunalt']) * u.deg
+                    alt_constraint = AltitudeConstraint(min=min_alt)
+                    night_constraint = AtNightConstraint(max_solar_altitude=max_sunalt)
+                    constraints = [alt_constraint, night_constraint]
+
+                    # Check visibility until the stop time
+                    start_time = event.strategy['start_time']
+                    stop_time = event.strategy['stop_time']
+                    valid_days = event.strategy['cadence_dict']['valid_days']
+                    mps_visible_mask = is_observable(constraints, observer, coords,
+                                                     time_range=[start_time, stop_time])
+
+                    details += ['- Targets visible over {} days: {}/{}'.format(
+                        valid_days, sum(mps_visible_mask), len(db_mpointings))]
+
+                    if event.strategy['on_grid']:
+                        # Find the total probibility for all tiles
+                        mp_tiles = np.array([mp.grid_tile.name for mp in db_mpointings])
+                        total_prob = event.grid.get_probability(list(mp_tiles)) * 100
+                        details += ['- Total probability in all tiles: {:.1f}%'.format(total_prob)]
+
+                        # Get visible mp tile names
+                        mp_tiles_visible = mp_tiles[mps_visible_mask]
+                        visible_prob = event.grid.get_probability(list(mp_tiles_visible)) * 100
+                        details += ['- Probability in visible tiles: {:.1f}%'.format(visible_prob)]
+
+                        # Get non-visible mp tile names
+                        mps_notvisible_tonight_mask = np.invert(mps_visible_mask)
+                        mp_tiles_notvisible = mp_tiles[mps_notvisible_tonight_mask]
+
+                        # Get all non-visible tiles
+                        tiles_visible_mask = is_observable(constraints, observer, event.grid.coords,
+                                                           time_range=[start_time, stop_time])
+                        tiles_notvisible_mask = np.invert(tiles_visible_mask)
+                        tiles_notvisible = np.array(event.grid.tilenames)[tiles_notvisible_mask]
+
+                        # Create a plot of the tiles, showing visibility tonight
+                        # TODO: multiple sites? Need multiple plots or one combined?
+                        filename = event.name + '_tiles.png'
+                        filepath = os.path.join(params.FILE_PATH, filename)
+                        event.grid.plot(filename=filepath,
+                                        plot_skymap=True,
+                                        highlight=[mp_tiles_visible, mp_tiles_notvisible],
+                                        highlight_color=['blue', 'red'],
+                                        color={tilename: '0.5' for tilename in tiles_notvisible},
+                                        )
+
+    message_text = '\n'.join(title + details)
+
+    # Send the message, with the plot attached if one was generated
+    send_slack_msg(message_text, filepath=filepath)
