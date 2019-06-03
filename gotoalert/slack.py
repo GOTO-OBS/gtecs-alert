@@ -47,6 +47,7 @@ def send_slack_msg(text, attachments=None, filepath=None):
                 api_call = client.api_call('chat.postMessage',
                                            channel=CHANNEL_NAME,
                                            username=BOT_NAME,
+                                           as_user=True,
                                            text=text,
                                            attachments=attachments,
                                            )
@@ -57,6 +58,7 @@ def send_slack_msg(text, attachments=None, filepath=None):
                     api_call = client.api_call('files.upload',
                                                channels=CHANNEL_NAME,  # Note channel(s)
                                                username=BOT_NAME,
+                                               as_user=True,
                                                initial_comment=text,
                                                filename=filename,
                                                file=file,
