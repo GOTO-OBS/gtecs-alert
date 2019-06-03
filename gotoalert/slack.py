@@ -209,7 +209,7 @@ def send_database_report(event):
             if len(db_mpointings) == 0:
                 # It might be because no tiles passed the filter
                 if (event.strategy['on_grid'] and
-                        event.strategy['prob_limit'] and
+                        event.strategy['prob_limit'] > 0 and
                         max(event.full_table['prob']) < event.strategy['prob_limit']):
                     details += ['- No tiles passed the probability limit ' +
                                 '({:.1f}%, '.format(event.strategy['prob_limit'] * 100) +

@@ -224,7 +224,7 @@ def add_to_database(event, log):
             tile_table = masked_table[:event.strategy['tile_limit']]
 
             # Limit probability, if given
-            if event.strategy['prob_limit']:
+            if event.strategy['prob_limit'] > 0:
                 tile_table = tile_table[tile_table['prob'] > event.strategy['prob_limit']]
 
             # Store final table
