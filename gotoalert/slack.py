@@ -272,7 +272,7 @@ def send_database_report(event):
         # Check if the event has expired
         if event.strategy['stop_time'] < Time.now():
             delta = Time.now() - event.strategy['stop_time']
-            details += ['*Note stop time passed {} days ago*'.format(delta.to('day').value)]
+            details += ['*Note stop time passed {:.1f} days ago*'.format(delta.to('day').value)]
 
     message_text = '\n'.join(title + details)
 
