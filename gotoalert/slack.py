@@ -6,6 +6,7 @@ from astroplan import AltitudeConstraint, AtNightConstraint, Observer, is_observ
 
 import astropy.units as u
 from astropy.coordinates import SkyCoord
+from astropy.time import Time
 
 import numpy as np
 
@@ -180,8 +181,8 @@ def send_database_report(event):
     title = ['*Visibility for event {}*'.format(event.name)]
 
     # Basic details
-    details = ['Insert on Grid: {}'.format(event.strategy['on_grid']),
-               ]
+    details = ['Inserted on Grid: {}'.format(event.strategy['on_grid']),
+               'Expired: {}'.format(event.strategy['stop_time'] < Time.now())]
 
     filepath = None
     with db.open_session() as session:
@@ -227,12 +228,11 @@ def send_database_report(event):
                     # Check visibility until the stop time
                     start_time = event.strategy['start_time']
                     stop_time = event.strategy['stop_time']
-                    valid_days = event.strategy['cadence_dict']['valid_days']
                     mps_visible_mask = is_observable(constraints, observer, coords,
                                                      time_range=[start_time, stop_time])
 
-                    details += ['- Targets visible over {} days: {}/{}'.format(
-                        valid_days, sum(mps_visible_mask), len(db_mpointings))]
+                    details += ['- Targets visible during valid period: {}/{}'.format(
+                        sum(mps_visible_mask), len(db_mpointings))]
 
                     if event.strategy['on_grid']:
                         # Find the total probibility for all tiles
