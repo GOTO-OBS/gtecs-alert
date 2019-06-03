@@ -133,8 +133,36 @@ def send_event_report(event):
 
 
 def send_strategy_report(event):
-    """Send a message to Slack with the event details and skymap."""
-    pass
+    """Send a message to Slack with the event strategy details."""
+    title = ['*Strategy for event {}*'.format(event.name)]
+
+    # Basic details
+    strategy = event.strategy
+    details = ['Strategy: "{}"'.format(strategy['strategy']),
+               'Rank: {}'.format(strategy['rank']),
+               'On Grid: {}'.format(strategy['on_grid']),
+               'Cadence: "{}"'.format(strategy['cadence']),
+               '- Number of visits: {}'.format(strategy['cadence_dict']['num_todo']),
+               '- Time between visits (mins): {}'.format(strategy['cadence_dict']['wait_time']),
+               '- Start time: {}'.format(strategy['start_time'].iso),
+               '- Stop time: {}'.format(strategy['stop_time'].iso),
+               'Constraints: "{}"'.format(strategy['constraints']),
+               '- Min Alt: {}'.format(strategy['constraints_dict']['min_alt']),
+               '- Max Sun Alt: {}'.format(strategy['constraints_dict']['max_sunalt']),
+               '- Min Moon Sep: {}'.format(strategy['constraints_dict']['min_moonsep']),
+               '- Max Moon Phase: {}'.format(strategy['constraints_dict']['max_moon']),
+               'ExposureSets: "{}"'.format(strategy['exposure_sets']),
+               ]
+    for expset in strategy['exposure_sets_dict']:
+        details.append('- NumExp: {:.0f}  Filter: {}  ExpTime: {:.1f}s'.format(expset['num_exp'],
+                                                                               expset['filt'],
+                                                                               expset['exptime'],
+                                                                               ))
+
+    message_text = '\n'.join(title + details)
+
+    # Send the message, with the skymap file attached
+    send_slack_msg(message_text)
 
 
 def send_database_report(event):
