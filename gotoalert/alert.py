@@ -11,13 +11,20 @@ from .events import Event
 def event_handler(event, send_messages=False, log=None):
     """Handle a new Event.
 
-    Returns the Event if it is interesting, or None if it's been rejected.
-
     Parameters
     ----------
+    event : `gototile.events.Event`
+        The Event to handle
+
     send_messages : bool, optional
         If True, send Slack messages.
         Default is False.
+
+    Returns
+    -------
+    processed : bool
+        Will return True if the Event was processed (if event.interesting == True).
+        If the Event was not interesting then it will be ignored and return False.
 
     """
     # Create a logger if one isn't given
@@ -28,11 +35,11 @@ def event_handler(event, send_messages=False, log=None):
     # Log IVORN
     log.info('Handling Event {}'.format(event.ivorn))
 
-    # Check if it's an event we want to process, otherwise return None
+    # Check if it's an event we want to process, otherwise return here
     if not event.interesting:
         log.warning('Ignoring uninteresting event (type={}, role={})'.format(event.type,
                                                                              event.role))
-        return None
+        return False
 
     # It passed the checks: it's an interesting event!
     log.info('Processing interesting {} Event {}'.format(event.type, event.name))
@@ -101,7 +108,7 @@ def event_handler(event, send_messages=False, log=None):
         raise
 
     log.info('Event {} processed'.format(event.name))
-    return event
+    return True
 
 
 def payload_handler(payload, send_messages=False):
