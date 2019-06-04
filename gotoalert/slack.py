@@ -222,6 +222,9 @@ def send_database_report(event):
                                 '({:.1f}%, '.format(event.strategy['prob_limit'] * 100) +
                                 'highest had {:.1f}%)'.format(max(event.full_table['prob']) * 100),
                                 ]
+                # Or it might be because it's a retraction, so we've removed the previous pointings
+                elif event.type == 'GW_RETRACTION':
+                    details += ['- Previous targets removed successfully']
                 else:
                     # Uh-oh
                     details += ['- *ERROR: No Mpointings found in database*']

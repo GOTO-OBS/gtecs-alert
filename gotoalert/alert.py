@@ -64,17 +64,19 @@ def event_handler(event, send_messages=False, log=None):
         slack.send_event_report(event)
         log.debug('Slack report sent')
 
-    # Get the observing strategy for this event (stored on the event as event.strategy)
-    # NB we can only do this after getting the skymap, because for GW events we need the distance.
-    log.debug('Fetching event strategy')
-    event.get_strategy()
-    log.debug('Using strategy {}'.format(event.strategy['strategy']))
+    # If the event was a retraction there's no strategy
+    if not event.type == 'GW_RETRACTION':
+        # Get the observing strategy for this event (stored on the event as event.strategy)
+        # NB we can only do this after getting the skymap, because GW events need the distance.
+        log.debug('Fetching event strategy')
+        event.get_strategy()
+        log.debug('Using strategy {}'.format(event.strategy['strategy']))
 
-    # Send Slack strategy report
-    if send_messages:
-        log.debug('Sending Slack strategy report')
-        slack.send_strategy_report(event)
-        log.debug('Slack report sent')
+        # Send Slack strategy report
+        if send_messages:
+            log.debug('Sending Slack strategy report')
+            slack.send_strategy_report(event)
+            log.debug('Slack report sent')
 
     # Add the event into the GOTO observation DB
     log.info('Inserting event {} into GOTO database'.format(event.name))
