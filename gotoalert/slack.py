@@ -189,6 +189,13 @@ def send_database_report(event):
     details = []
     filepath = None
     with db.open_session() as session:
+        # Check if the event has expired
+        if event.strategy['stop_time'] < Time.now():
+            # The Event pointings will have expired
+            delta = Time.now() - event.strategy['stop_time']
+            details += ['_Note stop time passed {:.1f} days ago, '.format(delta.to('day').value) +
+                        'the event has expired_']
+
         # Query Event table entries
         db_events = session.query(db.Event).filter(db.Event.name == event.name).all()
 
@@ -218,12 +225,6 @@ def send_database_report(event):
                 else:
                     # Uh-oh
                     details += ['- *ERROR: No Mpointings found in database*']
-
-            elif event.strategy['stop_time'] < Time.now():
-                # The Event pointings will have expired
-                delta = Time.now() - event.strategy['stop_time']
-                details += ['*Stop time passed {:.1f} days ago, '.format(delta.to('day').value) +
-                            'the event has expired*']
 
             else:
                 # Get the Mpointing coordinates
