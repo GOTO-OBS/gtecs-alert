@@ -189,13 +189,6 @@ def send_database_report(event):
     details = []
     filepath = None
     with db.open_session() as session:
-        # Check if the event has expired
-        if event.strategy['stop_time'] < Time.now():
-            # The Event pointings will have expired
-            delta = Time.now() - event.strategy['stop_time']
-            details += ['_Note stop time passed {:.1f} days ago, '.format(delta.to('day').value) +
-                        'the event has expired_']
-
         # Query Event table entries
         db_events = session.query(db.Event).filter(db.Event.name == event.name).all()
 
@@ -251,9 +244,17 @@ def send_database_report(event):
                     # Check visibility until the stop time
                     start_time = event.strategy['start_time']
                     stop_time = event.strategy['stop_time']
+                    details += ['- Valid dates: {} to {}'.format(
+                        start_time.datetime.strftime('%Y-%m-%d'),
+                        stop_time.datetime.strftime('%Y-%m-%d'))]
+
+                    if event.strategy['stop_time'] < Time.now():
+                        # The Event pointings will have expired
+                        delta = Time.now() - event.strategy['stop_time']
+                        details[-1] += ' _(expired {:.1f} days ago)_'.format(delta.to('day').value)
+
                     mps_visible_mask = is_observable(constraints, observer, coords,
                                                      time_range=[start_time, stop_time])
-
                     details += ['- Targets visible during valid period: {}/{}'.format(
                         sum(mps_visible_mask), len(db_mpointings))]
 
