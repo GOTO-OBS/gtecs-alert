@@ -61,8 +61,11 @@ def event_handler(event, send_messages=False, log=None):
     # Send Slack event report
     if send_messages:
         log.debug('Sending Slack event report')
-        slack.send_event_report(event)
-        log.debug('Slack report sent')
+        try:
+            slack.send_event_report(event)
+            log.debug('Slack report sent')
+        except Exception:
+            log.error('Error sending Slack report')
 
     # If the event was a retraction there's no strategy
     if not event.type == 'GW_RETRACTION':
@@ -75,8 +78,11 @@ def event_handler(event, send_messages=False, log=None):
         # Send Slack strategy report
         if send_messages:
             log.debug('Sending Slack strategy report')
-            slack.send_strategy_report(event)
-            log.debug('Slack report sent')
+            try:
+                slack.send_strategy_report(event)
+                log.debug('Slack report sent')
+            except Exception:
+                log.error('Error sending Slack report')
 
     # Add the event into the GOTO observation DB
     log.info('Inserting event {} into GOTO database'.format(event.name))
@@ -94,8 +100,11 @@ def event_handler(event, send_messages=False, log=None):
         # Send Slack database report
         if send_messages:
             log.debug('Sending Slack database report')
-            slack.send_database_report(event)
-            log.debug('Slack report sent')
+            try:
+                slack.send_database_report(event)
+                log.debug('Slack report sent')
+            except Exception:
+                log.error('Error sending Slack report')
 
     except Exception:
         log.warning('Unable to insert event into database')
