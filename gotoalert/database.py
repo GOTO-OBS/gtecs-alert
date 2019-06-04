@@ -194,9 +194,6 @@ def get_grid_tiles(event, db_grid):
 def add_to_database(event, log):
     """Add the Event into the database."""
     with db.open_session() as session:
-        # Get Mpointing and ExposureSet infomation
-        mp_data, expsets = get_mpointing_info(event)
-
         # Create Event
         db_event = db.Event(name=event.name,
                             ivorn=event.ivorn,
@@ -246,6 +243,9 @@ def add_to_database(event, log):
 
         # Get the database User, or make it if it doesn't exist
         db_user = get_user(session)
+
+        # Get Mpointing and ExposureSet infomation
+        mp_data, expsets = get_mpointing_info(event)
 
         # Create Mpointing(s)
         mpointings = []
