@@ -4,7 +4,6 @@
 import logging
 
 from . import database as db
-from . import params
 from . import slack
 from .events import Event
 
@@ -30,11 +29,9 @@ def event_handler(event, send_messages=False, log=None):
     log.info('Handling Event {}'.format(event.ivorn))
 
     # Check if it's an event we want to process, otherwise return None
-    if event.role in params.IGNORE_ROLES:
-        log.warning('Ignoring {} event'.format(event.role))
-        return None
-    elif not event.interesting:
-        log.warning('Ignoring uninteresting event')
+    if not event.interesting:
+        log.warning('Ignoring uninteresting event (type={}, role={})'.format(event.type,
+                                                                             event.role))
         return None
 
     # It passed the checks: it's an interesting event!

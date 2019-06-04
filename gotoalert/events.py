@@ -16,6 +16,7 @@ import voeventdb.remote.apiv1 as vdb
 
 import voeventparse as vp
 
+from . import params
 from .strategy import get_event_strategy
 
 
@@ -105,7 +106,6 @@ class Event(object):
 
         # Set default attirbutes
         # The subclasses for "interesting" events will overwrite these
-        self.interesting = False
         self.notice = 'Unknown'
         self.type = 'Unknown'
         self.source = 'Unknown'
@@ -160,6 +160,15 @@ class Event(object):
         payload = vdb.packet_xml(ivorn)
         return cls.from_payload(payload)
 
+    @property
+    def interesting(self):
+        """Check if this Event is classified as interesting."""
+        if self.type == 'Unknown':
+            return False
+        if self.role in params.IGNORE_ROLES:
+            return False
+        return True
+
     def archive(self, path):
         """Archive this event in the config directory."""
         if not os.path.exists(path):
@@ -188,7 +197,6 @@ class GWEvent(Event):
         group_params = vp.get_grouped_params(self.voevent)
 
         # Default params
-        self.interesting = True
         self.notice = EVENT_DICTONARY[self.packet_type]['notice_type']
         self.type = 'GW'
         self.source = EVENT_DICTONARY[self.packet_type]['source']
@@ -274,7 +282,6 @@ class GWRetractionEvent(Event):
         top_params = vp.get_toplevel_params(self.voevent)
 
         # Default params
-        self.interesting = True
         self.notice = EVENT_DICTONARY[self.packet_type]['notice_type']
         self.type = 'GW_RETRACTION'
         self.source = EVENT_DICTONARY[self.packet_type]['source']
@@ -302,7 +309,6 @@ class GRBEvent(Event):
         group_params = vp.get_grouped_params(self.voevent)
 
         # Default params
-        self.interesting = True
         self.notice = EVENT_DICTONARY[self.packet_type]['notice_type']
         self.type = 'GRB'
         self.source = EVENT_DICTONARY[self.packet_type]['source']
