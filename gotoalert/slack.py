@@ -207,17 +207,17 @@ def send_database_report(event):
             details += ['Number of targets for this event: {}'.format(len(db_mpointings))]
 
             if len(db_mpointings) == 0:
-                # It might be because no tiles passed the filter
-                if (event.strategy['on_grid'] and
+                # It might be because it's a retraction, so we've removed the previous pointings
+                if event.type == 'GW_RETRACTION':
+                    details += ['- Previous targets removed successfully']
+                # Or it might be because no tiles passed the filter
+                elif (event.strategy['on_grid'] and
                         event.strategy['prob_limit'] > 0 and
                         max(event.full_table['prob']) < event.strategy['prob_limit']):
                     details += ['- No tiles passed the probability limit ' +
                                 '({:.1f}%, '.format(event.strategy['prob_limit'] * 100) +
                                 'highest had {:.1f}%)'.format(max(event.full_table['prob']) * 100),
                                 ]
-                # Or it might be because it's a retraction, so we've removed the previous pointings
-                elif event.type == 'GW_RETRACTION':
-                    details += ['- Previous targets removed successfully']
                 else:
                     # Uh-oh
                     details += ['- *ERROR: No Mpointings found in database*']
