@@ -302,8 +302,8 @@ def add_to_database(event, log):
             # Note need to add objects, get_next_pointing uses IDs but they don't have them yet!
             db_pointing = db_mpointing.get_next_pointing()
             db_pointing.event = db_event
-            db_pointing.grid_tile = db_grid_tile
-            db_pointing.survey_tile = db_survey_tile
+            db_pointing.grid_tile = db_mpointing.grid_tile
+            db_pointing.survey_tile = db_mpointing.survey_tile
             db_mpointing.pointings.append(db_pointing)
 
         # Add Mpointings to the database
