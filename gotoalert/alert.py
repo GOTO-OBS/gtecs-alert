@@ -3,37 +3,28 @@
 
 import logging
 
-import astropy.units as u
-
-from . import params
-from .comms import send_email, send_slackmessage
-from .database import db_insert
-from .definitions import get_obs_data, goto_north, goto_south
+from . import database as db
+from . import slack
 from .events import Event
-from .output import create_webpages
 
 
-def event_handler(event, force_process=False, write_html=False, send_messages=False, log=None):
+def event_handler(event, send_messages=False, log=None):
     """Handle a new Event.
-
-    Returns the Event if it is interesting, or None if it's been rejected.
 
     Parameters
     ----------
-    force_process : bool, optional
-        If True, ignore the event filters (e.g. event roles, obs parameters) and process anyway.
-        Note if the Packet_Type is not in events.EVENT_DICTONARY then it still can't be
-        processed. This is more for testing events that we would usually process, not for
-        handling completely new events.
-        Default is False.
-
-    write_html : bool, optional
-        If True, write out HTML web pages to params.HTML_PATH.
-        Default is False.
+    event : `gototile.events.Event`
+        The Event to handle
 
     send_messages : bool, optional
         If True, send Slack messages.
         Default is False.
+
+    Returns
+    -------
+    processed : bool
+        Will return True if the Event was processed (if event.interesting == True).
+        If the Event was not interesting then it will be ignored and return False.
 
     """
     # Create a logger if one isn't given
@@ -41,93 +32,97 @@ def event_handler(event, force_process=False, write_html=False, send_messages=Fa
         logging.basicConfig(level=logging.DEBUG)
         log = logging.getLogger('goto-alert')
 
-    # Check if it's an event we want to process
-    if not force_process:
-        # Check role
-        log.info('Event is marked as "{}"'.format(event.role))
-        if event.role in params.IGNORE_ROLES:
-            log.warning('Ignoring {} event'.format(event.role))
-            return None
+    # Log IVORN
+    log.info('Handling Event {}'.format(event.ivorn))
 
-        # Check type
-        if not hasattr(event, 'type') or event.type is 'Unknown':
-            log.warning('Ignoring unknown event type')
-            return None
-        log.info('Recognised event type: {} ({})'.format(event.notice, event.type))
-
-        # Check galactic latitude
-        if (params.MIN_GALACTIC_LATITUDE and event.gal_lat and
-                abs(event.gal_lat) < params.MIN_GALACTIC_LATITUDE):
-            log.warning('Event too close to the galactic plane (Lat {:.2f})'.format(event.gal_lat))
-            return None
-
-        # Check distance from galactic center
-        if (params.MIN_GALACTIC_DISTANCE and event.gal_dist and
-                event.gal_dist < params.MIN_GALACTIC_DISTANCE):
-            log.warning('Event too close to the galactic centre (Dist {})'.format(event.gal_dist))
-            return None
+    # Check if it's an event we want to process, otherwise return here
+    if not event.interesting:
+        log.warning('Ignoring uninteresting event (type={}, role={})'.format(event.type,
+                                                                             event.role))
+        return False
 
     # It passed the checks: it's an interesting event!
+    log.info('Processing interesting {} Event {}'.format(event.type, event.name))
+
+    # Send initial Slack report
+    if send_messages:
+        log.debug('Sending initial Slack report')
+        msg = '*Processing new {} {} event: {}*'.format(event.source, event.type, event.id)
+        slack.send_slack_msg(msg)
+        log.debug('Slack report sent')
+
+    # Fetch the event skymap
+    if hasattr(event, 'get_skymap'):
+        # Not all "interesting" events will have a skymap (e.g. retractions)
+        log.debug('Fetching event skymap')
+        event.get_skymap()
+        log.debug('Skymap created')
+
+    # Send Slack event report
+    if send_messages:
+        log.debug('Sending Slack event report')
+        try:
+            slack.send_event_report(event)
+            log.debug('Slack report sent')
+        except Exception:
+            log.error('Error sending Slack report')
+
+    # If the event was a retraction there's no strategy
+    if not event.type == 'GW_RETRACTION':
+        # Get the observing strategy for this event (stored on the event as event.strategy)
+        # NB we can only do this after getting the skymap, because GW events need the distance.
+        log.debug('Fetching event strategy')
+        event.get_strategy()
+        log.debug('Using strategy {}'.format(event.strategy['strategy']))
+
+        # Send Slack strategy report
+        if send_messages:
+            log.debug('Sending Slack strategy report')
+            try:
+                slack.send_strategy_report(event)
+                log.debug('Slack report sent')
+            except Exception:
+                log.error('Error sending Slack report')
 
     # Add the event into the GOTO observation DB
-    db_insert(event, log, on_grid=params.ON_GRID)
+    log.info('Inserting event {} into GOTO database'.format(event.name))
+    try:
+        # First we need to see if there's a previous instance of the same event already in the db
+        # If so, then delete any still pending pointings and mpointings assosiated with the event
+        log.debug('Checking for previous events in database')
+        db.remove_previous_events(event, log)
 
-    # Get observing data for the event at each site
-    observers = [goto_north(), goto_south()]
-    obs_data = get_obs_data(event.target, observers, event.creation_time)
+        # Then add the new pointings
+        log.debug('Adding to database')
+        db.add_to_database(event, log)
+        log.info('Database insersion complete')
 
-    # Parse the event for each site
-    for site_name in obs_data:
-        site_data = obs_data[site_name]
-
-        # Check if it's observable
-        if not force_process:
-            # Check if the target rises above the horizon
-            if not site_data['alt_observable']:
-                log.warning('Target does not rise above minimum altitude at {}'.format(site_name))
-                continue
-            log.info('Target is visible tonight at {}'.format(site_name))
-
-            # Check if the target is visible for enough time
-            if (site_data['observation_end'] - site_data['observation_start']) < 1.5 * u.hour:
-                log.warning('Target is not up longer then 1:30 at {} tonight'.format(site_name))
-                continue
-            log.info('Target is up for longer than 1:30 tonight at {}'.format(site_name))
-
-        # Create and update web pages
-        if write_html:
-            create_webpages(event, obs_data, site_name, web_path=params.HTML_PATH)
-            log.debug('HTML page written for {}'.format(site_name))
-
-        # Send messages
+        # Send Slack database report
         if send_messages:
-            file_name = event.name
-            file_path = params.HTML_PATH + "{}_transients/".format(site_name)
+            log.debug('Sending Slack database report')
+            try:
+                slack.send_database_report(event)
+                log.debug('Slack report sent')
+            except Exception:
+                log.error('Error sending Slack report')
 
-            # Send email
-            email_subject = "Detection from {}".format(site_name)
-            email_link = 'http://118.138.235.166/~obrads'
-            email_body = "{} Detection: See more at {}".format(event.type, email_link)
+    except Exception:
+        log.warning('Unable to insert event into database')
 
-            send_email(fromaddr="lapalmaobservatory@gmail.com",
-                       toaddr="aobr10@student.monash.edu",
-                       subject=email_subject,
-                       body=email_body,
-                       password="lapalmaobservatory1",
-                       file_path=file_path,
-                       file_name=file_name)
-            log.debug('Sent email alert for {}'.format(site_name))
+        # Send Slack error report
+        if send_messages:
+            log.debug('Sending Slack error report')
+            msg = '*ERROR*: Failed to insert event {} into database'.format(event.name)
+            slack.send_slack_msg(msg)
+            log.debug('Slack report sent')
 
-            # Send message to Slack
-            if site_name == "goto_north":
-                send_slackmessage(event, file_name)
-                log.debug('Sent slack message for {}'.format(site_name))
+        raise
 
     log.info('Event {} processed'.format(event.name))
-    return event
+    return True
 
 
-def payload_handler(payload, log=None, write_html=True, send_messages=False):
+def payload_handler(payload, send_messages=False):
     """Handle a VOEvent payload.
 
     Returns the Event if it is interesting, or None if it's been rejected.
@@ -136,4 +131,4 @@ def payload_handler(payload, log=None, write_html=True, send_messages=False):
     event = Event.from_payload(payload)
 
     # Run the event handler
-    event_handler(event, log, write_html, send_messages)
+    event_handler(event, send_messages)

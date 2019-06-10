@@ -16,6 +16,10 @@ import voeventdb.remote.apiv1 as vdb
 
 import voeventparse as vp
 
+from . import params
+from .strategy import get_event_strategy
+
+
 # Define interesting events we want to process
 # Primary key is the GCN Packet_Type
 # This should be in params
@@ -31,9 +35,9 @@ EVENT_DICTONARY = {150: {'notice_type': 'LVC_PRELIMINARY',
                          'event_type': 'GW',
                          'source': 'LVC',
                          },
-                   112: {'notice_type': 'FERMI_GBM_GND_POS',
-                         'event_type': 'GRB',
-                         'source': 'Fermi',
+                   164: {'notice_type': 'LVC_RETRACTION',
+                         'event_type': 'GW_RETRACTION',
+                         'source': 'LVC',
                          },
                    115: {'notice_type': 'FERMI_GBM_FIN_POS',
                          'event_type': 'GRB',
@@ -63,8 +67,6 @@ class Event(object):
 
         # Load the payload using voeventparse
         self.voevent = vp.loads(self.payload)
-        self.top_params = vp.get_toplevel_params(self.voevent)
-        self.group_params = vp.get_grouped_params(self.voevent)
 
         # Get key attributes:
         # IVORN
@@ -100,7 +102,6 @@ class Event(object):
 
         # Set default attirbutes
         # The subclasses for "interesting" events will overwrite these
-        self.interesting = False
         self.notice = 'Unknown'
         self.type = 'Unknown'
         self.source = 'Unknown'
@@ -109,6 +110,7 @@ class Event(object):
         self.target = None
         self.skymap = None
         self.properties = {}
+        self.strategy = None
 
     def __repr__(self):
         return '{}(ivorn={})'.format(self.__class__.__name__, self.ivorn)
@@ -137,6 +139,8 @@ class Event(object):
             event_type = EVENT_DICTONARY[packet_type]['event_type']
             if event_type == 'GW':
                 event_class = GWEvent
+            elif event_type == 'GW_RETRACTION':
+                event_class = GWRetractionEvent
             elif event_type == 'GRB':
                 event_class = GRBEvent
             else:
@@ -152,6 +156,15 @@ class Event(object):
         payload = vdb.packet_xml(ivorn)
         return cls.from_payload(payload)
 
+    @property
+    def interesting(self):
+        """Check if this Event is classified as interesting."""
+        if self.type == 'Unknown':
+            return False
+        if self.role in params.IGNORE_ROLES:
+            return False
+        return True
+
     def archive(self, path):
         """Archive this event in the config directory."""
         if not os.path.exists(path):
@@ -162,6 +175,11 @@ class Event(object):
         with open(savepath, 'wb') as f:
             f.write(self.payload)
 
+    def get_strategy(self):
+        """Get the event observing strategy."""
+        self.strategy = get_event_strategy(self)
+        return self.strategy
+
 
 class GWEvent(Event):
     """A class to represent a Gravitational Wave Event."""
@@ -169,40 +187,63 @@ class GWEvent(Event):
     def __init__(self, payload):
         super().__init__(payload)
 
+        # Get XML param dicts
+        # NB: you can't store these on the Event because they're unpickleable.
+        top_params = vp.get_toplevel_params(self.voevent)
+        group_params = vp.get_grouped_params(self.voevent)
+
         # Default params
-        self.interesting = True
         self.notice = EVENT_DICTONARY[self.packet_type]['notice_type']
         self.type = 'GW'
         self.source = EVENT_DICTONARY[self.packet_type]['source']
 
         # Get the event ID (e.g. S190510g)
-        self.id = self.top_params['GraceID']['value']
+        self.id = top_params['GraceID']['value']
 
         # Create our own event name (e.g. LVC_S190510g)
         self.name = '{}_{}'.format(self.source, self.id)
 
         # Get info from the VOEvent
-        self.far = float(self.top_params['FAR']['value'])
-        self.gracedb_url = self.top_params['EventPage']['value']
-        self.instruments = self.top_params['Instruments']['value']
+        # See https://emfollow.docs.ligo.org/userguide/content.html#notice-contents
+        self.far = float(top_params['FAR']['value'])
+        self.gracedb_url = top_params['EventPage']['value']
+        self.instruments = top_params['Instruments']['value']
+        self.group = top_params['Group']['value']  # CBC or Burst
+        self.pipeline = top_params['Pipeline']['value']
 
         # Get classification probabilities and properties
-        classification_dict = self.group_params.allitems()[1][1]  # Horrible, but blame XML
-        self.classification = {key: float(classification_dict[key]['value'])
-                               for key in classification_dict}
-        properties_dict = self.group_params.allitems()[2][1]
-        self.properties = {key: float(properties_dict[key]['value'])
-                           for key in properties_dict}
+        if self.group == 'CBC':
+            classification_dict = group_params.allitems()[1][1]  # Horrible, but blame XML
+            self.classification = {key: float(classification_dict[key]['value'])
+                                   for key in classification_dict}
+            properties_dict = group_params.allitems()[2][1]
+            self.properties = {key: float(properties_dict[key]['value'])
+                               for key in properties_dict}
+        else:
+            self.classification = {}
+            self.properties = {}
 
         # Get skymap URL
-        for group in self.group_params:
-            if 'skymap_fits' in self.group_params[group]:
-                self.skymap_url = self.group_params[group]['skymap_fits']['value']
+        for group in group_params:
+            if 'skymap_fits' in group_params[group]:
+                self.skymap_url = group_params[group]['skymap_fits']['value']
                 self.skymap_type = group
+
+        # Don't download the skymap here, it may well be very large.
+        # Only do it when it's absolutely necessary
+        # These params will only be set once the skymap is downloaded
+        self.distance = np.inf
+        self.distance_error = 0
+        self.contour_areas = {0.5: None, 0.9: None}
+
+    def get_skymap(self, nside=128):
+        """Download the Event skymap and return it as a `gototile.skymap.SkyMap object."""
+        if self.skymap:
+            return self.skymap
 
         # Download the skymap
         self.skymap = SkyMap.from_fits(self.skymap_url)
-        # Don't regrade here, let the user do that if they want to
+        self.skymap.regrade(nside)
 
         # Store basic info on the skymap
         self.skymap.object = self.name
@@ -213,15 +254,43 @@ class GWEvent(Event):
             self.distance = self.skymap.header['distmean']
             self.distance_error = self.skymap.header['diststd']
         except KeyError:
-            # older skymaps might not have distances
-            self.distance = None
-            self.distance_error = None
+            # Older skymaps (& Burst?) might not have distances
+            self.distance = np.inf
+            self.distance_error = 0
 
         # Get info from the skymap itself
         self.contour_areas = {}
         for contour in [0.5, 0.9]:
             npix = len(self.skymap._pixels_within_contour(contour))
             self.contour_areas[contour] = npix * self.skymap.pixel_area
+
+        return self.skymap
+
+
+class GWRetractionEvent(Event):
+    """A class to represent a Gravitational Wave Retraction alert."""
+
+    def __init__(self, payload):
+        super().__init__(payload)
+
+        # Get XML param dicts
+        # NB: you can't store these on the Event because they're unpickleable.
+        top_params = vp.get_toplevel_params(self.voevent)
+
+        # Default params
+        self.notice = EVENT_DICTONARY[self.packet_type]['notice_type']
+        self.type = 'GW_RETRACTION'
+        self.source = EVENT_DICTONARY[self.packet_type]['source']
+
+        # Get the event ID (e.g. S190510g)
+        self.id = top_params['GraceID']['value']
+
+        # Create our own event name (e.g. LVC_S190510g)
+        self.name = '{}_{}'.format(self.source, self.id)
+
+        # Get info from the VOEvent
+        # Retractions have far fewer params
+        self.gracedb_url = top_params['EventPage']['value']
 
 
 class GRBEvent(Event):
@@ -230,31 +299,35 @@ class GRBEvent(Event):
     def __init__(self, payload):
         super().__init__(payload)
 
+        # Get XML param dicts
+        # NB: you can't store these on the Event because they're unpickleable.
+        top_params = vp.get_toplevel_params(self.voevent)
+        group_params = vp.get_grouped_params(self.voevent)
+
         # Default params
-        self.interesting = True
         self.notice = EVENT_DICTONARY[self.packet_type]['notice_type']
         self.type = 'GRB'
         self.source = EVENT_DICTONARY[self.packet_type]['source']
 
         # Get the event ID (e.g. 579943502)
-        self.id = self.top_params['TrigID']['value']
+        self.id = top_params['TrigID']['value']
 
         # Create our own event name (e.g. Fermi_579943502)
         self.name = '{}_{}'.format(self.source, self.id)
 
         # Get properties from the VOEvent
         if self.source == 'Fermi':
-            self.properties = {key: self.group_params['Trigger_ID'][key]['value']
-                               for key in self.group_params['Trigger_ID']
+            self.properties = {key: group_params['Trigger_ID'][key]['value']
+                               for key in group_params['Trigger_ID']
                                if key != 'Long_short'}
             try:
-                self.duration = self.group_params['Trigger_ID']['Long_short']['value']
+                self.duration = group_params['Trigger_ID']['Long_short']['value']
             except KeyError:
                 # Some don't have the duration
                 self.duration = 'unknown'
         elif self.source == 'Swift':
-            self.properties = {key: self.group_params['Solution_Status'][key]['value']
-                               for key in self.group_params['Solution_Status']}
+            self.properties = {key: group_params['Solution_Status'][key]['value']
+                               for key in group_params['Solution_Status']}
         for key in self.properties:
             if self.properties[key] == 'true':
                 self.properties[key] = True
@@ -280,16 +353,32 @@ class GRBEvent(Event):
         galactic_center = SkyCoord(l=0, b=0, unit='deg,deg', frame='galactic')
         self.gal_dist = self.coord.galactic.separation(galactic_center).value
 
-        # Try downloading the Fermi skymap
-        if self.source == 'Fermi':
-            # Get the possible skymap URL
-            # Fermi haven't actually updated their alerts to include the URL to the HEALPix skymap,
-            # but we can try and create it based on the typical location.
-            old_url = self.top_params['LightCurve_URL']['value']
+        # Try creating the Fermi skymap url
+        # Fermi haven't actually updated their alerts to include the URL to the HEALPix skymap,
+        # but we can try and create it based on the typical location.
+        try:
+            old_url = top_params['LightCurve_URL']['value']
             skymap_url = old_url.replace('lc_medres34', 'healpix_all').replace('.gif', '.fit')
+            self.skymap_url = skymap_url
+        except Exception:
+            # Worth a try, fall back to creating our own
+            self.skymap_url = None
+
+        # Don't create or download the skymap here, it may well be very large.
+        # Only do it when it's absolutely necessary
+        # These params will only be set once the skymap is downloaded
+        self.contour_areas = {0.5: None, 0.9: None}
+
+    def get_skymap(self, nside=128):
+        """Download the Event skymap and return it as a `gototile.skymap.SkyMap object."""
+        if self.skymap:
+            return self.skymap
+
+        # Try downloading the Fermi skymap
+        if self.skymap_url:
             try:
-                self.skymap = SkyMap.from_fits(skymap_url)
-                self.skymap_url = skymap_url
+                self.skymap = SkyMap.from_fits(self.skymap_url)
+                self.skymap.regrade(nside)
             except Exception:
                 # Worth a try, fall back to creating our own
                 pass
@@ -299,8 +388,16 @@ class GRBEvent(Event):
             self.skymap = SkyMap.from_position(self.coord.ra.deg,
                                                self.coord.dec.deg,
                                                self.total_error.deg,
-                                               nside=128)
+                                               nside=nside)
 
         # Store basic info on the skymap
         self.skymap.object = self.name
         self.skymap.objid = self.id
+
+        # Get info from the skymap itself
+        self.contour_areas = {}
+        for contour in [0.5, 0.9]:
+            npix = len(self.skymap._pixels_within_contour(contour))
+            self.contour_areas[contour] = npix * self.skymap.pixel_area
+
+        return self.skymap

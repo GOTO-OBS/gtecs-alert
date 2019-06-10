@@ -27,7 +27,7 @@ Several scripts from the `scripts` folder should also be added to your path.
 
 The module will look for a file named `.gotoalert.conf` either in the user's home directory or any path specified by the `GOTOALERT_CONF` environment variable. An example file is included in the base directory of this repository.
 
-When installing GOTO-alert, copy the included `.gotoalert.conf` file to one of the above locations, and change the `HTML_PATH` parameter to specify where you want GOTO-alert to save webpages. Once that has been done run the `setup_gotoalert.py` script to create the expected directory structure at that location.
+When installing GOTO-alert, copy the included `.gotoalert.conf` file to one of the above locations, then change the `FILE_PATH` parameter to specify where you want GOTO-alert to save files (there's also the `HTML_PATH` parameter if you want to save webpages in a different location). Once that has been done run the `setup_gotoalert.py` script to create the expected directory structure at that location.
 
 ### Testing
 
