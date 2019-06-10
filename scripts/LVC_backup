@@ -3,13 +3,11 @@
 
 import sys
 
-from astropy import units as u
 from astropy.time import Time
 
 from gotoalert.database import DEFAULT_NAME, DEFAULT_PW, DEFAULT_USER
 from gotoalert.database import GW_EXPSET, GW_MPOINTING
 
-from gototile.grid import SkyGrid
 from gototile.skymap import SkyMap
 
 from gtecs import misc
@@ -114,19 +112,12 @@ def get_tile_table(skymap, log):
     """Apply the skymap to a grid and get the masked table back."""
     try:
         with db.open_session() as session:
-            # Find the current Grid in the database
-            db_grids = session.query(db.Grid).all()
-            if not db_grids:
-                raise ValueError('No defined grids found!')
-            else:
-                # Might have multiple grids defined, just take the latest...
-                db_grid = db_grids[-1]
+            # Get the current grid
+            db_grid = db.get_current_grid(session)
             log.info('Found database grid {}'.format(db_grid))
 
             # Create a SkyGrid from the database Grid
-            fov = {'ra': db_grid.ra_fov * u.deg, 'dec': db_grid.dec_fov * u.deg}
-            overlap = {'ra': db_grid.ra_overlap, 'dec': db_grid.dec_overlap}
-            grid = SkyGrid(fov, overlap, kind=db_grid.algorithm)
+            grid = db_grid.get_skygrid()
             grid.db_id = db_grid.db_id
             log.info('Created grid {}'.format(grid))
 

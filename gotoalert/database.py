@@ -1,10 +1,6 @@
 #! /opt/local/bin/python3.6
 """Functions to add events into the GOTO Observation Database."""
 
-import astropy.units as u
-
-from gototile.grid import SkyGrid
-
 import numpy as np
 
 import obsdb as db
@@ -85,9 +81,6 @@ def get_mpointing_info(event):
         exp_data['num_exp'] = int(expset_dict['num_exp'])
         exp_data['exptime'] = float(expset_dict['exptime'])
         exp_data['filt'] = str(expset_dict['filt'])
-        # These are always the same
-        exp_data['binning'] = 1
-        exp_data['imgtype'] = 'SCIENCE'
         expsets.append(exp_data)
 
     # Create the blank Mpointing data dict
@@ -99,9 +92,6 @@ def get_mpointing_info(event):
     # The minimum pointing time is based on the ExposureSet +30s for readout, probably generous
     mp_data['min_time'] = sum((exp_data['exptime'] + 30) * exp_data['num_exp']
                               for exp_data in expsets)
-
-    # The valid time is always infinite, not needed for these sort of events
-    mp_data['valid_time'] = -1
 
     # Everything else comes from the strategy dict and it's subdicts
     mp_data['start_time'] = str(event.strategy['start_time'])
@@ -130,32 +120,10 @@ def get_user(session):
     return user
 
 
-def get_grid(session):
-    """Get the current grid from the database.
-
-    Returns
-    -------
-    grid : `gototile.grid.SkyGrid`
-        A SkyGrid object matching the current database grid.
-
-    """
-    # Get all the database grids
-    db_grids = session.query(db.Grid).all()
-    if not db_grids:
-        raise ValueError('No defined Grids found!')
-    else:
-        # Might have multiple grids defined, just take the latest...
-        db_grid = db_grids[-1]
-
-    return db_grid
-
-
 def get_grid_tiles(event, db_grid):
     """Apply the Event skymap to the current grid and return a table of filtered tiles."""
     # Create a SkyGrid from the database Grid
-    fov = {'ra': db_grid.ra_fov * u.deg, 'dec': db_grid.dec_fov * u.deg}
-    overlap = {'ra': db_grid.ra_overlap, 'dec': db_grid.dec_overlap}
-    grid = SkyGrid(fov, overlap, kind=db_grid.algorithm)
+    grid = db_grid.get_skygrid()
 
     # Apply the Event skymap to the grid
     if not event.skymap:
@@ -210,8 +178,8 @@ def add_to_database(event, log):
             return
 
         if event.strategy['on_grid']:
-            # Find the current Grid in the database
-            db_grid = get_grid(session)
+            # Get the current grid
+            db_grid = db.get_current_grid(session)
             log.info('Applying to Grid {}'.format(db_grid.name))
 
             # Get the masked tile table
