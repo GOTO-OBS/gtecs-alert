@@ -138,7 +138,11 @@ def send_event_report(event):
         # Some events (retractions) won't have skymaps
         filename = event.name + '_skymap.png'
         filepath = os.path.join(params.FILE_PATH, filename)
-        event.skymap.plot(filename=filepath)
+        # Plot the centre of events that have one
+        if event.coord:
+            event.skymap.plot(filename=filepath, coordinates=event.coord)
+        else:
+            event.skymap.plot(filename=filepath)
 
     # Send the message, with the skymap file attached
     send_slack_msg(message_text, filepath=filepath)
