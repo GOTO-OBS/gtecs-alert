@@ -1,8 +1,6 @@
 #! /opt/local/bin/python3.6
 """Functions to add events into the GOTO Observation Database."""
 
-import numpy as np
-
 import obsdb as db
 
 
@@ -136,7 +134,7 @@ def get_grid_tiles(event, db_grid):
     # Mask the table based on tile probs
     # see https://github.com/GOTO-OBS/goto-alert/issues/26
     # mask based on if the mean tile pixel value is within the 90% contour
-    mask = [np.mean(event.skymap.contours[tile]) < 0.9 for tile in grid.pixels]
+    mask = grid.mean_contours < 0.9
     if sum(mask) < 1:
         # The source is probably so well localised that no tile has a mean contour of < 90%
         # This can happen for Swift GRBs.
