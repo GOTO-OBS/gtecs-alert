@@ -129,8 +129,18 @@ def get_grid_tiles(event, db_grid):
         event.get_skymap()
     grid.apply_skymap(event.skymap)
 
+    # Chose the contour level.
+    # NOTE: The code below is rather preliminary, based of what's best for 4- or 8-UT systems.
+    # It needs simulating to find the optimal value.
+    if grid.tile_area < 20:
+        # GOTO-4
+        contour_level = 0.9
+    else:
+        # GOTO-8
+        contour_level = 0.95
+
     # Get the table of tiles selected depending on the event
-    masked_table = grid.select_tiles(contour=0.9,
+    masked_table = grid.select_tiles(contour=contour_level,
                                      max_tiles=event.strategy['tile_limit'],
                                      min_tile_prob=event.strategy['prob_limit'],
                                      )
