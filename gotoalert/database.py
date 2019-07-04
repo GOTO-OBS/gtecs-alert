@@ -1,8 +1,6 @@
 #! /opt/local/bin/python3.6
 """Functions to add events into the GOTO Observation Database."""
 
-import numpy as np
-
 import obsdb as db
 
 
@@ -124,37 +122,39 @@ def get_grid_tiles(event, db_grid):
     """Apply the Event skymap to the current grid and return a table of filtered tiles."""
     # Create a SkyGrid from the database Grid
     grid = db_grid.get_skygrid()
+    event.grid = grid
 
     # Apply the Event skymap to the grid
     if not event.skymap:
         event.get_skymap()
     grid.apply_skymap(event.skymap)
 
-    # Get the table of tiles and contained probability
-    table = grid.get_table()
+    # Chose the contour level.
+    # NOTE: The code below is rather preliminary, based of what's best for 4- or 8-UT systems.
+    # It needs simulating to find the optimal value.
+    if grid.tile_area < 20:
+        # GOTO-4
+        contour_level = 0.9
+    else:
+        # GOTO-8
+        contour_level = 0.95
 
-    # Mask the table based on tile probs
-    # see https://github.com/GOTO-OBS/goto-alert/issues/26
-    # mask based on if the mean tile pixel value is within the 90% contour
-    mask = [np.mean(event.skymap.contours[tile]) < 0.9 for tile in grid.pixels]
-    if sum(mask) < 1:
-        # The source is probably so well localised that no tile has a mean contour of < 90%
-        # This can happen for Swift GRBs.
-        # Instead just mask to any tiles with a contained probability of > 90%
-        # Probably just one, unless it's in an overlap region
-        mask = table['prob'] > 0.9
-    masked_table = table[mask]
+    # Get the table of tiles selected depending on the event
+    masked_table = grid.select_tiles(contour=contour_level,
+                                     max_tiles=event.strategy['tile_limit'],
+                                     min_tile_prob=event.strategy['prob_limit'],
+                                     )
 
-    # Sort the tables
-    table.sort('prob')
-    table.reverse()
+    # Sort the tables and store on the Event
     masked_table.sort('prob')
     masked_table.reverse()
-
-    # Store grid and tables on the Event
-    event.grid = grid
-    event.full_table = table
     event.masked_table = masked_table
+
+    # Also sort and store the full table
+    full_table = grid.get_table()
+    full_table.sort('prob')
+    full_table.reverse()
+    event.full_table = full_table
 
     return masked_table
 
@@ -183,21 +183,11 @@ def add_to_database(event, log):
             log.info('Applying to Grid {}'.format(db_grid.name))
 
             # Get the masked tile table
-            masked_table = get_grid_tiles(event, db_grid)
-
-            # Limit number of tiles
-            tile_table = masked_table[:event.strategy['tile_limit']]
-
-            # Limit probability, if given
-            if event.strategy['prob_limit'] > 0:
-                tile_table = tile_table[tile_table['prob'] > event.strategy['prob_limit']]
-
-            # Store final table
-            event.tile_table = tile_table
+            tile_table = get_grid_tiles(event, db_grid)
             log.debug('Masked tile table has {} entries'.format(len(tile_table)))
 
             # We might have excluded all of our tiles, if so exit
-            if not len(tile_table):
+            if len(tile_table) < 1:
                 log.warning('No tiles passed filtering, no pointings to add')
                 log.debug('Highest tile has {:.2f}%'.format(max(event.full_table['prob']) * 100))
                 return

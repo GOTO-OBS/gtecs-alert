@@ -261,8 +261,7 @@ class GWEvent(Event):
         # Get info from the skymap itself
         self.contour_areas = {}
         for contour in [0.5, 0.9]:
-            npix = len(self.skymap._pixels_within_contour(contour))
-            self.contour_areas[contour] = npix * self.skymap.pixel_area
+            self.contour_areas[contour] = self.skymap.get_contour_area(contour)
 
         return self.skymap
 
@@ -397,7 +396,6 @@ class GRBEvent(Event):
         # Get info from the skymap itself
         self.contour_areas = {}
         for contour in [0.5, 0.9]:
-            npix = len(self.skymap._pixels_within_contour(contour))
-            self.contour_areas[contour] = npix * self.skymap.pixel_area
+            self.contour_areas[contour] = self.skymap.get_contour_area(contour)
 
         return self.skymap
