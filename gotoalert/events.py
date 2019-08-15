@@ -7,6 +7,7 @@ from astroplan import FixedTarget
 
 from astropy.coordinates import Angle, SkyCoord
 from astropy.time import Time
+from astropy.utils.data import download_file
 
 from gototile.skymap import SkyMap
 
@@ -241,8 +242,14 @@ class GWEvent(Event):
         if self.skymap:
             return self.skymap
 
-        # Download the skymap
-        self.skymap = SkyMap.from_fits(self.skymap_url)
+        # Download the skymap from the URL
+        # The file gets stored in /tmp/
+        # Don't cache, force redownload every time
+        # https://github.com/GOTO-OBS/goto-alert/issues/36
+        self.skymap_file = download_file(self.skymap_url, cache=False)
+
+        # Create the skymap object and regrade
+        self.skymap = SkyMap.from_fits(self.skymap_file)
         self.skymap.regrade(nside)
 
         # Store basic info on the skymap
@@ -376,7 +383,9 @@ class GRBEvent(Event):
         # Try downloading the Fermi skymap
         if self.skymap_url:
             try:
-                self.skymap = SkyMap.from_fits(self.skymap_url)
+                # Download the skymap from the URL, create the skymap object and regrade
+                self.skymap_file = download_file(self.skymap_url, cache=False)
+                self.skymap = SkyMap.from_fits(self.skymap_file)
                 self.skymap.regrade(nside)
             except Exception:
                 # Worth a try, fall back to creating our own
