@@ -69,6 +69,14 @@ STRATEGY_DICTONARY = {'DEFAULT': {'rank': 309,
                                     'tile_limit': 5,
                                     'prob_limit': 0.05,
                                     },
+                      'GRB_FERMI_SHORT': {'rank': 210,
+                                          'cadence': 'TWO_FIRST_ONE_SECOND',
+                                          'constraints': 'NORMAL',
+                                          'exposure_sets': '3x60L',
+                                          'on_grid': True,
+                                          'tile_limit': 8,
+                                          'prob_limit': 0.005,
+                                          },
                       }
 
 # Define possible cadence strategies
@@ -137,7 +145,10 @@ def get_event_strategy(event):
         if event.source == 'Swift':
             strategy = 'GRB_SWIFT'
         else:
-            strategy = 'GRB_FERMI'
+            if event.duration.lower() == 'short':
+                strategy = 'GRB_FERMI_SHORT'
+            else:
+                strategy = 'GRB_FERMI'
 
     # Get the strategy dictionary
     strategy_dict = STRATEGY_DICTONARY[strategy]
