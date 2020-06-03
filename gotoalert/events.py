@@ -2,6 +2,7 @@
 
 import os
 from urllib.parse import quote_plus
+from urllib.request import urlopen
 
 from astroplan import FixedTarget
 
@@ -56,7 +57,11 @@ class Event(object):
 
     Some Events are better represented as one of the more specalised subclasses.
 
-    Use Event.from_payload() or Event.from_ivorn() to create an appropriate event.
+    Use one of the following classmethods to to create an appropriate event:
+        - Event.from_file()
+        - Event.from_url()
+        - Event.from_ivorn()
+        - Event.from_payload()
     """
 
     def __init__(self, payload):
@@ -155,6 +160,20 @@ class Event(object):
     def from_ivorn(cls, ivorn):
         """Create an Event by querying the 4pisky VOEvent database."""
         payload = vdb.packet_xml(ivorn)
+        return cls.from_payload(payload)
+
+    @classmethod
+    def from_url(cls, url):
+        """Create an Event by downloading the VOEvent from the given URL."""
+        with urlopen(url) as r:
+            payload = r.read()
+        return cls.from_payload(payload)
+
+    @classmethod
+    def from_file(cls, filepath):
+        """Create an Event by reading a VOEvent XML file."""
+        with open(filepath, 'rb') as f:
+            payload = f.read()
         return cls.from_payload(payload)
 
     @property
