@@ -25,7 +25,11 @@ from .strategy import get_event_strategy
 # Define interesting events we want to process
 # Primary key is the GCN Packet_Type
 # This should be in params
-EVENT_DICTONARY = {150: {'notice_type': 'LVC_PRELIMINARY',
+EVENT_DICTONARY = {163: {'notice_type': 'LVC_EARLY_WARNING',
+                         'event_type': 'GW',
+                         'source': 'LVC',
+                         },
+                   150: {'notice_type': 'LVC_PRELIMINARY',
                          'event_type': 'GW',
                          'source': 'LVC',
                          },
