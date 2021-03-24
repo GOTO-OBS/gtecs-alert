@@ -1,6 +1,7 @@
 """Slack messaging tools."""
 
 import os
+import json
 
 from astroplan import AltitudeConstraint, AtNightConstraint, Observer, is_observable
 
@@ -12,69 +13,88 @@ import numpy as np
 
 import obsdb as db
 
-from slackclient import SlackClient
+import requests
 
 from . import params
 
-BOT_TOKEN = params.SLACK_BOT_TOKEN
-BOT_NAME = params.SLACK_BOT_NAME
-CHANNEL_NAME = params.SLACK_BOT_CHANNEL
 
-
-def send_slack_msg(text, attachments=None, filepath=None):
-    """Send a message to Slack, using the settings defined in `gotoalert.params`.
+def send_slack_msg(text, attachments=None, blocks=None, filepath=None, channel=None):
+    """Send a message to Slack, using the settings defined in `gtecs.params`.
 
     Parameters
     ----------
     text : string
         The message text.
 
+    blocks : dict, optional
+        Formatting blocks for the the message.
+        NB a message can have blocks/attachments OR a file, not both.
+
     attachments : dict, optional
-        Attachments to the message.
-        NB a message can have attachments OR a file, not both.
+        Attachments to the message (technically deprecated).
+        NB a message can have attachments/blocks OR a file, not both.
 
     filepath : string, optional
         A local path to a file to be added to the message.
-        NB a message can have a file OR attachments, not both.
+        NB a message can have a file OR attachments/blocks, not both.
+
+    channel : string, optional
+        The channel to post the message to.
+        If None, defaults to `gtecs.params.SLACK_DEFAULT_CHANNEL`.
 
     """
-    if attachments is not None and filepath is not None:
-        raise ValueError("A Slack message can't have both attachments and a file.")
+    if channel is None:
+        channel = params.SLACK_DEFAULT_CHANNEL
+
+    if (attachments is not None or blocks is not None) and filepath is not None:
+        raise ValueError("A Slack message can't have both blocks and a file.")
+
+    # Slack doesn't format attachments with markdown automatically
+    if attachments:
+        for attachment in attachments:
+            if 'mrkdwn_in' not in attachment:
+                attachment['mrkdwn_in'] = ['text']
 
     if params.ENABLE_SLACK:
-        client = SlackClient(BOT_TOKEN)
         try:
             if not filepath:
-                api_call = client.api_call('chat.postMessage',
-                                           channel=CHANNEL_NAME,
-                                           username=BOT_NAME,
-                                           as_user=True,
-                                           text=text,
-                                           attachments=attachments,
-                                           )
+                url = 'https://slack.com/api/chat.postMessage'
+                payload = {'token': params.SLACK_BOT_TOKEN,
+                           'channel': channel,
+                           'as_user': True,
+                           'text': str(text),
+                           'attachments': json.dumps(attachments) if attachments else None,
+                           'blocks': json.dumps(blocks) if blocks else None,
+                           }
+                responce = requests.post(url, payload).json()
             else:
+                url = 'https://slack.com/api/files.upload'
                 filename = os.path.basename(filepath)
                 name = os.path.splitext(filename)[0]
+                payload = {'token': params.SLACK_BOT_TOKEN,
+                           'channels': channel,  # Note channel(s)
+                           'as_user': True,
+                           'filename': filename,
+                           'title': name,
+                           'initial_comment': text,
+                           }
                 with open(filepath, 'rb') as file:
-                    api_call = client.api_call('files.upload',
-                                               channels=CHANNEL_NAME,  # Note channel(s)
-                                               username=BOT_NAME,
-                                               as_user=True,
-                                               initial_comment=text,
-                                               filename=filename,
-                                               file=file,
-                                               title=name,
-                                               )
-            if not api_call.get('ok'):
-                raise Exception('Unable to send message')
+                    responce = requests.post(url, payload, files={'file': file}).json()
+            if not responce.get('ok'):
+                if 'error' in responce:
+                    raise Exception('Unable to send message: {}'.format(responce['error']))
+                else:
+                    raise Exception('Unable to send message')
         except Exception as err:
             print('Connection to Slack failed! - {}'.format(err))
             print('Message:', text)
             print('Attachments:', attachments)
+            print('Blocks:', blocks)
             print('Filepath:', filepath)
     else:
         print('Slack Message:', text)
         print('Attachments:', attachments)
+        print('Blocks:', blocks)
         print('Filepath:', filepath)
 
 
