@@ -198,14 +198,39 @@ def get_event_strategy(event):
     strategy_dict = STRATEGY_DICTONARY[strategy]
     strategy_dict['strategy'] = strategy
 
-    # Fill out the other dicts
-    strategy_dict['cadence_dict'] = CADENCE_DICTONARY[strategy_dict['cadence']]
+    # Fill out the other strategy details
+    if isinstance(strategy_dict['cadence'], str):
+        strategy_dict['cadence_dict'] = get_cadence_details(strategy_dict['cadence'], event.time)
+    else:
+        strategy_dict['cadence_dict'] = [get_cadence_details(c, event.time)
+                                         for c in strategy_dict['cadence']]
     strategy_dict['constraints_dict'] = CONSTRAINTS_DICTONARY[strategy_dict['constraints']]
     strategy_dict['exposure_sets_dict'] = EXPOSURE_SETS_DICTIONARY[strategy_dict['exposure_sets']]
 
-    # Store the event start and stop time too
-    strategy_dict['start_time'] = event.time
-    valid_days = strategy_dict['cadence_dict']['valid_days'] * u.day
-    strategy_dict['stop_time'] = event.time + valid_days
-
     return strategy_dict
+
+
+def get_cadence_details(cadences, start_time):
+    """Get the cadence strategy details for an Event."""
+    if isinstance(cadences, str):
+        cadences = [cadences]
+
+    cadence_details = []
+    for cadence in cadences:
+        # Get the cadence dictionary
+        cadence_dict = CADENCE_DICTONARY[cadence]
+
+        # Calculate stop and start times
+        if 'delay_days' in cadence_dict:
+            cadence_dict['start_time'] = start_time + cadence_dict['delay_days'] * u.day
+        else:
+            cadence_dict['start_time'] = start_time
+        cadence_dict['stop_time'] = cadence_dict['start_time'] + cadence_dict['valid_days'] * u.day
+
+        cadence_details.append(cadence_dict)
+
+    # just return the lsit for a single cadence
+    if len(cadence_details) == 1:
+        cadence_details = cadence_details[0]
+
+    return cadence_details
