@@ -29,8 +29,9 @@ def event_handler(event, send_messages=False, log=None):
     """
     # Create a logger if one isn't given
     if log is None:
-        logging.basicConfig(level=logging.DEBUG)
+        logging.basicConfig(level=logging.INFO)
         log = logging.getLogger('goto-alert')
+        log.setLevel(level=logging.DEBUG)
 
     # Log IVORN
     log.info('Handling Event {}'.format(event.ivorn))
