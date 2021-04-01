@@ -142,7 +142,7 @@ EXPOSURE_SETS_DICTIONARY = {'3x60L': [{'num_exp': 3, 'exptime': 60, 'filt': 'L'}
                                       ],
                             '4x90L': [{'num_exp': 4, 'exptime': 90, 'filt': 'L'},
                                       ],
-                            '6x90L': [{'num_exp': 4, 'exptime': 90, 'filt': 'L'},
+                            '6x90L': [{'num_exp': 6, 'exptime': 90, 'filt': 'L'},
                                       ],
                             '3x60RBG': [{'num_exp': 1, 'exptime': 60, 'filt': 'R'},
                                         {'num_exp': 1, 'exptime': 60, 'filt': 'G'},
