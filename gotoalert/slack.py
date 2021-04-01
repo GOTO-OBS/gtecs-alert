@@ -127,6 +127,14 @@ def send_event_report(event):
             # Fermi events should have a duration parameter
             extra_details += ['Duration: {}'.format(event.duration.capitalize()),
                               ]
+    elif event.type == 'NU':
+        # NU events provide a given location
+        extra_details = ['Signalness: {:.3f} probability to be astrophysical in origin'.format(event.signalness),
+                         'FAR: {:.3f} per yr'.format(event.far),
+                         'Position: {} ({})'.format(event.coord.to_string('hmsdms'),
+                                                    event.coord.to_string()),
+                         'Position error: {:.3f}'.format(event.total_error),
+                         ]
 
     details += extra_details
 

@@ -77,6 +77,30 @@ STRATEGY_DICTONARY = {'DEFAULT': {'rank': 309,
                                           'tile_limit': 8,
                                           'prob_limit': 0.005,
                                           },
+                      'NU_ICECUBE_GOLD': {'rank': 259,
+                                    'cadence': 'TWO_FIRST_ONE_SECOND',
+                                    'constraints': 'NORMAL',
+                                    'exposure_sets': '4x90L',
+                                    'on_grid': True,
+                                    'tile_limit': 3,
+                                    'prob_limit': 0.05,
+                                    },
+                      'NU_ICECUBE_BRONZE': {'rank': 269,
+                                    'cadence': 'TWO_FIRST_ONE_SECOND',
+                                    'constraints': 'NORMAL',
+                                    'exposure_sets': '4x90L',
+                                    'on_grid': True,
+                                    'tile_limit': 3,
+                                    'prob_limit': 0.05,
+                                    },
+                      'NU_ICECUBE_CASCADE': {'rank': 279,
+                                    'cadence': 'TWO_FIRST_ONE_SECOND',
+                                    'constraints': 'NORMAL',
+                                    'exposure_sets': '4x90L',
+                                    'on_grid': True,
+                                    'tile_limit': 8, 
+                                    'prob_limit': 0.005,
+                                    },
                       }
 
 # Define possible cadence strategies
@@ -153,6 +177,13 @@ def get_event_strategy(event):
                 strategy = 'GRB_FERMI_SHORT'
             else:
                 strategy = 'GRB_FERMI'
+    elif event.type == 'NU':
+        if event.notice == 'GOLD':
+            strategy = 'NU_ICECUBE_GOLD'
+        elif event.notice == 'BRONZE': 
+            strategy = 'NU_ICECUBE_BRONZE'
+        elif event.notice == 'CASCADE': 
+            strategy = 'NU_ICECUBE_CASCADE'
 
     # Get the strategy dictionary
     strategy_dict = STRATEGY_DICTONARY[strategy]
