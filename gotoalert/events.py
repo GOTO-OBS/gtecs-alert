@@ -53,17 +53,17 @@ EVENT_DICTONARY = {163: {'notice_type': 'LVC_EARLY_WARNING',
                         'event_type': 'GRB',
                         'source': 'Swift',
                         },
-                   173: {'notice_type': 'GOLD', 
+                   173: {'notice_type': 'ICECUBE_ASTROTRACK_GOLD', 
                         'event_type': 'NU',
-                        'source': 'ICECUBE',
+                        'source': 'IceCube',
                         },
-                   174: {'notice_type': 'BRONZE',
+                   174: {'notice_type': 'ICECUBE_ASTROTRACK_BRONZE',
                         'event_type': 'NU',
-                        'source': 'ICECUBE',
+                        'source': 'IceCube',
                         },
-                   176: {'notice_type': 'CASCADE', 
+                   176: {'notice_type': 'ICECUBE_CASCADE', 
                         'event_type': 'NU',
-                        'source': 'ICECUBE',
+                        'source': 'IceCube',
                         },
                    }
 
@@ -447,7 +447,7 @@ class GRBEvent(Event):
         return self.skymap
 
 class NUEvent(Event):
-    """A class to represent a Gamma-Ray Burst Event."""
+    """A class to represent a Neutrino (NU) Event."""
 
     def __init__(self, payload):
         super().__init__(payload)
@@ -465,8 +465,8 @@ class NUEvent(Event):
         # Get the run and event ID (e.g. 13311922683750)
         self.id = top_params['AMON_ID']['value']
 
-        # Create our own event name (e.g. ICECUBE_GOLD_EVENT_13311922683750)
-        self.name = '{}_{}_{}'.format(self.source, self.notice, self.id)
+        # Create our own event name (e.g. ICECUBE_13311922683750)
+        self.name = '{}_{}'.format(self.source, self.id)
 
         # Get info from the VOEvent
         # signalness: the probability this is an astrophysical signal relative to backgrounds
@@ -491,12 +491,10 @@ class NUEvent(Event):
 
         # Enclosed skymap url for CASCADE_EVENT, but others
         # Get skymap URL
-        for group in group_params:
-            if 'skymap_fits' in group_params[group]:
-                self.skymap_url = group_params[group]['skymap_fits']['value']
-                self.skymap_type = group
-            else:
-                self.skymap_url = None
+        if 'skymap_fits' in top_params:
+            self.skymap_url = top_params['skymap_fits']['value']
+        else:
+            self.skymap_url = None
 
         # Don't download the skymap here, it may well be very large.
         # Only do it when it's absolutely necessary
@@ -516,7 +514,12 @@ class NUEvent(Event):
             self.skymap_file = download_file(self.skymap_url, cache=False)
             self.skymap = SkyMap.from_fits(self.skymap_file)
             self.skymap.regrade(nside)
-        else:
+        except Exception:
+                # Fall back to creating our own
+                pass
+
+        # Create a Gaussian skymap (if we didn't download one above)
+        if not self.skymap:
             self.skymap = SkyMap.from_position(self.coord.ra.deg,
                                                self.coord.dec.deg,
                                                self.total_error.deg,
@@ -525,15 +528,6 @@ class NUEvent(Event):
         # Store basic info on the skymap
         self.skymap.object = self.name
         self.skymap.objid = self.id
-
-        # Get info from the skymap header
-        try:
-            self.distance = self.skymap.header['distmean']
-            self.distance_error = self.skymap.header['diststd']
-        except KeyError:
-            # Older skymaps (& Burst?) might not have distances
-            self.distance = np.inf
-            self.distance_error = 0
 
         # Get info from the skymap itself
         self.contour_areas = {}

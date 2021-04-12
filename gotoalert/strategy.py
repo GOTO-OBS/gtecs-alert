@@ -178,11 +178,11 @@ def get_event_strategy(event):
             else:
                 strategy = 'GRB_FERMI'
     elif event.type == 'NU':
-        if event.notice == 'GOLD':
+        if event.notice == 'ICECUBE_ASTROTRACK_GOLD':
             strategy = 'NU_ICECUBE_GOLD'
-        elif event.notice == 'BRONZE': 
+        elif event.notice == 'ICECUBE_ASTROTRACK_BRONZE': 
             strategy = 'NU_ICECUBE_BRONZE'
-        elif event.notice == 'CASCADE': 
+        elif event.notice == 'ICECUBE_CASCADE': 
             strategy = 'NU_ICECUBE_CASCADE'
 
     # Get the strategy dictionary

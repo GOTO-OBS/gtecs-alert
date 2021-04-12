@@ -129,8 +129,8 @@ def send_event_report(event):
                               ]
     elif event.type == 'NU':
         # NU events provide a given location
-        extra_details = ['Signalness: {:.3f} probability to be astrophysical in origin'.format(event.signalness),
-                         'FAR: {:.3f} per yr'.format(event.far),
+        extra_details = ['Signalness: {:.0f}% probability to be astrophysical in origin'.format(event.signalness * 100),
+                         'FAR: ~1 per {:.1f} yrs'.format(1 / event.far),
                          'Position: {} ({})'.format(event.coord.to_string('hmsdms'),
                                                     event.coord.to_string()),
                          'Position error: {:.3f}'.format(event.total_error),
