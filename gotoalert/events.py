@@ -53,18 +53,18 @@ EVENT_DICTONARY = {163: {'notice_type': 'LVC_EARLY_WARNING',
                         'event_type': 'GRB',
                         'source': 'Swift',
                         },
-                   173: {'notice_type': 'ICECUBE_ASTROTRACK_GOLD', 
-                        'event_type': 'NU',
-                        'source': 'IceCube',
-                        },
+                   173: {'notice_type': 'ICECUBE_ASTROTRACK_GOLD',
+                         'event_type': 'NU',
+                         'source': 'IceCube',
+                         },
                    174: {'notice_type': 'ICECUBE_ASTROTRACK_BRONZE',
-                        'event_type': 'NU',
-                        'source': 'IceCube',
-                        },
-                   176: {'notice_type': 'ICECUBE_CASCADE', 
-                        'event_type': 'NU',
-                        'source': 'IceCube',
-                        },
+                         'event_type': 'NU',
+                         'source': 'IceCube',
+                         },
+                   176: {'notice_type': 'ICECUBE_CASCADE',
+                         'event_type': 'NU',
+                         'source': 'IceCube',
+                         },
                    }
 
 
@@ -446,6 +446,7 @@ class GRBEvent(Event):
 
         return self.skymap
 
+
 class NUEvent(Event):
     """A class to represent a Neutrino (NU) Event."""
 
@@ -480,7 +481,7 @@ class NUEvent(Event):
 
         # Position error
         self.coord_error = Angle(self.position.err, unit=self.position.units)
-        
+
         # Systematic error for cascade event is given, so = 0
         if self.notice == 'ICECUBE_CASCADE':
             self.systematic_error = Angle(0, unit='deg')
@@ -511,10 +512,11 @@ class NUEvent(Event):
         # Don't cache, force redownload every time
         # https://github.com/GOTO-OBS/goto-alert/issues/36
         if self.skymap_url:
-            self.skymap_file = download_file(self.skymap_url, cache=False)
-            self.skymap = SkyMap.from_fits(self.skymap_file)
-            self.skymap.regrade(nside)
-        except Exception:
+            try:
+                self.skymap_file = download_file(self.skymap_url, cache=False)
+                self.skymap = SkyMap.from_fits(self.skymap_file)
+                self.skymap.regrade(nside)
+            except Exception:
                 # Fall back to creating our own
                 pass
 
