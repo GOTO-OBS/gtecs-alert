@@ -67,9 +67,9 @@ def remove_previous_events(event, log):
 
 
 def get_mpointing_info(event):
-    """Format all the infomation needed for a database Mpointing and ExposureSets.
+    """Get all the infomation needed for database Mpointings and ExposureSets.
 
-    Parameters will vary depending on the type of Event.
+    Parameters will vary depending on the type of Event and the chosen strategy.
     """
     # Fill out ExposureSet info
     # (do this first as it's needed for the mintime)
@@ -81,32 +81,43 @@ def get_mpointing_info(event):
         exp_data['filt'] = str(expset_dict['filt'])
         expsets.append(exp_data)
 
-    # Create the blank Mpointing data dict
-    mp_data = {}
+    # To handle multiple cadence strategies we need to create multiple sets of Mpointings
+    if isinstance(event.strategy['cadence_dict'], dict):
+        cadence_dicts = [event.strategy['cadence_dict']]
+    else:
+        cadence_dicts = event.strategy['cadence_dict']
 
-    # All Events should be Targets of Opportunity, that's the point!
-    mp_data['too'] = True
+    mp_list = []
+    for cadence_dict in cadence_dicts:
+        # Create the blank Mpointing data dict
+        mp_data = {}
 
-    # The minimum pointing time is based on the ExposureSet +30s for readout, probably generous
-    mp_data['min_time'] = sum((exp_data['exptime'] + 30) * exp_data['num_exp']
-                              for exp_data in expsets)
+        # All Events should be Targets of Opportunity, that's the point!
+        mp_data['too'] = True
 
-    # Everything else comes from the strategy dict and it's subdicts
-    mp_data['start_time'] = str(event.strategy['start_time'])
-    mp_data['stop_time'] = str(event.strategy['stop_time'])
-    mp_data['start_rank'] = int(event.strategy['rank'])
+        # The minimum pointing time is based on the ExposureSet +30s for readout, probably generous
+        mp_data['min_time'] = sum((exp_data['exptime'] + 30) * exp_data['num_exp']
+                                  for exp_data in expsets)
 
-    cadence_dict = event.strategy['cadence_dict']
-    mp_data['num_todo'] = int(cadence_dict['num_todo'])
-    mp_data['wait_time'] = cadence_dict['wait_time']  # Can be a list of floats
+        # Rank is the same for all cadences
+        mp_data['start_rank'] = int(event.strategy['rank'])
 
-    constraints_dict = event.strategy['constraints_dict']
-    mp_data['max_sunalt'] = float(constraints_dict['max_sunalt'])
-    mp_data['min_alt'] = float(constraints_dict['min_alt'])
-    mp_data['min_moonsep'] = float(constraints_dict['min_moonsep'])
-    mp_data['max_moon'] = str(constraints_dict['max_moon'])
+        # Fill out cadence details
+        mp_data['start_time'] = str(cadence_dict['start_time'])
+        mp_data['stop_time'] = str(cadence_dict['stop_time'])
+        mp_data['num_todo'] = int(cadence_dict['num_todo'])
+        mp_data['wait_time'] = cadence_dict['wait_time']  # Can be a list of floats
 
-    return mp_data, expsets
+        # Constraints are the same for all cadences
+        constraints_dict = event.strategy['constraints_dict']
+        mp_data['max_sunalt'] = float(constraints_dict['max_sunalt'])
+        mp_data['min_alt'] = float(constraints_dict['min_alt'])
+        mp_data['min_moonsep'] = float(constraints_dict['min_moonsep'])
+        mp_data['max_moon'] = str(constraints_dict['max_moon'])
+
+        mp_list.append(mp_data)
+
+    return mp_list, expsets
 
 
 def get_user(session):
@@ -203,52 +214,48 @@ def add_to_database(event, log):
         db_user = get_user(session)
 
         # Get Mpointing and ExposureSet infomation
-        mp_data, expsets = get_mpointing_info(event)
+        mp_list, expsets = get_mpointing_info(event)
 
         # Create Mpointing(s)
         mpointings = []
-        if not event.strategy['on_grid']:
-            # Create a single Mpointing
-            db_mpointing = db.Mpointing(object_name=event.name,
-                                        ra=event.coord.ra.value,
-                                        dec=event.coord.dec.value,
-                                        **mp_data)
-            db_mpointing.user = db_user
-            db_mpointing.event = db_event
-
-            # Create Exposure Sets
-            for exp_data in expsets:
-                db_exposure_set = db.ExposureSet(**exp_data)
-                db_mpointing.exposure_sets.append(db_exposure_set)
-
-            # Add to list
-            mpointings.append(db_mpointing)
-        else:
-            # Create Mpointings for each tile
-            for tilename, _, _, weight in tile_table:
-                # Find the matching GridTile
-                query = session.query(db.GridTile)
-                query = query.filter(db.GridTile.grid == db_grid,
-                                     db.GridTile.name == tilename)
-                db_grid_tile = query.one_or_none()
-
-                # Create a SurveyTile
-                db_survey_tile = db.SurveyTile(weight=float(weight))
-                db_survey_tile.survey = db_survey
-                db_survey_tile.grid_tile = db_grid_tile
-
-                # Create Mpointing
-                db_mpointing = db.Mpointing(object_name='{}_{}'.format(event.name, tilename),
-                                            ra=None,
-                                            dec=None,
+        for mp_data in mp_list:
+            if not event.strategy['on_grid']:
+                # Create a single Mpointing
+                db_mpointing = db.Mpointing(object_name=event.name,
+                                            ra=event.coord.ra.value,
+                                            dec=event.coord.dec.value,
                                             **mp_data)
                 db_mpointing.user = db_user
-                db_mpointing.grid_tile = db_grid_tile
-                db_mpointing.survey_tile = db_survey_tile
                 db_mpointing.event = db_event
 
                 # Add to list
                 mpointings.append(db_mpointing)
+            else:
+                # Create Mpointings for each tile
+                for tilename, _, _, weight in tile_table:
+                    # Find the matching GridTile
+                    query = session.query(db.GridTile)
+                    query = query.filter(db.GridTile.grid == db_grid,
+                                         db.GridTile.name == tilename)
+                    db_grid_tile = query.one_or_none()
+
+                    # Create a SurveyTile
+                    db_survey_tile = db.SurveyTile(weight=float(weight))
+                    db_survey_tile.survey = db_survey
+                    db_survey_tile.grid_tile = db_grid_tile
+
+                    # Create Mpointing
+                    db_mpointing = db.Mpointing(object_name='{}_{}'.format(event.name, tilename),
+                                                ra=None,
+                                                dec=None,
+                                                **mp_data)
+                    db_mpointing.user = db_user
+                    db_mpointing.grid_tile = db_grid_tile
+                    db_mpointing.survey_tile = db_survey_tile
+                    db_mpointing.event = db_event
+
+                    # Add to list
+                    mpointings.append(db_mpointing)
 
         for db_mpointing in mpointings:
             # Create Exposure Sets

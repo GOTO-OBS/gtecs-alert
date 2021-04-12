@@ -12,7 +12,7 @@ REQUIRES = ['numpy',
             'voevent-parse',
             'voeventdb.remote',
             'pandas',
-            'slackclient',
+            'requests',
             'setuptools',
             ]
 

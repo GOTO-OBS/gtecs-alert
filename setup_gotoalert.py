@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 """A script to setup directory structure for GOTO-alert HTML files."""
 
 import csv

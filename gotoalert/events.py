@@ -25,53 +25,53 @@ from .strategy import get_event_strategy
 # Define interesting events we want to process
 # Primary key is the GCN Packet_Type
 # This should be in params
-EVENT_DICTONARY = {163: {'notice_type': 'LVC_EARLY_WARNING',
-                         'event_type': 'GW',
-                         'source': 'LVC',
-                         },
-                   150: {'notice_type': 'LVC_PRELIMINARY',
-                         'event_type': 'GW',
-                         'source': 'LVC',
-                         },
-                   151: {'notice_type': 'LVC_INITIAL',
-                         'event_type': 'GW',
-                         'source': 'LVC',
-                         },
-                   152: {'notice_type': 'LVC_UPDATE',
-                         'event_type': 'GW',
-                         'source': 'LVC',
-                         },
-                   164: {'notice_type': 'LVC_RETRACTION',
-                         'event_type': 'GW_RETRACTION',
-                         'source': 'LVC',
-                         },
-                   115: {'notice_type': 'FERMI_GBM_FIN_POS',
+EVENT_DICTIONARY = {163: {'notice_type': 'LVC_EARLY_WARNING',
+                          'event_type': 'GW',
+                          'source': 'LVC',
+                          },
+                    150: {'notice_type': 'LVC_PRELIMINARY',
+                          'event_type': 'GW',
+                          'source': 'LVC',
+                          },
+                    151: {'notice_type': 'LVC_INITIAL',
+                          'event_type': 'GW',
+                          'source': 'LVC',
+                          },
+                    152: {'notice_type': 'LVC_UPDATE',
+                          'event_type': 'GW',
+                          'source': 'LVC',
+                          },
+                    164: {'notice_type': 'LVC_RETRACTION',
+                          'event_type': 'GW_RETRACTION',
+                          'source': 'LVC',
+                          },
+                    115: {'notice_type': 'FERMI_GBM_FIN_POS',
+                          'event_type': 'GRB',
+                          'source': 'Fermi',
+                          },
+                    61: {'notice_type': 'SWIFT_BAT_GRB_POS',
                          'event_type': 'GRB',
-                         'source': 'Fermi',
+                         'source': 'Swift',
                          },
-                   61: {'notice_type': 'SWIFT_BAT_GRB_POS',
-                        'event_type': 'GRB',
-                        'source': 'Swift',
-                        },
-                   173: {'notice_type': 'ICECUBE_ASTROTRACK_GOLD', 
-                        'event_type': 'NU',
-                        'source': 'IceCube',
-                        },
-                   174: {'notice_type': 'ICECUBE_ASTROTRACK_BRONZE',
-                        'event_type': 'NU',
-                        'source': 'IceCube',
-                        },
-                   176: {'notice_type': 'ICECUBE_CASCADE', 
-                        'event_type': 'NU',
-                        'source': 'IceCube',
-                        },
-                   }
+                    173: {'notice_type': 'ICECUBE_ASTROTRACK_GOLD',
+                          'event_type': 'NU',
+                          'source': 'IceCube',
+                          },
+                    174: {'notice_type': 'ICECUBE_ASTROTRACK_BRONZE',
+                          'event_type': 'NU',
+                          'source': 'IceCube',
+                          },
+                    176: {'notice_type': 'ICECUBE_CASCADE',
+                          'event_type': 'NU',
+                          'source': 'IceCube',
+                          },
+                    }
 
 
 class Event(object):
     """A class to represent a single VOEvent.
 
-    Some Events are better represented as one of the more specalised subclasses.
+    Some Events are better represented as one of the more specialised subclasses.
 
     Use one of the following classmethods to to create an appropriate event:
         - Event.from_file()
@@ -122,7 +122,7 @@ class Event(object):
         # GCN packet type
         self.packet_type = self._get_packet_type(payload)
 
-        # Set default attirbutes
+        # Set default attributes
         # The subclasses for "interesting" events will overwrite these
         self.notice = 'Unknown'
         self.type = 'Unknown'
@@ -154,11 +154,11 @@ class Event(object):
         """Create an Event from a VOEvent payload."""
         # Chose a more detailed subclass based on GCN Packet Type, if there is one
         packet_type = cls._get_packet_type(payload)
-        if not packet_type or packet_type not in EVENT_DICTONARY:
+        if not packet_type or packet_type not in EVENT_DICTIONARY:
             # Not a GCN, or not a recognised packet type
             event_class = Event
         else:
-            event_type = EVENT_DICTONARY[packet_type]['event_type']
+            event_type = EVENT_DICTIONARY[packet_type]['event_type']
             if event_type == 'GW':
                 event_class = GWEvent
             elif event_type == 'GW_RETRACTION':
@@ -231,9 +231,9 @@ class GWEvent(Event):
         group_params = vp.get_grouped_params(self.voevent)
 
         # Default params
-        self.notice = EVENT_DICTONARY[self.packet_type]['notice_type']
+        self.notice = EVENT_DICTIONARY[self.packet_type]['notice_type']
         self.type = 'GW'
-        self.source = EVENT_DICTONARY[self.packet_type]['source']
+        self.source = EVENT_DICTIONARY[self.packet_type]['source']
 
         # Get the event ID (e.g. S190510g)
         self.id = top_params['GraceID']['value']
@@ -321,9 +321,9 @@ class GWRetractionEvent(Event):
         top_params = vp.get_toplevel_params(self.voevent)
 
         # Default params
-        self.notice = EVENT_DICTONARY[self.packet_type]['notice_type']
+        self.notice = EVENT_DICTIONARY[self.packet_type]['notice_type']
         self.type = 'GW_RETRACTION'
-        self.source = EVENT_DICTONARY[self.packet_type]['source']
+        self.source = EVENT_DICTIONARY[self.packet_type]['source']
 
         # Get the event ID (e.g. S190510g)
         self.id = top_params['GraceID']['value']
@@ -348,9 +348,9 @@ class GRBEvent(Event):
         group_params = vp.get_grouped_params(self.voevent)
 
         # Default params
-        self.notice = EVENT_DICTONARY[self.packet_type]['notice_type']
+        self.notice = EVENT_DICTIONARY[self.packet_type]['notice_type']
         self.type = 'GRB'
-        self.source = EVENT_DICTONARY[self.packet_type]['source']
+        self.source = EVENT_DICTIONARY[self.packet_type]['source']
 
         # Get the event ID (e.g. 579943502)
         self.id = top_params['TrigID']['value']
@@ -446,6 +446,7 @@ class GRBEvent(Event):
 
         return self.skymap
 
+
 class NUEvent(Event):
     """A class to represent a Neutrino (NU) Event."""
 
@@ -458,9 +459,9 @@ class NUEvent(Event):
         group_params = vp.get_grouped_params(self.voevent)
 
         # Default params
-        self.notice = EVENT_DICTONARY[self.packet_type]['notice_type']
-        self.type = EVENT_DICTONARY[self.packet_type]['event_type']
-        self.source = EVENT_DICTONARY[self.packet_type]['source']
+        self.notice = EVENT_DICTIONARY[self.packet_type]['notice_type']
+        self.type = EVENT_DICTIONARY[self.packet_type]['event_type']
+        self.source = EVENT_DICTIONARY[self.packet_type]['source']
 
         # Get the run and event ID (e.g. 13311922683750)
         self.id = top_params['AMON_ID']['value']
@@ -480,7 +481,7 @@ class NUEvent(Event):
 
         # Position error
         self.coord_error = Angle(self.position.err, unit=self.position.units)
-        
+
         # Systematic error for cascade event is given, so = 0
         if self.notice == 'ICECUBE_CASCADE':
             self.systematic_error = Angle(0, unit='deg')
@@ -511,10 +512,11 @@ class NUEvent(Event):
         # Don't cache, force redownload every time
         # https://github.com/GOTO-OBS/goto-alert/issues/36
         if self.skymap_url:
-            self.skymap_file = download_file(self.skymap_url, cache=False)
-            self.skymap = SkyMap.from_fits(self.skymap_file)
-            self.skymap.regrade(nside)
-        except Exception:
+            try:
+                self.skymap_file = download_file(self.skymap_url, cache=False)
+                self.skymap = SkyMap.from_fits(self.skymap_file)
+                self.skymap.regrade(nside)
+            except Exception:
                 # Fall back to creating our own
                 pass
 

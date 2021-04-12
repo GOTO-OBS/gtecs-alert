@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 """GOTO-alert module parameters."""
 
 import os
@@ -65,6 +65,5 @@ IGNORE_ROLES = config['IGNORE_ROLES']
 
 # Slack bot parameters
 ENABLE_SLACK = config['ENABLE_SLACK']
-SLACK_BOT_NAME = config['SLACK_BOT_NAME']
 SLACK_BOT_TOKEN = config['SLACK_BOT_TOKEN']
-SLACK_BOT_CHANNEL = config['SLACK_BOT_CHANNEL']
+SLACK_DEFAULT_CHANNEL = config['SLACK_DEFAULT_CHANNEL']

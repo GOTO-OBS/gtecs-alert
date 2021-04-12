@@ -1,6 +1,7 @@
 """Slack messaging tools."""
 
 import os
+import json
 
 from astroplan import AltitudeConstraint, AtNightConstraint, Observer, is_observable
 
@@ -12,69 +13,88 @@ import numpy as np
 
 import obsdb as db
 
-from slackclient import SlackClient
+import requests
 
 from . import params
 
-BOT_TOKEN = params.SLACK_BOT_TOKEN
-BOT_NAME = params.SLACK_BOT_NAME
-CHANNEL_NAME = params.SLACK_BOT_CHANNEL
 
-
-def send_slack_msg(text, attachments=None, filepath=None):
-    """Send a message to Slack, using the settings defined in `gotoalert.params`.
+def send_slack_msg(text, attachments=None, blocks=None, filepath=None, channel=None):
+    """Send a message to Slack, using the settings defined in `gtecs.params`.
 
     Parameters
     ----------
     text : string
         The message text.
 
+    blocks : dict, optional
+        Formatting blocks for the the message.
+        NB a message can have blocks/attachments OR a file, not both.
+
     attachments : dict, optional
-        Attachments to the message.
-        NB a message can have attachments OR a file, not both.
+        Attachments to the message (technically deprecated).
+        NB a message can have attachments/blocks OR a file, not both.
 
     filepath : string, optional
         A local path to a file to be added to the message.
-        NB a message can have a file OR attachments, not both.
+        NB a message can have a file OR attachments/blocks, not both.
+
+    channel : string, optional
+        The channel to post the message to.
+        If None, defaults to `gtecs.params.SLACK_DEFAULT_CHANNEL`.
 
     """
-    if attachments is not None and filepath is not None:
-        raise ValueError("A Slack message can't have both attachments and a file.")
+    if channel is None:
+        channel = params.SLACK_DEFAULT_CHANNEL
+
+    if (attachments is not None or blocks is not None) and filepath is not None:
+        raise ValueError("A Slack message can't have both blocks and a file.")
+
+    # Slack doesn't format attachments with markdown automatically
+    if attachments:
+        for attachment in attachments:
+            if 'mrkdwn_in' not in attachment:
+                attachment['mrkdwn_in'] = ['text']
 
     if params.ENABLE_SLACK:
-        client = SlackClient(BOT_TOKEN)
         try:
             if not filepath:
-                api_call = client.api_call('chat.postMessage',
-                                           channel=CHANNEL_NAME,
-                                           username=BOT_NAME,
-                                           as_user=True,
-                                           text=text,
-                                           attachments=attachments,
-                                           )
+                url = 'https://slack.com/api/chat.postMessage'
+                payload = {'token': params.SLACK_BOT_TOKEN,
+                           'channel': channel,
+                           'as_user': True,
+                           'text': str(text),
+                           'attachments': json.dumps(attachments) if attachments else None,
+                           'blocks': json.dumps(blocks) if blocks else None,
+                           }
+                responce = requests.post(url, payload).json()
             else:
+                url = 'https://slack.com/api/files.upload'
                 filename = os.path.basename(filepath)
                 name = os.path.splitext(filename)[0]
+                payload = {'token': params.SLACK_BOT_TOKEN,
+                           'channels': channel,  # Note channel(s)
+                           'as_user': True,
+                           'filename': filename,
+                           'title': name,
+                           'initial_comment': text,
+                           }
                 with open(filepath, 'rb') as file:
-                    api_call = client.api_call('files.upload',
-                                               channels=CHANNEL_NAME,  # Note channel(s)
-                                               username=BOT_NAME,
-                                               as_user=True,
-                                               initial_comment=text,
-                                               filename=filename,
-                                               file=file,
-                                               title=name,
-                                               )
-            if not api_call.get('ok'):
-                raise Exception('Unable to send message')
+                    responce = requests.post(url, payload, files={'file': file}).json()
+            if not responce.get('ok'):
+                if 'error' in responce:
+                    raise Exception('Unable to send message: {}'.format(responce['error']))
+                else:
+                    raise Exception('Unable to send message')
         except Exception as err:
             print('Connection to Slack failed! - {}'.format(err))
             print('Message:', text)
             print('Attachments:', attachments)
+            print('Blocks:', blocks)
             print('Filepath:', filepath)
     else:
         print('Slack Message:', text)
         print('Attachments:', attachments)
+        print('Blocks:', blocks)
         print('Filepath:', filepath)
 
 
@@ -158,39 +178,55 @@ def send_event_report(event):
 
 def send_strategy_report(event):
     """Send a message to Slack with the event strategy details."""
-    title = ['*Strategy for event {}*'.format(event.name)]
+    s = '*Strategy for event {}*\n'.format(event.name)
 
-    # Basic details
+    # Strategy details
     strategy = event.strategy
-    details = ['Strategy: `{}`'.format(strategy['strategy']),
-               'Rank: {}'.format(strategy['rank']),
-               'Cadence: `{}`'.format(strategy['cadence']),
-               '- Number of visits: {}'.format(strategy['cadence_dict']['num_todo']),
-               '- Time between visits (mins): {}'.format(strategy['cadence_dict']['wait_time']),
-               '- Start time: {}'.format(strategy['start_time'].iso),
-               '- Stop time: {}'.format(strategy['stop_time'].iso),
-               'Constraints: `{}`'.format(strategy['constraints']),
-               '- Min Alt: {}'.format(strategy['constraints_dict']['min_alt']),
-               '- Max Sun Alt: {}'.format(strategy['constraints_dict']['max_sunalt']),
-               '- Min Moon Sep: {}'.format(strategy['constraints_dict']['min_moonsep']),
-               '- Max Moon Phase: {}'.format(strategy['constraints_dict']['max_moon']),
-               'ExposureSets: `{}`'.format(strategy['exposure_sets']),
-               ]
+    s += 'Strategy: `{}`\n'.format(strategy['strategy'])
+
+    # Rank
+    s += 'Rank: {}\n'.format(strategy['rank'])
+
+    # Cadence
+    if isinstance(strategy['cadence'], str):
+        s += 'Cadence: `{}`\n'.format(strategy['cadence'])
+        cadence_dict = strategy['cadence_dict']
+        s += '- Number of visits: {}\n'.format(cadence_dict['num_todo'])
+        s += '- Time between visits (mins): {}\n'.format(cadence_dict['wait_time'])
+        s += '- Start time: {}\n'.format(cadence_dict['start_time'].iso)
+        s += '- Stop time: {}\n'.format(cadence_dict['stop_time'].iso)
+    else:
+        for i, cadence in enumerate(strategy['cadence']):
+            cadence_dict = strategy['cadence_dict'][i]
+            s += 'Cadence {}: `{}`\n'.format(i + 1, cadence)
+            s += '- Number of visits: {}\n'.format(cadence_dict['num_todo'])
+            s += '- Time between visits (mins): {}\n'.format(cadence_dict['wait_time'])
+            s += '- Start time: {}\n'.format(cadence_dict['start_time'].iso)
+            s += '- Stop time: {}\n'.format(cadence_dict['stop_time'].iso)
+
+    # Constraints
+    s += 'Constraints: `{}`\n'.format(strategy['constraints'])
+    s += '- Min Alt: {}\n'.format(strategy['constraints_dict']['min_alt'])
+    s += '- Max Sun Alt: {}\n'.format(strategy['constraints_dict']['max_sunalt'])
+    s += '- Min Moon Sep: {}\n'.format(strategy['constraints_dict']['min_moonsep'])
+    s += '- Max Moon Phase: {}\n'.format(strategy['constraints_dict']['max_moon'])
+
+    # Exposure Sets
+    s += 'ExposureSets: `{}`\n'.format(strategy['exposure_sets'])
     for expset in strategy['exposure_sets_dict']:
-        details.append('- NumExp: {:.0f}  Filter: {}  ExpTime: {:.1f}s'.format(expset['num_exp'],
-                                                                               expset['filt'],
-                                                                               expset['exptime'],
-                                                                               ))
-    details += ['On Grid: {}'.format(strategy['on_grid'])]
+        s += '- NumExp: {:.0f}  Filter: {}  ExpTime: {:.1f}s\n'.format(expset['num_exp'],
+                                                                       expset['filt'],
+                                                                       expset['exptime'],
+                                                                       )
+
+    # On Grid
+    s += 'On Grid: {}\n'.format(strategy['on_grid'])
     if strategy['on_grid']:
-        details += ['Tile number limit: {}'.format(strategy['tile_limit']),
-                    'Tile probability limit: {:.1f}%'.format(strategy['prob_limit'] * 100),
-                    ]
+        s += 'Tile number limit: {}\n'.format(strategy['tile_limit'])
+        s += 'Tile probability limit: {:.1f}%\n'.format(strategy['prob_limit'] * 100)
 
-    message_text = '\n'.join(title + details)
-
-    # Send the message, with the skymap file attached
-    send_slack_msg(message_text)
+    # Send the message
+    send_slack_msg(s)
 
 
 def send_database_report(event):
@@ -254,36 +290,51 @@ def send_database_report(event):
                     constraints = [alt_constraint, night_constraint]
 
                     # Check visibility until the stop time
-                    start_time = event.strategy['start_time']
-                    stop_time = event.strategy['stop_time']
+                    if isinstance(event.strategy['cadence'], str):
+                        start_time = event.strategy['cadence_dict']['start_time']
+                        stop_time = event.strategy['cadence_dict']['stop_time']
+                    else:
+                        start_time = min(d['start_time'] for d in event.strategy['cadence_dict'])
+                        stop_time = max(d['stop_time'] for d in event.strategy['cadence_dict'])
                     details += ['- Valid dates: {} to {}'.format(
                         start_time.datetime.strftime('%Y-%m-%d'),
                         stop_time.datetime.strftime('%Y-%m-%d'))]
 
-                    if event.strategy['stop_time'] < Time.now():
+                    if stop_time < Time.now():
                         # The Event pointings will have expired
-                        delta = Time.now() - event.strategy['stop_time']
+                        delta = Time.now() - stop_time
                         details[-1] += ' _(expired {:.1f} days ago)_'.format(delta.to('day').value)
 
+                    # Find which Mpointings are visible
                     mps_visible_mask = is_observable(constraints, observer, coords,
                                                      time_range=[start_time, stop_time])
-                    details += ['- Targets visible during valid period: {}/{}'.format(
-                        sum(mps_visible_mask), len(db_mpointings))]
-
-                    if event.strategy['on_grid']:
-                        # Find the total probibility for all tiles
+                    if not event.strategy['on_grid']:
+                        # Report number of visible Mpointings
+                        details += ['- Targets visible during valid period: {}/{}'.format(
+                            sum(mps_visible_mask), len(db_mpointings))]
+                    else:
+                        # Get the number of unique tiles covered
                         mp_tiles = np.array([mp.grid_tile.name for mp in db_mpointings])
-                        total_prob = event.grid.get_probability(list(mp_tiles)) * 100
+                        mp_tiles_all = sorted(set(mp_tiles))
+
+                        # Report number of visible tiles
+                        mp_tiles_visible = mp_tiles[mps_visible_mask]
+                        mp_tiles_visible = sorted(set(mp_tiles_visible))
+                        details += ['- Tiles visible during valid period: {}/{}'.format(
+                            len(mp_tiles_visible), len(mp_tiles_all))]
+
+                        # Find the total probibility for all tiles
+                        total_prob = event.grid.get_probability(list(mp_tiles_all)) * 100
                         details += ['- Total probability in all tiles: {:.1f}%'.format(total_prob)]
 
                         # Get visible mp tile names
-                        mp_tiles_visible = mp_tiles[mps_visible_mask]
                         visible_prob = event.grid.get_probability(list(mp_tiles_visible)) * 100
                         details += ['- Probability in visible tiles: {:.1f}%'.format(visible_prob)]
 
                         # Get non-visible mp tile names
                         mps_notvisible_tonight_mask = np.invert(mps_visible_mask)
                         mp_tiles_notvisible = mp_tiles[mps_notvisible_tonight_mask]
+                        mp_tiles_visible = sorted(set(mp_tiles_notvisible))
 
                         # Get all non-visible tiles
                         tiles_visible_mask = is_observable(constraints, observer, event.grid.coords,
