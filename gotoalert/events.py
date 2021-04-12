@@ -53,6 +53,18 @@ EVENT_DICTONARY = {163: {'notice_type': 'LVC_EARLY_WARNING',
                         'event_type': 'GRB',
                         'source': 'Swift',
                         },
+                   173: {'notice_type': 'ICECUBE_ASTROTRACK_GOLD', 
+                        'event_type': 'NU',
+                        'source': 'IceCube',
+                        },
+                   174: {'notice_type': 'ICECUBE_ASTROTRACK_BRONZE',
+                        'event_type': 'NU',
+                        'source': 'IceCube',
+                        },
+                   176: {'notice_type': 'ICECUBE_CASCADE', 
+                        'event_type': 'NU',
+                        'source': 'IceCube',
+                        },
                    }
 
 
@@ -153,6 +165,8 @@ class Event(object):
                 event_class = GWRetractionEvent
             elif event_type == 'GRB':
                 event_class = GRBEvent
+            elif event_type == 'NU':
+                event_class = NUEvent
             else:
                 # This shouldn't happen?
                 event_class = Event
@@ -412,6 +426,96 @@ class GRBEvent(Event):
                 self.skymap.regrade(nside)
             except Exception:
                 # Worth a try, fall back to creating our own
+                pass
+
+        # Create a Gaussian skymap (if we didn't download one above)
+        if not self.skymap:
+            self.skymap = SkyMap.from_position(self.coord.ra.deg,
+                                               self.coord.dec.deg,
+                                               self.total_error.deg,
+                                               nside=nside)
+
+        # Store basic info on the skymap
+        self.skymap.object = self.name
+        self.skymap.objid = self.id
+
+        # Get info from the skymap itself
+        self.contour_areas = {}
+        for contour in [0.5, 0.9]:
+            self.contour_areas[contour] = self.skymap.get_contour_area(contour)
+
+        return self.skymap
+
+class NUEvent(Event):
+    """A class to represent a Neutrino (NU) Event."""
+
+    def __init__(self, payload):
+        super().__init__(payload)
+
+        # Get XML param dicts
+        # NB: you can't store these on the Event because they're unpickleable.
+        top_params = vp.get_toplevel_params(self.voevent)
+        group_params = vp.get_grouped_params(self.voevent)
+
+        # Default params
+        self.notice = EVENT_DICTONARY[self.packet_type]['notice_type']
+        self.type = EVENT_DICTONARY[self.packet_type]['event_type']
+        self.source = EVENT_DICTONARY[self.packet_type]['source']
+
+        # Get the run and event ID (e.g. 13311922683750)
+        self.id = top_params['AMON_ID']['value']
+
+        # Create our own event name (e.g. ICECUBE_13311922683750)
+        self.name = '{}_{}'.format(self.source, self.id)
+
+        # Get info from the VOEvent
+        # signalness: the probability this is an astrophysical signal relative to backgrounds
+        self.signalness = float(top_params['signalness']['value'])
+        self.far = float(top_params['FAR']['value'])
+
+        # Position coordinates
+        self.position = vp.get_event_position(self.voevent)
+        self.coord = SkyCoord(ra=self.position.ra, dec=self.position.dec, unit=self.position.units)
+        self.target = FixedTarget(self.coord)
+
+        # Position error
+        self.coord_error = Angle(self.position.err, unit=self.position.units)
+        
+        # Systematic error for cascade event is given, so = 0
+        if self.notice == 'ICECUBE_CASCADE':
+            self.systematic_error = Angle(0, unit='deg')
+        else:
+            self.systematic_error = Angle(.2, unit='deg')
+        self.total_error = Angle(np.sqrt(self.coord_error ** 2 + self.systematic_error ** 2),
+                                 unit='deg')
+
+        # Enclosed skymap url for CASCADE_EVENT, but others
+        # Get skymap URL
+        if 'skymap_fits' in top_params:
+            self.skymap_url = top_params['skymap_fits']['value']
+        else:
+            self.skymap_url = None
+
+        # Don't download the skymap here, it may well be very large.
+        # Only do it when it's absolutely necessary
+        # These params will only be set once the skymap is downloaded
+        self.contour_areas = {0.5: None, 0.9: None}
+
+    def get_skymap(self, nside=128):
+        """Download the Event skymap and return it as a `gototile.skymap.SkyMap object."""
+        if self.skymap:
+            return self.skymap
+
+        # Download the skymap from the URL
+        # The file gets stored in /tmp/
+        # Don't cache, force redownload every time
+        # https://github.com/GOTO-OBS/goto-alert/issues/36
+        if self.skymap_url:
+            self.skymap_file = download_file(self.skymap_url, cache=False)
+            self.skymap = SkyMap.from_fits(self.skymap_file)
+            self.skymap.regrade(nside)
+        except Exception:
+                # Fall back to creating our own
                 pass
 
         # Create a Gaussian skymap (if we didn't download one above)
