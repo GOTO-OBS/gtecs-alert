@@ -91,7 +91,7 @@ def event_handler(event, send_messages=False, log=None):
     log.info('Inserting event {} into GOTO database'.format(event.name))
     try:
         # First we need to see if there's a previous instance of the same event already in the db
-        # If so, then delete any still pending pointings and mpointings assosiated with the event
+        # If so, then delete any still pending pointings and mpointings associated with the event
         log.debug('Checking for previous events in database')
         db.remove_previous_events(event, log)
 
