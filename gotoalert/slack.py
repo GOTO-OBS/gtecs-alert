@@ -98,7 +98,7 @@ def send_slack_msg(text, attachments=None, blocks=None, filepath=None, channel=N
         print('Filepath:', filepath)
 
 
-def send_event_report(event):
+def send_event_report(event, channel=None):
     """Send a message to Slack with the event details and skymap."""
     title = ['*Details for event {}*'.format(event.name)]
 
@@ -174,10 +174,10 @@ def send_event_report(event):
             event.skymap.plot(filename=filepath)
 
     # Send the message, with the skymap file attached
-    send_slack_msg(message_text, filepath=filepath)
+    send_slack_msg(message_text, filepath=filepath, channel=channel)
 
 
-def send_strategy_report(event):
+def send_strategy_report(event, channel=None):
     """Send a message to Slack with the event strategy details."""
     s = '*Strategy for event {}*\n'.format(event.name)
 
@@ -227,10 +227,10 @@ def send_strategy_report(event):
         s += 'Tile probability limit: {:.1f}%\n'.format(strategy['prob_limit'] * 100)
 
     # Send the message
-    send_slack_msg(s)
+    send_slack_msg(s, channel=channel)
 
 
-def send_database_report(event):
+def send_database_report(event, channel=None):
     """Send a message to Slack with details of the database pointings and visibility."""
     title = ['*Visibility for event {}*'.format(event.name)]
 
@@ -357,4 +357,4 @@ def send_database_report(event):
     message_text = '\n'.join(title + details)
 
     # Send the message, with the plot attached if one was generated
-    send_slack_msg(message_text, filepath=filepath)
+    send_slack_msg(message_text, filepath=filepath, channel=channel)
