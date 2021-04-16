@@ -149,7 +149,8 @@ def send_event_report(event):
                               ]
     elif event.type == 'NU':
         # NU events provide a given location
-        extra_details = ['Signalness: {:.0f}% probability to be astrophysical in origin'.format(event.signalness * 100),
+        extra_details = ['Signalness: {:.0f}% probability to be astrophysical in origin'.format(
+                         event.signalness * 100),
                          'FAR: ~1 per {:.1f} yrs'.format(1 / event.far),
                          'Position: {} ({})'.format(event.coord.to_string('hmsdms'),
                                                     event.coord.to_string()),
@@ -323,7 +324,7 @@ def send_database_report(event):
                         details += ['- Tiles visible during valid period: {}/{}'.format(
                             len(mp_tiles_visible), len(mp_tiles_all))]
 
-                        # Find the total probibility for all tiles
+                        # Find the total probability for all tiles
                         total_prob = event.grid.get_probability(list(mp_tiles_all)) * 100
                         details += ['- Total probability in all tiles: {:.1f}%'.format(total_prob)]
 
@@ -334,7 +335,7 @@ def send_database_report(event):
                         # Get non-visible mp tile names
                         mps_notvisible_tonight_mask = np.invert(mps_visible_mask)
                         mp_tiles_notvisible = mp_tiles[mps_notvisible_tonight_mask]
-                        mp_tiles_visible = sorted(set(mp_tiles_notvisible))
+                        mp_tiles_notvisible = sorted(set(mp_tiles_notvisible))
 
                         # Get all non-visible tiles
                         tiles_visible_mask = is_observable(constraints, observer, event.grid.coords,
