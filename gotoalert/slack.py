@@ -174,7 +174,7 @@ def send_event_report(event, channel=None):
             event.skymap.plot(filename=filepath)
 
     # Send the message, with the skymap file attached
-    send_slack_msg(message_text, filepath=filepath, channel=None)
+    send_slack_msg(message_text, filepath=filepath, channel=channel)
 
 
 def send_strategy_report(event, channel=None):
@@ -227,7 +227,7 @@ def send_strategy_report(event, channel=None):
         s += 'Tile probability limit: {:.1f}%\n'.format(strategy['prob_limit'] * 100)
 
     # Send the message
-    send_slack_msg(s, channel=None)
+    send_slack_msg(s, channel=channel)
 
 
 def send_database_report(event, channel=None):
@@ -357,4 +357,4 @@ def send_database_report(event, channel=None):
     message_text = '\n'.join(title + details)
 
     # Send the message, with the plot attached if one was generated
-    send_slack_msg(message_text, filepath=filepath, channel=None)
+    send_slack_msg(message_text, filepath=filepath, channel=channel)
