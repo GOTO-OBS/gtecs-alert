@@ -204,7 +204,7 @@ class Event(object):
         return True
 
     def archive(self, path):
-        """Archive this event in the config directory."""
+        """Archive this event in the given directory."""
         if not os.path.exists(path):
             os.mkdir(path)
 
@@ -212,6 +212,7 @@ class Event(object):
         savepath = os.path.join(path, filename)
         with open(savepath, 'wb') as f:
             f.write(self.payload)
+        return savepath
 
     def get_strategy(self):
         """Get the event observing strategy."""
@@ -456,7 +457,7 @@ class NUEvent(Event):
         # Get XML param dicts
         # NB: you can't store these on the Event because they're unpickleable.
         top_params = vp.get_toplevel_params(self.voevent)
-        group_params = vp.get_grouped_params(self.voevent)
+        # group_params = vp.get_grouped_params(self.voevent)
 
         # Default params
         self.notice = EVENT_DICTIONARY[self.packet_type]['notice_type']
