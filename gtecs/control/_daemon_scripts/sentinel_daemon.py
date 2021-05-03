@@ -9,6 +9,7 @@ import time
 from astropy.time import Time
 
 import gcn.voeventclient as pygcn
+import voeventparse as vp
 
 from gtecs.alert.events import Event
 from gtecs.alert.handler import event_handler
@@ -17,6 +18,7 @@ from gtecs.control import params
 from gtecs.control.daemons import BaseDaemon
 from gtecs.control.slack import send_slack_msg
 
+from urllib.request import urlopen
 
 class SentinelDaemon(BaseDaemon):
     """Sentinel alerts daemon class."""
@@ -65,6 +67,11 @@ class SentinelDaemon(BaseDaemon):
                 self.log.info('Processing new event: {}'.format(self.latest_event.ivorn))
                 try:
                     self._handle_event()
+                    if self.latest_event.source == 'Fermi':
+                        t3 = threading.Thread(target=self._Fermin_skymap_thread)
+                        t3.daemon = True
+                        t3.start()
+
                 except Exception:
                     self.log.error('handle_event command failed')
                     self.log.debug('', exc_info=True)
@@ -193,6 +200,22 @@ class SentinelDaemon(BaseDaemon):
 
         # Finally check if we need to report an error
         self._check_errors()
+
+    def _Fermin_skymap_thread(self):
+        print('Fermi skymap thread started')
+        Fermi_event = self.latest_event
+        top_params = vp.get_toplevel_params(Fermi_event.voevent)
+        lightcurve_url = top_params['LightCurve_URL']['value']
+        skymap_url = old_url.replace('lc_medres34', 'healpix_all').replace('.gif', '.fit')
+
+        while(self.running):
+            try:
+                urlopen(skymap_url)
+                print('{}_{} adopt latest skymap'.format(Fermi_event.source, Fermi_event.id))
+                break
+            except:
+                print('no official skymap yet')
+                time.sleep(30)
 
     def _handle_event(self):
         """Archive each VOEvent, then pass it to GOTO-alert."""
