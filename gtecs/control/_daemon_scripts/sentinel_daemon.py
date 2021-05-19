@@ -74,16 +74,15 @@ class SentinelDaemon(BaseDaemon):
                     self.log.error('handle_event command failed')
                     self.log.debug('', exc_info=True)
 
-                # new thread that listens the skymap of Fermin events
+                # thread for listening the skymap of Fermin events
                 # no point to start the skymap listening thread if the event hasn't been handled
                 if self.latest_event.source == 'Fermi' and event_handled:
                     try:
-                        self.Fermi_skymap_listening = True
-                        Fermi_skymap_listener = threading.Thread(target=self._Fermi_skymap_thread(event=self.latest_event))
+                        Fermi_skymap_listener = threading.Thread(target=self._Fermi_skymap_thread(event=self.latest_event, listening=True))
                         Fermi_skymap_listener.daemon = True
                         Fermi_skymap_listener.start()
-                    except Exception:
-                        self.log.error('error in Fermi skymap listener')
+                    except:
+                        self.log.error('error in {}_{} skymap listener'.format(self.latest_event.source, self.latest_event.id))
 
             time.sleep(params.DAEMON_SLEEP_TIME)  # To save 100% CPU usage
 
@@ -167,26 +166,31 @@ class SentinelDaemon(BaseDaemon):
         return
 
     # A thread to listen the official skymap for Fermi events
-    def _Fermi_skymap_thread(self, event):
+    def _Fermi_skymap_thread(self, event, listening):
+        self.log.info('{}_{} skymap listening thread started'.format(event.source, event.id))
         top_params = vp.get_toplevel_params(event.voevent)
         lightcurve_url = top_params['LightCurve_URL']['value']
         skymap_url = lightcurve_url.replace('lc_medres34', 'healpix_all').replace('.gif', '.fit')
-        self.log.info('{}_{} skymap listening thread started'.format(event.source, event.id))
 
-        while self.running and self.Fermi_skymap_listening:
+        while self.running and listening:
             try: 
                 urlopen(skymap_url)
-                #send_slack_msg('latest skymap used for {}_{}'.format(event.soucre, event.id))
                 event.ivorn = event.ivorn + '_new_skymap' # assign a new ivorn
-                event_handler(event, log=self.log) # This 'new' event will not be sent on slack
-                self.log.info('latest skymap used for {}_{}'.format(event.source, event.id))
-                self.Fermi_skymap_listening = False
-                self.log.info('{}_{} skymap listening thread finished'.format(event.source, event.id))
+                listening = False
             except:
                 # if the link is not working yet, sleep for 30s
                 time.sleep(30)
-        if self.Fermi_skymap_listening and not self.running:
-            self.log.info('Fermi skymap listener thread stopped') 
+        if listening == False:
+            try: 
+                event_handler(event, log=self.log) # no need to send the slack message again
+                send_slack_msg('latest skymap used for {}_{}'.format(event.source, event.id))
+                self.log.info('{}_{} skymap listening thread finished'.format(event.source, event.id))
+            except Exception as err:
+                self.log.error('Exception in event handler')
+                self.log.exception(err)
+               
+        if listening and not self.running:
+            self.log.info('{}_{} skymap listener thread stopped'.format(event.source, event.id)) 
             return
 
     # Internal functions
