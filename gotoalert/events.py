@@ -386,7 +386,7 @@ class GRBEvent(Event):
         # Position error
         self.coord_error = Angle(self.position.err, unit=self.position.units)
         if self.source == 'Fermi':
-            self.systematic_error = Angle(3.71, unit='deg')
+            self.systematic_error = Angle(5.6, unit='deg')
         else:
             self.systematic_error = Angle(0, unit='deg')
         self.total_error = Angle(np.sqrt(self.coord_error ** 2 + self.systematic_error ** 2),
