@@ -13,10 +13,10 @@ import gcn.voeventclient as pygcn
 from gotoalert.alert import event_handler
 from gotoalert.events import Event
 
-from gtecs import misc
-from gtecs import params
-from gtecs.daemons import BaseDaemon
-from gtecs.slack import send_slack_msg
+from gtecs.control import misc
+from gtecs.control import params
+from gtecs.control.daemons import BaseDaemon
+from gtecs.control.slack import send_slack_msg
 
 
 class SentinelDaemon(BaseDaemon):
