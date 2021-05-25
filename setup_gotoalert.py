@@ -2,24 +2,33 @@
 """A script to setup directory structure for GOTO-alert HTML files."""
 
 import csv
+import glob
 import os
 import shutil
 import sys
 import traceback
 
-from gotoalert import params
+try:
+    from gtecs.alert import params
+    gtecs_installed = True
+except ModuleNotFoundError:
+    gtecs_installed = False
 
-import pkg_resources
 
+SITES = ['goto_north', 'goto_south']
 
-print('~~~~~~~~~~~~~~~~~~~~~~')
-print('Setting up GOTO-alert')
-print('~~~~~~~~~~~~~~~~~~~~~~')
+print('~~~~~~~~~~~~~~~~~~~~~~~~~~~~~')
+print('Setting up package data files')
+print('~~~~~~~~~~~~~~~~~~~~~~~~~~~~~')
 
-# Check for config file
+# Check the package has been installed
+if not gtecs_installed:
+    print('ERROR: Package not installed, run `pip3 install . --user first')
+    sys.exit(1)
+
+# Check for configuration file
 if params.CONFIG_FILE_PATH is None:
-    print('ERROR: No config file found, using default config')
-    print('       You need to create a .gotoalert.conf file')
+    print('ERROR: No .gotoalert.conf file found')
     sys.exit(1)
 print('Using config file {}/.gotoalert.conf'.format(params.CONFIG_FILE_PATH))
 print('')
@@ -33,57 +42,57 @@ print('FILE_PATH is set to: "{}"'.format(params.FILE_PATH))
 print('')
 
 # Create directories
+direcs = [params.FILE_PATH,
+          params.HTML_PATH,
+          ]
 try:
-    if not os.path.exists(params.FILE_PATH):
-        os.mkdir(params.FILE_PATH)
-    print('Created ', params.FILE_PATH)
+    for direc in direcs:
+        if not os.path.exists(direc):
+            os.mkdir(direc)
+            print('Created', direc)
+        print('Checked', direc)
 
-    if not os.path.exists(params.HTML_PATH):
-        os.mkdir(params.HTML_PATH)
-    print('Created ', params.HTML_PATH)
-
-    for direc in ['goto_north_transients', 'goto_south_transients']:
-        subpath = os.path.join(params.HTML_PATH, direc)
-        if not os.path.exists(subpath):
-            os.mkdir(subpath)
-            print('Created ', subpath)
-
+    for site in SITES:
+        direc = os.path.join(params.HTML_PATH, site + '_transients')
+        if not os.path.exists(direc):
+            os.mkdir(direc)
+            print('Created', direc)
+        print('Checked', direc)
         for subdirec in ['airmass_plots', 'finder_charts']:
-            subsubpath = os.path.join(subpath, subdirec)
-            if not os.path.exists(subsubpath):
-                os.mkdir(subsubpath)
-                print('Created ', subsubpath)
+            direc = os.path.join(params.HTML_PATH, site + '_transients', subdirec)
+            if not os.path.exists(direc):
+                os.mkdir(direc)
+                print('Created', direc)
+            print('Checked', direc)
 except Exception:
     print('ERROR: Failed to create directories')
-    print('       Try creating {} yourself then re-running this script'.format(params.FILE_PATH))
+    print('       Try creating {} yourself then re-running this script'.format(direc))
     traceback.print_exc()
     sys.exit(1)
 print('')
 
-# Find package data files
-data_dir = pkg_resources.resource_filename('gotoalert', 'data')
-
-# Copy files to the new directories
+# Copy sample data files to the new directories
 try:
-    shutil.copy(os.path.join(data_dir, 'index.html'),
-                os.path.join(params.HTML_PATH, 'index.html'))
-    print('Created ', os.path.join(params.HTML_PATH, 'index.html'))
+    files = glob.glob('data/*')
+    for file in sorted([f for f in files if os.path.isfile(f)]):
+        new_path = os.path.join(params.HTML_PATH, os.path.basename(file))
+        if not os.path.exists(new_path):
+            shutil.copy(file, new_path)
+            print('Copied', file, 'to', params.HTML_PATH)
+        else:
+            print('Ignored existing', new_path)
 
-    for direc in ['goto_north_transients', 'goto_south_transients']:
-        subpath = os.path.join(params.HTML_PATH, direc)
-        shutil.copy(os.path.join(data_dir, 'index2.html'),
-                    os.path.join(subpath, 'index.html'))
-        print('Created ', os.path.join(subpath, 'index.html'))
-
-        shutil.copy(os.path.join(data_dir, 'recent_ten.html'),
-                    os.path.join(subpath, 'recent_ten.html'))
-        print('Created ', os.path.join(subpath, 'recent_ten.html'))
-
-        shutil.copy(os.path.join(data_dir, 'template.html'),
-                    os.path.join(subpath, 'template.html'))
-        print('Created ', os.path.join(subpath, 'template.html'))
+    files = glob.glob('data/site_transients/*')
+    for file in sorted([f for f in files if os.path.isfile(f)]):
+        for site in SITES:
+            new_path = os.path.join(params.HTML_PATH, site + '_transients', os.path.basename(file))
+            if not os.path.exists(new_path):
+                shutil.copy(file, new_path)
+                print('Copied', file, 'to', params.HTML_PATH)
+            else:
+                print('Ignored existing', new_path)
 except Exception:
-    print('ERROR: Failed to copy data files to HTML directories')
+    print('ERROR: Failed to copy data files')
     traceback.print_exc()
     sys.exit(1)
 print('')
@@ -100,17 +109,15 @@ FIELDNAMES = ['trigger',
               ]
 
 try:
-    for tel in ['goto_north', 'goto_south']:
-        subpath = os.path.join(params.HTML_PATH, tel + '_transients')
-        csvfile = os.path.join(subpath, tel + '.csv')
-        if not os.path.exists(csvfile):
-            with open(csvfile, 'w') as f:
+    for site in SITES:
+        new_path = os.path.join(params.HTML_PATH, site + '_transients', site + '.csv')
+        if not os.path.exists(new_path):
+            with open(new_path, 'w') as f:
                 writer = csv.DictWriter(f, fieldnames=FIELDNAMES)
                 writer.writeheader()
-            print('Created ', os.path.join(csvfile))
+            print('Created', new_path)
         else:
-            with open(csvfile, 'a') as f:
-                writer = csv.DictWriter(f, fieldnames=FIELDNAMES)
+            print('Ignored existing', new_path)
 except Exception:
     print('ERROR: Failed to create CSV files')
     traceback.print_exc()

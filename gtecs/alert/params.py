@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """GOTO-alert module parameters."""
 
 import os
@@ -6,37 +5,35 @@ import sys
 
 import configobj
 
-import pkg_resources
+from importlib.metadata import version
+try:
+    import importlib.resources as pkg_resources
+except ImportError:
+    # Python < 3.7
+    import importlib_resources as pkg_resources  # type: ignore
 
 import validate
 
-from .version import __version__
-
-
-# Load configspec file for default configuration
-if os.path.exists('gotoalert/data/configspec.ini'):
-    # We are running in install dir, during installation
-    CONFIGSPEC_FILE = 'gotoalert/data/configspec.ini'
-else:
-    # We are being imported, find pkg_resources
-    CONFIGSPEC_FILE = pkg_resources.resource_filename('gotoalert', 'data/configspec.ini')
 
 # Try to find .gotoalert.conf file, look in the home directory and
 # anywhere specified by GOTOALERT_CONF environment variable
-paths = [os.path.expanduser("~")]
+paths = [os.path.expanduser('~')]
 if "GOTOALERT_CONF" in os.environ:
     GOTOALERT_CONF_PATH = os.environ["GOTOALERT_CONF"]
     paths.append(GOTOALERT_CONF_PATH)
 else:
     GOTOALERT_CONF_PATH = None
 
+# Load configspec file for default configuration
+CONFIGSPEC = pkg_resources.read_text('gtecs.alert.data', 'configspec.ini').split('\n')
+
 # Load the config file as a ConfigObj
-config = configobj.ConfigObj({}, configspec=CONFIGSPEC_FILE)
+config = configobj.ConfigObj({}, configspec=CONFIGSPEC)
 CONFIG_FILE_PATH = None
 for loc in paths:
     try:
-        with open(os.path.join(loc, ".gotoalert.conf")) as source:
-            config = configobj.ConfigObj(source, configspec=CONFIGSPEC_FILE)
+        with open(os.path.join(loc, '.gotoalert.conf')) as source:
+            config = configobj.ConfigObj(source, configspec=CONFIGSPEC)
             CONFIG_FILE_PATH = loc
     except IOError:
         pass
@@ -51,7 +48,7 @@ if result is not True:
 
 ############################################################
 # Module parameters
-VERSION = __version__
+VERSION = version('gtecs-alert')
 
 # Directory paths
 FILE_PATH = config['FILE_PATH']
