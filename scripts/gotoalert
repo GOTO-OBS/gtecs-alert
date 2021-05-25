@@ -3,8 +3,8 @@
 
 import sys
 
-from gotoalert.alert import event_handler
-from gotoalert.events import Event
+from gtecs.alert.events import Event
+from gtecs.alert.handler import event_handler
 
 
 if __name__ == '__main__':

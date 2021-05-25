@@ -5,16 +5,14 @@ import sys
 
 from astropy.time import Time
 
-from gotoalert.database import DEFAULT_NAME, DEFAULT_PW, DEFAULT_USER
-from gotoalert.database import GW_EXPSET, GW_MPOINTING
 
 from gototile.skymap import SkyMap
 
-from gtecs import misc
-from gtecs.logger import get_logger
-from gtecs.slack import send_slack_msg
-
-import obsdb as db
+from gtecs.alert.database import DEFAULT_NAME, DEFAULT_PW, DEFAULT_USER, GW_EXPSET, GW_MPOINTING
+from gtecs.control import misc
+from gtecs.control.logger import get_logger
+from gtecs.control.slack import send_slack_msg
+from gtecs.obs import database as db
 
 import voeventdb.remote.apiv1 as vdb
 

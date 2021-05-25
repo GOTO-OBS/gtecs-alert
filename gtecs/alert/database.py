@@ -1,7 +1,7 @@
 #! /opt/local/bin/python3.6
 """Functions to add events into the GOTO Observation Database."""
 
-import obsdb as db
+from gtecs.obs import database as db
 
 
 DEFAULT_USER = 'goto'

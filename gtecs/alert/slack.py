@@ -11,7 +11,7 @@ from astropy.time import Time
 
 import numpy as np
 
-import obsdb as db
+from gtecs.obs import database as db
 
 import requests
 

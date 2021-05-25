@@ -1,21 +1,20 @@
 #!/usr/bin/env python3
 """A simple test script for GOTO-alert."""
 
-import os
+from gtecs.alert import params
+from gtecs.alert.events import Event
+from gtecs.alert.handler import event_handler
 
-from gotoalert import params
-from gotoalert.alert import event_handler
-from gotoalert.events import Event
-
-import pkg_resources
+try:
+    import importlib.resources as pkg_resources
+except ImportError:
+    # Python < 3.7
+    import importlib_resources as pkg_resources  # type: ignore
 
 
 if __name__ == '__main__':
     # used for local testing
-    data_path = pkg_resources.resource_filename('gotoalert', 'data')
-    test_path = os.path.join(data_path, 'test_events')
-    for test_file in sorted(os.listdir(test_path)):
+    for test_file in sorted(pkg_resources.contents('gtecs.alert.data.test_events')):
         print('~~~~~~~~~~~~~~~')
-        filepath = os.path.join(test_path, test_file)
-        event = Event.from_file(filepath)
+        event = Event.from_file(test_file)
         event_handler(event, send_messages=params.ENABLE_SLACK)
