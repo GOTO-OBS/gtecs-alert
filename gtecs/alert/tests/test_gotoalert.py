@@ -13,8 +13,15 @@ except ImportError:
 
 
 if __name__ == '__main__':
-    # used for local testing
-    for test_file in sorted(pkg_resources.contents('gtecs.alert.data.test_events')):
+    print('~~~~~~~~~~~~~~~')
+    test_files = sorted([f for f in pkg_resources.contents('gtecs.alert.data.test_events')
+                         if f.endswith('.xml')])
+    print('Found {} test events:'.format(len(test_files)))
+    for test_file in test_files:
+        print(' - ', test_file)
+
+    for test_file in test_files:
         print('~~~~~~~~~~~~~~~')
-        event = Event.from_file(test_file)
+        with pkg_resources.path('gtecs.alert.data.test_events', test_file) as f:
+            event = Event.from_file(f)
         event_handler(event, send_messages=params.ENABLE_SLACK)
