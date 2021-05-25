@@ -10,8 +10,8 @@ from astropy.time import Time
 
 import gcn.voeventclient as pygcn
 
-from gotoalert.alert import event_handler
-from gotoalert.events import Event
+from gtecs.alert.events import Event
+from gtecs.alert.handler import event_handler
 
 from gtecs.control import misc
 from gtecs.control import params
