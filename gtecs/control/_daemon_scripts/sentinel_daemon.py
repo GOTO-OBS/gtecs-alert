@@ -12,7 +12,6 @@ import gcn.voeventclient as pygcn
 
 from gtecs.alert.events import Event
 from gtecs.alert.handler import event_handler
-
 from gtecs.control import misc
 from gtecs.control import params
 from gtecs.control.daemons import BaseDaemon
@@ -207,13 +206,16 @@ class SentinelDaemon(BaseDaemon):
         # If the event's not interesting we don't care
         if event.interesting:
             # Call GOTO-alert's event handler
+            # TODO: Alert messages should go to a different channel
             try:
-                send_slack_msg('Sentinel is processing event {}'.format(event.ivorn))
+                send_slack_msg('Sentinel is processing event {}'.format(event.ivorn),
+                               channel=params.SENTINEL_SLACK_CHANNEL)
                 event_handler(event, send_messages=params.SENTINEL_SEND_MESSAGES, log=self.log)
             except Exception as err:
                 self.log.error('Exception in event handler')
                 self.log.exception(err)
-                send_slack_msg('Sentinel reports exception in event handler, check logs')
+                send_slack_msg('Sentinel reports exception in event handler, check logs',
+                               channel=params.SENTINEL_SLACK_CHANNEL)
                 return
 
             self.log.info('Interesting event {} processed'.format(event.name))
