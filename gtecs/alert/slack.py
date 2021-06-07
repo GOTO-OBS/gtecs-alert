@@ -1,7 +1,6 @@
 """Slack messaging tools."""
 
 import os
-import json
 
 from astroplan import AltitudeConstraint, AtNightConstraint, Observer, is_observable
 
@@ -11,94 +10,37 @@ from astropy.time import Time
 
 import numpy as np
 
+from gtecs.common.slack import send_message
 from gtecs.obs import database as db
-
-import requests
 
 from . import params
 
 
-def send_slack_msg(text, attachments=None, blocks=None, filepath=None, channel=None):
-    """Send a message to Slack, using the settings defined in `gtecs.params`.
+def send_slack_msg(text, channel=None, *args, **kwargs):
+    """Send a message to Slack.
 
     Parameters
     ----------
     text : string
         The message text.
-
-    blocks : dict, optional
-        Formatting blocks for the the message.
-        NB a message can have blocks/attachments OR a file, not both.
-
-    attachments : dict, optional
-        Attachments to the message (technically deprecated).
-        NB a message can have attachments/blocks OR a file, not both.
-
-    filepath : string, optional
-        A local path to a file to be added to the message.
-        NB a message can have a file OR attachments/blocks, not both.
-
     channel : string, optional
         The channel to post the message to.
-        If None, defaults to `gtecs.params.SLACK_DEFAULT_CHANNEL`.
+        If None, defaults to `gtecs.control.params.SLACK_DEFAULT_CHANNEL`.
+
+    Other parameters are passed to `gtecs.common.slack.send_slack_msg`.
 
     """
     if channel is None:
         channel = params.SLACK_DEFAULT_CHANNEL
 
-    if (attachments is not None or blocks is not None) and filepath is not None:
-        raise ValueError("A Slack message can't have both blocks and a file.")
-
-    # Slack doesn't format attachments with markdown automatically
-    if attachments:
-        for attachment in attachments:
-            if 'mrkdwn_in' not in attachment:
-                attachment['mrkdwn_in'] = ['text']
-
     if params.ENABLE_SLACK:
-        try:
-            if not filepath:
-                url = 'https://slack.com/api/chat.postMessage'
-                payload = {'token': params.SLACK_BOT_TOKEN,
-                           'channel': channel,
-                           'as_user': True,
-                           'text': str(text),
-                           'attachments': json.dumps(attachments) if attachments else None,
-                           'blocks': json.dumps(blocks) if blocks else None,
-                           }
-                responce = requests.post(url, payload).json()
-            else:
-                url = 'https://slack.com/api/files.upload'
-                filename = os.path.basename(filepath)
-                name = os.path.splitext(filename)[0]
-                payload = {'token': params.SLACK_BOT_TOKEN,
-                           'channels': channel,  # Note channel(s)
-                           'as_user': True,
-                           'filename': filename,
-                           'title': name,
-                           'initial_comment': text,
-                           }
-                with open(filepath, 'rb') as file:
-                    responce = requests.post(url, payload, files={'file': file}).json()
-            if not responce.get('ok'):
-                if 'error' in responce:
-                    raise Exception('Unable to send message: {}'.format(responce['error']))
-                else:
-                    raise Exception('Unable to send message')
-        except Exception as err:
-            print('Connection to Slack failed! - {}'.format(err))
-            print('Message:', text)
-            print('Attachments:', attachments)
-            print('Blocks:', blocks)
-            print('Filepath:', filepath)
+        # Use the common function
+        send_message(text, channel, params.SLACK_BOT_TOKEN, *args, **kwargs)
     else:
         print('Slack Message:', text)
-        print('Attachments:', attachments)
-        print('Blocks:', blocks)
-        print('Filepath:', filepath)
 
 
-def send_event_report(event, channel=None):
+def send_event_report(event, slack_channel=None):
     """Send a message to Slack with the event details and skymap."""
     title = ['*Details for event {}*'.format(event.name)]
 
@@ -174,10 +116,10 @@ def send_event_report(event, channel=None):
             event.skymap.plot(filename=filepath)
 
     # Send the message, with the skymap file attached
-    send_slack_msg(message_text, filepath=filepath, channel=channel)
+    send_slack_msg(message_text, filepath=filepath, channel=slack_channel)
 
 
-def send_strategy_report(event, channel=None):
+def send_strategy_report(event, slack_channel=None):
     """Send a message to Slack with the event strategy details."""
     s = '*Strategy for event {}*\n'.format(event.name)
 
@@ -227,10 +169,10 @@ def send_strategy_report(event, channel=None):
         s += 'Tile probability limit: {:.1f}%\n'.format(strategy['prob_limit'] * 100)
 
     # Send the message
-    send_slack_msg(s, channel=channel)
+    send_slack_msg(s, channel=slack_channel)
 
 
-def send_database_report(event, channel=None):
+def send_database_report(event, slack_channel=None):
     """Send a message to Slack with details of the database pointings and visibility."""
     title = ['*Visibility for event {}*'.format(event.name)]
 
@@ -357,4 +299,4 @@ def send_database_report(event, channel=None):
     message_text = '\n'.join(title + details)
 
     # Send the message, with the plot attached if one was generated
-    send_slack_msg(message_text, filepath=filepath, channel=channel)
+    send_slack_msg(message_text, filepath=filepath, channel=slack_channel)

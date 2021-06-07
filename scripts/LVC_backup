@@ -9,9 +9,9 @@ from astropy.time import Time
 from gototile.skymap import SkyMap
 
 from gtecs.alert.database import DEFAULT_NAME, DEFAULT_PW, DEFAULT_USER, GW_EXPSET, GW_MPOINTING
+from gtecs.alert.slack import send_slack_msg
 from gtecs.common.logging import get_logger
 from gtecs.control import misc
-from gtecs.control.slack import send_slack_msg
 from gtecs.obs import database as db
 
 import voeventdb.remote.apiv1 as vdb
@@ -325,7 +325,7 @@ def run():
     # Create a log, make sure everything is saved
     log = get_logger('backstop', log_stdout=False, log_to_file=True, log_to_stdout=False)
     log.info('Backup script started')
-    send_slack_msg('Backup script started')
+    send_slack_msg('LVC GW backup script started')
     print('Welcome to the LVC backup script.')
 
     # Create the SkyMap
