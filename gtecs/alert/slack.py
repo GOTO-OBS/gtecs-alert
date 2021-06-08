@@ -25,7 +25,7 @@ def send_slack_msg(text, channel=None, *args, **kwargs):
         The message text.
     channel : string, optional
         The channel to post the message to.
-        If None, defaults to `gtecs.control.params.SLACK_DEFAULT_CHANNEL`.
+        If None, defaults to `gtecs.alert.params.SLACK_DEFAULT_CHANNEL`.
 
     Other parameters are passed to `gtecs.common.slack.send_slack_msg`.
 
