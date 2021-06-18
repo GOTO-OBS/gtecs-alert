@@ -27,7 +27,7 @@ if not gtecs_installed:
     sys.exit(1)
 
 # Check for configuration file
-if params.CONFIG_PATH is None:
+if params.CONFIG_FILE is None:
     print('ERROR: No config file found')
     sys.exit(1)
 print('Found config file at {}'.format(params.CONFIG_FILE))
