@@ -4,7 +4,7 @@
 import logging
 
 from . import database as db
-from . import slack
+from .slack import send_slack_msg, send_event_report, send_strategy_report, send_database_report
 from .events import Event
 
 
@@ -49,7 +49,7 @@ def event_handler(event, send_messages=False, log=None):
     if send_messages:
         log.debug('Sending initial Slack report')
         msg = '*Processing new {} {} event: {}*'.format(event.source, event.type, event.id)
-        slack.send_slack_msg(msg)
+        send_slack_msg(msg)
         log.debug('Slack report sent')
 
     # Fetch the event skymap
@@ -63,7 +63,7 @@ def event_handler(event, send_messages=False, log=None):
     if send_messages:
         log.debug('Sending Slack event report')
         try:
-            slack.send_event_report(event)
+            send_event_report(event)
             log.debug('Slack report sent')
         except Exception as err:
             log.error('Error sending Slack report')
@@ -81,7 +81,7 @@ def event_handler(event, send_messages=False, log=None):
         if send_messages:
             log.debug('Sending Slack strategy report')
             try:
-                slack.send_strategy_report(event)
+                send_strategy_report(event)
                 log.debug('Slack report sent')
             except Exception as err:
                 log.error('Error sending Slack report')
@@ -104,7 +104,7 @@ def event_handler(event, send_messages=False, log=None):
         if send_messages:
             log.debug('Sending Slack database report')
             try:
-                slack.send_database_report(event)
+                send_database_report(event)
                 log.debug('Slack report sent')
             except Exception as err:
                 log.error('Error sending Slack report')
@@ -118,7 +118,7 @@ def event_handler(event, send_messages=False, log=None):
         if send_messages:
             log.debug('Sending Slack error report')
             msg = '*ERROR*: Failed to insert event {} into database'.format(event.name)
-            slack.send_slack_msg(msg)
+            send_slack_msg(msg)
             log.debug('Slack report sent')
 
         raise

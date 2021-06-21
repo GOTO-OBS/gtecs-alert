@@ -1,9 +1,7 @@
-"""Setup script for the gotoalert package."""
+"""Setup script for the gtecs-alert package."""
 import glob
 
-from setuptools import setup
-
-PACKAGES = ['gotoalert']
+from setuptools import setup, find_namespace_packages
 
 REQUIRES = ['numpy',
             'astropy',
@@ -16,21 +14,15 @@ REQUIRES = ['numpy',
             'setuptools',
             ]
 
-# Get the version string
-__version__ = None
-with open('gotoalert/version.py') as f:
-    exec(f.read())  # Should set __version__
-
-setup(name='gotoalert',
-      version=__version__,
-      description='GOTO Alert manager',
+setup(name='gtecs-alert',
+      version='0',
+      description='G-TeCS functions for handling transient alerts',
       url='http://github.com/GOTO/goto-alert',
-      author='Martin Dyer, Alex Obradovic',
+      author='Martin Dyer',
       author_email='martin.dyer@sheffield.ac.uk',
       install_requires=REQUIRES,
-      packages=PACKAGES,
-      package_data={'': ['data/*', 'data/tests/*']},
-      include_package_data=True,
+      packages=find_namespace_packages(include=['gtecs*']),
+      package_data={'gtecs': ['alert/data/*', 'alert/data/test_events/*']},
       scripts=glob.glob('scripts/*'),
       zip_safe=False,
       )
