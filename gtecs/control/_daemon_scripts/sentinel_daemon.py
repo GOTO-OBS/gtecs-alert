@@ -78,11 +78,14 @@ class SentinelDaemon(BaseDaemon):
                 # no point to start the skymap listening thread if the event hasn't been handled
                 if self.latest_event.source == 'Fermi' and event_handled:
                     try:
-                        Fermi_skymap_listener = threading.Thread(target=self._Fermi_skymap_thread(event=self.latest_event, listening=True))
-                        Fermi_skymap_listener.daemon = True
-                        Fermi_skymap_listener.start()
+                        urlopen(self.latest_event.skymap_url)
                     except:
-                        self.log.error('error in {}_{} skymap listener'.format(self.latest_event.source, self.latest_event.id))
+                        try:
+                            Fermi_skymap_listener = threading.Thread(target=self._Fermi_skymap_thread(event=self.latest_event, listening=True))
+                            Fermi_skymap_listener.daemon = True
+                            Fermi_skymap_listener.start()
+                        except:
+                            self.log.error('error in {}_{} skymap listener'.format(self.latest_event.source, self.latest_event.id))
 
             time.sleep(params.DAEMON_SLEEP_TIME)  # To save 100% CPU usage
 
@@ -175,6 +178,7 @@ class SentinelDaemon(BaseDaemon):
         while self.running and listening:
             try: 
                 urlopen(skymap_url)
+                event = Event.from_payload(event.payload)
                 event.ivorn = event.ivorn + '_new_skymap' # assign a new ivorn
                 listening = False
             except:
@@ -182,8 +186,8 @@ class SentinelDaemon(BaseDaemon):
                 time.sleep(30)
         if listening == False:
             try: 
-                event_handler(event, log=self.log) # no need to send the slack message again
-                send_slack_msg('latest skymap used for {}_{}'.format(event.source, event.id))
+                event_handler(event, send_messages=params.SENTINEL_SEND_MESSAGES, log=self.log) 
+                send_slack_msg('Latest skymap used for {}_{}'.format(event.source, event.id))
                 self.log.info('{}_{} skymap listening thread finished'.format(event.source, event.id))
             except Exception as err:
                 self.log.error('Exception in event handler')
@@ -191,7 +195,6 @@ class SentinelDaemon(BaseDaemon):
                
         if listening and not self.running:
             self.log.info('{}_{} skymap listener thread stopped'.format(event.source, event.id)) 
-            return
 
     # Internal functions
     def _get_info(self):
