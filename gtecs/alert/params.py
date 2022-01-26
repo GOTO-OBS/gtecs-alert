@@ -20,6 +20,7 @@ if FILE_PATH in ['path_not_set', '/path/goes/here/']:
 HTML_PATH = config['HTML_PATH']
 if config['HTML_PATH'] in ['path_not_set', '/path/goes/here/']:
     HTML_PATH = os.path.join(FILE_PATH, 'html')
+LOG_PATH = os.path.join(FILE_PATH, 'logs')
 
 ############################################################
 # Filter parameters
