@@ -1,5 +1,6 @@
 """Functions for listening for VOEvents."""
 
+import itertools
 import os
 import socket
 import threading
@@ -119,7 +120,9 @@ class Sentinel:
             event = Event.from_payload(payload)
             self.events_queue.append(event)
 
-        # Create a simple listen function, based on PyGCN but with extra logging
+        # Create a simple listen function, based on PyGCN's listen()
+        # We have our own version here so we can have it in a thread with our own loop,
+        # monitor if it's alive and close the socket when we shutdown
         def _listen(vo_socket, handler):
             try:
                 while True:
@@ -136,8 +139,9 @@ class Sentinel:
 
         # This first while loop means the socket will be recreated if it closes.
         while self.running:
-            # Create the socket
-            vo_socket = pygcn._open_socket(params.VOSERVER_HOST, params.VOSERVER_PORT,
+            # Create the socket, using the odd itertools loop PyGCN needs
+            host_port = pygcn._validate_host_port(params.VOSERVER_HOST, params.VOSERVER_PORT)
+            vo_socket = pygcn._open_socket(itertools.cycle(zip(*host_port)),
                                            log=self.log,
                                            iamalive_timeout=90,
                                            max_reconnect_timeout=8)
