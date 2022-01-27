@@ -172,7 +172,7 @@ class Sentinel:
                 self.log.error('Could not close socket')
                 self.log.debug('', exc_info=True)
             else:
-                self.log.info('closed socket connection')
+                self.log.info('Closed socket connection')
 
         self.log.info('Alert listener thread stopped')
         return
@@ -220,6 +220,7 @@ def run():
     except KeyboardInterrupt:
         print('Interrupt detected, shutting down')
     finally:
-        print('Sentinel shutdown')
-        send_slack_msg('Sentinel shutdown')
         sentinel.shutdown()
+        time.sleep(1)  # wait to stop threads
+        send_slack_msg('Sentinel shutdown')
+        print('Sentinel done')
