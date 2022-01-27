@@ -23,6 +23,15 @@ if config['HTML_PATH'] in ['path_not_set', '/path/goes/here/']:
 LOG_PATH = os.path.join(FILE_PATH, 'logs')
 
 ############################################################
+# Logging parameters
+FILE_LOGGING = config['FILE_LOGGING']
+STDOUT_LOGGING = config['STDOUT_LOGGING']
+
+# Sentinel parameters
+LOCAL_IVO = config['LOCAL_IVO']
+VOSERVER_HOST = config['VOSERVER_HOST']
+VOSERVER_PORT = config['VOSERVER_PORT']
+
 # Filter parameters
 IGNORE_ROLES = config['IGNORE_ROLES']
 
