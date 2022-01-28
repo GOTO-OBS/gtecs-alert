@@ -276,7 +276,6 @@ class Sentinel:
         return 'Event {} added to queue'.format(event.name)
 
 
-
 def run():
     """Start the sentinel."""
     try:

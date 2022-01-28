@@ -56,7 +56,16 @@ def query(command, args):
 
         misc.execute_long_command(tail_command)
 
-    # Unrecognized function
+    elif command == 'ingest':
+        if len(args) != 1:
+            raise ValueError('Invalid arguments: sentinel ingest [path|ivorn]')
+        if args[0][:6] == 'ivo://':
+            with Pyro4.Proxy(params.PYRO_URI) as proxy:
+                print(proxy.ingest_from_ivorn(args[0]))
+        else:
+            with Pyro4.Proxy(params.PYRO_URI) as proxy:
+                print(proxy.ingest_from_file(args[0]))
+
     else:
         raise ValueError('Unrecognized command "{}"'.format(command))
 
@@ -70,6 +79,7 @@ def print_instructions():
           '   start                  start the sentinel',
           '   ping                   check if the sentinel is running',
           '   shutdown               shut down the sentinel',
+          '   ingest [path|ivorn]    add the given event to the queue'
           '   log [tail args]        print sentinel log (alias for tail)',
           '   help                   print these instructions',
           sep='\n')
