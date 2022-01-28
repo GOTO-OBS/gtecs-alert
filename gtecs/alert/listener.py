@@ -3,9 +3,12 @@
 import itertools
 import os
 import socket
+import sys
 import threading
 import time
 from urllib.request import URLError, urlopen
+
+import Pyro4
 
 import gcn.voeventclient as pygcn
 
@@ -17,6 +20,7 @@ from .handler import event_handler
 from .slack import send_slack_msg
 
 
+@Pyro4.expose
 class Sentinel:
     """Sentinel alerts daemon class."""
 
@@ -38,74 +42,61 @@ class Sentinel:
     def __del__(self):
         self.shutdown()
 
-    def run(self):
-        """Run the sentinel process."""
+    def run(self, host, port, timeout=5):
+        """Run the sentinel as a Pyro daemon."""
         self.running = True
 
-        # Start alert listener thread
+        # Start threads
         t1 = threading.Thread(target=self._listener_thread)
         t1.daemon = True
         t1.start()
 
-        while self.running:
-            # Check the events queue, take off the first entry
-            if len(self.events_queue) > 0:
-                # There's at least one new event!
-                event = self.events_queue.pop(0)
-                self.latest_event = event
-                self.log.info('Processing new event: {}'.format(event.ivorn))
+        t2 = threading.Thread(target=self._handler_thread)
+        t2.daemon = True
+        t2.start()
 
-                try:
-                    # First archive the event
-                    path = os.path.join(params.FILE_PATH, 'voevents')
-                    event.archive(path)
-                    self.log.info('Archived to {}'.format(path))
+        # Check the Pyro address is available
+        try:
+            pyro_daemon = Pyro4.Daemon(host, port)
+        except Exception:
+            raise
+        else:
+            pyro_daemon.close()
 
-                    # If the event's not interesting we don't care
-                    if event.interesting:
-                        try:
-                            # Call the event handler
-                            send_slack_msg('Sentinel is processing event {}'.format(event.ivorn))
-                            event_handler(event, send_messages=params.ENABLE_SLACK, log=self.log)
+        # Start the daemon
+        with Pyro4.Daemon(host, port) as pyro_daemon:
+            self._uri = pyro_daemon.register(self, objectId='sentinel')
+            Pyro4.config.COMMTIMEOUT = timeout
 
-                        except Exception:
-                            self.log.error('Exception in event handler')
-                            self.log.debug('', exc_info=True)
-                            send_slack_msg('Sentinel reports exception in event handler')
-                            return
+            # Start request loop
+            self.log.info('Pyro daemon registered to {}'.format(self._uri))
+            pyro_daemon.requestLoop(loopCondition=self.is_running)
 
-                        self.log.info('Interesting event {} processed'.format(event.name))
-                        self.interesting_events += 1
+        # Loop has closed
+        self.log.info('Pyro daemon successfully shut down')
+        time.sleep(1.)
 
-                        # Start a followup thread to wait for the skymap of Fermi events
-                        if self.event.source == 'Fermi':
-                            try:
-                                # Might as well try once
-                                urlopen(event.skymap_url)
-                            except URLError:
-                                # The skymap hasn't been uploaded yet
-                                try:
-                                    t = threading.Thread(target=self._fermi_skymap_thread(event))
-                                    t.daemon = True
-                                    t.start()
-                                except Exception:
-                                    self.log.error('Error in Fermi followup thread')
-                                    self.log.debug('', exc_info=True)
+    def is_running(self):
+        """Check if the daemon is running or not.
 
-                    # Done!
-                    self.processed_events += 1
+        Used for the Pyro loop condition, it needs a function so you can't just
+        give it self.running.
+        """
+        return self.running
 
-                except Exception:
-                    self.log.error('Error handling event {}'.format(event.name))
-                    self.log.debug('', exc_info=True)
-
-            time.sleep(0.1)
+    @property
+    def uri(self):
+        """Return the Pyro URI."""
+        if hasattr(self, '_uri'):
+            return self._uri
+        else:
+            return None
 
     def shutdown(self):
         """Shut down the running threads."""
         self.running = False
 
-    # Main threads
+    # Internal threads
     def _listener_thread(self):
         """Connect to a VOEvent Transport Protocol server and listen for VOEvents.
 
@@ -134,8 +125,7 @@ class Sentinel:
                     # It's only a problem if we're not the one shutting the socket
                     self.log.warning('Socket error')
             except Exception:
-                self.log.error('Error in alert listener')
-                self.log.debug('', exc_info=True)
+                self.log.exception('Error in alert listener')
 
         # This first while loop means the socket will be recreated if it closes.
         while self.running:
@@ -177,6 +167,64 @@ class Sentinel:
         self.log.info('Alert listener thread stopped')
         return
 
+    def _handler_thread(self):
+        """Monitor the events queue and handle any events."""
+        self.log.info('Alert handler thread started')
+
+        while self.running:
+            # Check the events queue, take off the first entry
+            if len(self.events_queue) > 0:
+                # There's at least one new event!
+                event = self.events_queue.pop(0)
+                self.latest_event = event
+                self.log.info('Processing new event: {}'.format(event.ivorn))
+
+                try:
+                    # First archive the event
+                    path = os.path.join(params.FILE_PATH, 'voevents')
+                    event.archive(path)
+                    self.log.info('Archived to {}'.format(path))
+
+                    # If the event's not interesting we don't care
+                    if event.interesting:
+                        try:
+                            # Call the event handler
+                            send_slack_msg('Sentinel is processing event {}'.format(event.ivorn))
+                            event_handler(event, send_messages=params.ENABLE_SLACK, log=self.log)
+
+                        except Exception:
+                            self.log.exception('Exception in event handler')
+                            send_slack_msg('Sentinel reports exception in event handler')
+                            return
+
+                        self.log.info('Interesting event {} processed'.format(event.name))
+                        self.interesting_events += 1
+
+                        # Start a followup thread to wait for the skymap of Fermi events
+                        if self.event.source == 'Fermi':
+                            try:
+                                # Might as well try once
+                                urlopen(event.skymap_url)
+                            except URLError:
+                                # The skymap hasn't been uploaded yet
+                                try:
+                                    t = threading.Thread(target=self._fermi_skymap_thread(event))
+                                    t.daemon = True
+                                    t.start()
+                                except Exception:
+                                    self.log.exception('Error in Fermi followup thread')
+
+                    # Done!
+                    self.processed_events += 1
+
+                except Exception:
+                    self.log.exception('Error handling event {}'.format(event.name))
+
+            time.sleep(0.1)
+
+        self.log.info('Alert handler thread stopped')
+        return
+
     def _fermi_skymap_thread(self, event):
         """Listen for the official skymap for Fermi events."""
         self.log.info('{} skymap listening thread started'.format(event.name))
@@ -198,25 +246,46 @@ class Sentinel:
                 event_handler(event, send_messages=params.ENABLE_SLACK, log=self.log)
                 send_slack_msg('Latest skymap used for {}'.format(event.name))
             except Exception:
-                self.log.error('Exception in event handler')
-                self.log.debug('', exc_info=True)
+                self.log.exception('Exception in event handler')
             self.log.info('{} skymap listening thread finished'.format(event.name))
         else:
             # Thread was shutdown before we found the skymap
             self.log.info('{} skymap listening thread aborted'.format(event.name))
             return
 
+    # Functions
+    def ingest_from_payload(self, payload):
+        """Ingest an event payload."""
+        event = Event.from_payload(payload)
+        self.events_queue.append(event)
+        return 'Event {} added to queue'.format(event.name)
+
+    def ingest_from_file(self, filepath):
+        """Ingest an event payload from a file."""
+        event = Event.from_file(filepath)
+        self.events_queue.append(event)
+        return 'Event {} added to queue'.format(event.name)
+
+    def ingest_from_ivorn(self, ivorn):
+        """Ingest an event from its IVORN.
+
+        Will attempt to download the event payload from the 4pisky VOEvent DB.
+        """
+        event = Event.from_ivorn(ivorn)
+        self.events_queue.append(event)
+        return 'Event {} added to queue'.format(event.name)
+
+
 
 def run():
     """Start the sentinel."""
-    print('Sentinel started')
-    send_slack_msg('Sentinel started')
-
-    sentinel = Sentinel()
     try:
-        sentinel.run()
+        send_slack_msg('Sentinel started')
+        sentinel = Sentinel()
+        sentinel.run(params.PYRO_HOST, params.PYRO_PORT, params.PYRO_TIMEOUT)
     except Exception:
         print('Error detected, shutting down')
+        print(sys.exc_info())
     except KeyboardInterrupt:
         print('Interrupt detected, shutting down')
     finally:

@@ -4,10 +4,10 @@
 import os
 import sys
 
+import Pyro4
+
 from gtecs.alert import params
 from gtecs.alert.listener import run
-from gtecs.alert.slack import send_slack_msg
-from gtecs.control import errors  # Should be in common?
 from gtecs.control import misc  # Should be in common?
 
 
@@ -19,28 +19,35 @@ def query(command, args):
 
     # Primary control
     elif command == 'start':
-        # Check it it's already running
-        pid = misc.get_pid('sentinel')
-        if pid:
-            print('Sentinel already running (PID {})'.format(pid))
-            send_slack_msg('Sentinel tried to start, but is already running')
-            return
-
-        with misc.make_pid_file('sentinel'):
-            run()
+        try:
+            with Pyro4.Proxy(params.PYRO_URI) as proxy:
+                uri = proxy.uri
+            pid = misc.get_pid('sentinel')
+            print('Sentinel is already running ({}, PID={})'.format(uri, pid))
+        except Pyro4.errors.CommunicationError:
+            with misc.make_pid_file('sentinel'):
+                run()
 
     elif command == 'ping':
-        pid = misc.get_pid('sentinel')
-        if pid:
-            print('Sentinel is running (PID {})'.format(pid))
-        else:
+        try:
+            with Pyro4.Proxy(params.PYRO_URI) as proxy:
+                uri = proxy.uri
+            pid = misc.get_pid('sentinel')
+            print('Sentinel is running ({}, PID={})'.format(uri, pid))
+        except Pyro4.errors.CommunicationError:
+            print('Sentinel is not running')
+
+    elif command == 'shutdown':
+        try:
+            with Pyro4.Proxy(params.PYRO_URI) as proxy:
+                proxy.shutdown()
+                print('Sentinel shutdown')
+        except Pyro4.errors.CommunicationError:
             print('Sentinel is not running')
 
     elif command == 'kill':
         if not misc.get_pid('sentinel'):
             print('Sentinel is not running')
-            return
-
         misc.kill_process('sentinel')
 
     elif command in ['log', 'tail']:
@@ -51,7 +58,7 @@ def query(command, args):
 
     # Unrecognized function
     else:
-        raise errors.InputError('Unrecognized command "{}"'.format(command))
+        raise ValueError('Unrecognized command "{}"'.format(command))
 
 
 def print_instructions():
@@ -62,7 +69,7 @@ def print_instructions():
           'Commands:',
           '   start                  start the sentinel',
           '   ping                   check if the sentinel is running',
-          '   kill                   kill the sentinel',
+          '   shutdown               shut down the sentinel',
           '   log [tail args]        print sentinel log (alias for tail)',
           '   help                   print these instructions',
           sep='\n')
