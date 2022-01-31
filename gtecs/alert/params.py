@@ -20,8 +20,22 @@ if FILE_PATH in ['path_not_set', '/path/goes/here/']:
 HTML_PATH = config['HTML_PATH']
 if config['HTML_PATH'] in ['path_not_set', '/path/goes/here/']:
     HTML_PATH = os.path.join(FILE_PATH, 'html')
+LOG_PATH = os.path.join(FILE_PATH, 'logs')
 
 ############################################################
+# Logging parameters
+FILE_LOGGING = config['FILE_LOGGING']
+STDOUT_LOGGING = config['STDOUT_LOGGING']
+
+# Sentinel parameters
+PYRO_HOST = config['PYRO_HOST']
+PYRO_PORT = config['PYRO_PORT']
+PYRO_URI = 'PYRO:sentinel@{}:{}'.format(PYRO_HOST, PYRO_PORT)
+PYRO_TIMEOUT = config['PYRO_TIMEOUT']
+LOCAL_IVO = config['LOCAL_IVO']
+VOSERVER_HOST = config['VOSERVER_HOST']
+VOSERVER_PORT = config['VOSERVER_PORT']
+
 # Filter parameters
 IGNORE_ROLES = config['IGNORE_ROLES']
 

@@ -44,6 +44,7 @@ print('')
 # Create directories
 direcs = [params.FILE_PATH,
           params.HTML_PATH,
+          params.LOG_PATH,
           ]
 try:
     for direc in direcs:

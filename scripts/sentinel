@@ -1,0 +1,94 @@
+#!/usr/bin/env python3
+"""A script to listen for alerts and insert them into the database."""
+
+import os
+import sys
+
+import Pyro4
+
+from gtecs.alert import params
+from gtecs.alert.listener import run
+from gtecs.control import misc  # Should be in common?
+
+
+def query(command, args):
+    """Process a query."""
+    # Command functions
+    if command in ['help', '?']:
+        print_instructions()
+
+    # Primary control
+    elif command == 'start':
+        try:
+            with Pyro4.Proxy(params.PYRO_URI) as proxy:
+                uri = proxy.uri
+            pid = misc.get_pid('sentinel')
+            print('Sentinel is already running ({}, PID={})'.format(uri, pid))
+        except Pyro4.errors.CommunicationError:
+            with misc.make_pid_file('sentinel'):
+                run()
+
+    elif command == 'ping':
+        try:
+            with Pyro4.Proxy(params.PYRO_URI) as proxy:
+                uri = proxy.uri
+            pid = misc.get_pid('sentinel')
+            print('Sentinel is running ({}, PID={})'.format(uri, pid))
+        except Pyro4.errors.CommunicationError:
+            print('Sentinel is not running')
+
+    elif command == 'shutdown':
+        try:
+            with Pyro4.Proxy(params.PYRO_URI) as proxy:
+                proxy.shutdown()
+                print('Sentinel shutdown')
+        except Pyro4.errors.CommunicationError:
+            print('Sentinel is not running')
+
+    elif command == 'kill':
+        if not misc.get_pid('sentinel'):
+            print('Sentinel is not running')
+        misc.kill_process('sentinel')
+
+    elif command in ['log', 'tail']:
+        log_path = os.path.join(params.LOG_PATH, 'sentinel.log')
+        tail_command = 'tail {} {}'.format(log_path, ' '.join(args))
+
+        misc.execute_long_command(tail_command)
+
+    elif command == 'ingest':
+        if len(args) != 1:
+            raise ValueError('Invalid arguments: sentinel ingest [path|ivorn]')
+        if args[0][:6] == 'ivo://':
+            with Pyro4.Proxy(params.PYRO_URI) as proxy:
+                print(proxy.ingest_from_ivorn(args[0]))
+        else:
+            with Pyro4.Proxy(params.PYRO_URI) as proxy:
+                print(proxy.ingest_from_file(args[0]))
+
+    else:
+        print('ERROR: Unrecognized command "{}"'.format(command))
+        print_instructions()
+
+
+def print_instructions():
+    """Print instructions for using the script."""
+    print('Usage: sentinel [command] [options]',
+          'The sentinel listens for alerts and inserts them into the database.',
+          '',
+          'Commands:',
+          '   start                  start the sentinel',
+          '   ping                   check if the sentinel is running',
+          '   shutdown               shut down the sentinel',
+          '   ingest [path|ivorn]    add the given event to the queue',
+          '   log [tail args]        print sentinel log (alias for tail)',
+          '   help                   print these instructions',
+          sep='\n')
+
+
+if __name__ == '__main__':
+    if len(sys.argv) == 1:
+        print_instructions()
+    else:
+        command, *args = sys.argv[1:]
+        query(command, args)

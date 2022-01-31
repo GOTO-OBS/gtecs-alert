@@ -1,0 +1,12 @@
+[Unit]
+Description=G-TeCS sentinel alert listener
+After=network-online.target
+
+[Service]
+Type=simple
+User=goto
+ExecStart=/home/goto/.local/bin/sentinel start
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
