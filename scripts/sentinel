@@ -67,19 +67,20 @@ def query(command, args):
                 print(proxy.ingest_from_file(args[0]))
 
     else:
-        raise ValueError('Unrecognized command "{}"'.format(command))
+        print('ERROR: Unrecognized command "{}"'.format(command))
+        print_instructions()
 
 
 def print_instructions():
     """Print instructions for using the script."""
-    print('Usage: sentinel command [options]',
-          'The sentinel is listens for alerts and inserts them into the database.',
+    print('Usage: sentinel [command] [options]',
+          'The sentinel listens for alerts and inserts them into the database.',
           '',
           'Commands:',
           '   start                  start the sentinel',
           '   ping                   check if the sentinel is running',
           '   shutdown               shut down the sentinel',
-          '   ingest [path|ivorn]    add the given event to the queue'
+          '   ingest [path|ivorn]    add the given event to the queue',
           '   log [tail args]        print sentinel log (alias for tail)',
           '   help                   print these instructions',
           sep='\n')
