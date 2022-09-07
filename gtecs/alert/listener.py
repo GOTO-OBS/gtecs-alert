@@ -3,9 +3,9 @@
 import itertools
 import os
 import socket
-import sys
 import threading
 import time
+import traceback
 from urllib.request import URLError, urlopen
 
 import Pyro4
@@ -284,11 +284,15 @@ def run():
         sentinel.run(params.PYRO_HOST, params.PYRO_PORT, params.PYRO_TIMEOUT)
     except Exception:
         print('Error detected, shutting down')
-        print(sys.exc_info())
+        traceback.print_exc()
     except KeyboardInterrupt:
         print('Interrupt detected, shutting down')
     finally:
-        sentinel.shutdown()
+        try:
+            sentinel.shutdown()
+        except UnboundLocalError:
+            # class was never created
+            pass
         time.sleep(1)  # wait to stop threads
         send_slack_msg('Sentinel shutdown')
         print('Sentinel done')
