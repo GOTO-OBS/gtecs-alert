@@ -53,8 +53,11 @@ def create_graphs(file_path, event, site_data, fov=30):
     time_range = site_data['sun_set'] + delta_t * np.linspace(0, 1, 75)
     plot_airmass(event.coord, site_data['observer'], time_range, altitude_yaxis=True,
                  style_sheet=dark_style_sheet)
-    airmass_file = "{}_AIRMASS.png".format(event.name)
-    plt.savefig(os.path.join(file_path, 'airmass_plots', airmass_file))
+
+    plots_path = os.path.join(file_path, 'airmass_plots')
+    if not os.path.exists(plots_path):
+        os.mkdir(plots_path)
+    plt.savefig(os.path.join(plots_path, '{}_AIRMASS.png'.format(event.name)))
     plt.clf()
 
     # Plot finder chart
@@ -62,8 +65,11 @@ def create_graphs(file_path, event, site_data, fov=30):
     with warnings.catch_warnings():
         warnings.simplefilter('ignore')
         plot_finder_image(event.target, fov_radius=fov * u.arcmin, grid=False, reticle=True)
-    airmass_file = "{}_FINDER.png".format(event.name)
-    plt.savefig(os.path.join(file_path, 'finder_charts', airmass_file))
+
+    finder_path = os.path.join(file_path, 'finder_charts')
+    if not os.path.exists(finder_path):
+        os.mkdir(finder_path)
+    plt.savefig(os.path.join(finder_path, '{}_FINDER.png'.format(event.name)))
     plt.clf()
 
 
@@ -149,6 +155,8 @@ def create_webpages(event, obs_data, site_name, web_path):
     # Find file paths
     web_directory = '{}_transients'.format(site_name)
     file_path = os.path.join(web_path, web_directory)
+    if not os.path.exists(file_path):
+        os.mkdir(file_path)
 
     # Create graphs
     create_graphs(file_path, event, site_data)
