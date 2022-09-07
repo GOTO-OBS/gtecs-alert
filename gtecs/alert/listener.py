@@ -12,7 +12,7 @@ import Pyro4
 
 import gcn.voeventclient as pygcn
 
-from gtecs.common.logging import get_logger
+from gtecs.common import logging
 
 from . import params
 from .events import Event
@@ -26,10 +26,7 @@ class Sentinel:
 
     def __init__(self):
         # get a logger for the sentinel
-        self.log = get_logger('sentinel', params.LOG_PATH,
-                              log_stdout=True,
-                              log_to_file=params.FILE_LOGGING,
-                              log_to_stdout=params.STDOUT_LOGGING)
+        self.log = logging.get_logger('sentinel')
         self.log.info('Sentinel started')
 
         # sentinel variables

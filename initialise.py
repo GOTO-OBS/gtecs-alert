@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""A script to setup directory structure for GOTO-alert HTML files."""
+"""A script to setup directory structure for G-TeCS files."""
 
 import csv
 import glob
@@ -44,7 +44,6 @@ print('')
 # Create directories
 direcs = [params.FILE_PATH,
           params.HTML_PATH,
-          params.LOG_PATH,
           ]
 try:
     for direc in direcs:

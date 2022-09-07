@@ -2,7 +2,8 @@
 
 import os
 
-from gtecs.common.package import load_config, get_package_version
+from gtecs.common import config as pkg_config
+from gtecs.common.package import get_package_version, load_config
 
 
 ############################################################
@@ -14,19 +15,12 @@ config, CONFIG_SPEC, CONFIG_FILE = load_config('alert', '.alert.conf')
 VERSION = get_package_version('alert')
 
 # Directory paths
-FILE_PATH = config['FILE_PATH']
-if FILE_PATH in ['path_not_set', '/path/goes/here/']:
-    raise ValueError('FILE_PATH not set, check config file ({})'.format(CONFIG_FILE))
+FILE_PATH = pkg_config.CONFIG_PATH / 'alert'
 HTML_PATH = config['HTML_PATH']
 if config['HTML_PATH'] in ['path_not_set', '/path/goes/here/']:
     HTML_PATH = os.path.join(FILE_PATH, 'html')
-LOG_PATH = os.path.join(FILE_PATH, 'logs')
 
 ############################################################
-# Logging parameters
-FILE_LOGGING = config['FILE_LOGGING']
-STDOUT_LOGGING = config['STDOUT_LOGGING']
-
 # Sentinel parameters
 PYRO_HOST = config['PYRO_HOST']
 PYRO_PORT = config['PYRO_PORT']

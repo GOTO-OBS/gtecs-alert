@@ -1,15 +1,11 @@
 #!/usr/bin/env python3
 """A simple test script for GOTO-alert."""
 
+import importlib.resources as pkg_resources
+
 from gtecs.alert import params
 from gtecs.alert.events import Event
 from gtecs.alert.handler import event_handler
-
-try:
-    import importlib.resources as pkg_resources
-except ImportError:
-    # Python < 3.7
-    import importlib_resources as pkg_resources  # type: ignore
 
 
 if __name__ == '__main__':
