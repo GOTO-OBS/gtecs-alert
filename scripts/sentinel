@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """A script to listen for alerts and insert them into the database."""
 
-import os
 import sys
 
 import Pyro4
 
 from gtecs.alert import params
 from gtecs.alert.listener import run
-from gtecs.control import misc  # Should be in common?
+from gtecs.common import logging
+from gtecs.common.system import execute_long_command, get_pid, kill_process, make_pid_file
 
 
 def query(command, args):
@@ -22,17 +22,17 @@ def query(command, args):
         try:
             with Pyro4.Proxy(params.PYRO_URI) as proxy:
                 uri = proxy.uri
-            pid = misc.get_pid('sentinel')
+            pid = get_pid('sentinel')
             print('Sentinel is already running ({}, PID={})'.format(uri, pid))
         except Pyro4.errors.CommunicationError:
-            with misc.make_pid_file('sentinel'):
+            with make_pid_file('sentinel'):
                 run()
 
     elif command == 'ping':
         try:
             with Pyro4.Proxy(params.PYRO_URI) as proxy:
                 uri = proxy.uri
-            pid = misc.get_pid('sentinel')
+            pid = get_pid('sentinel')
             print('Sentinel is running ({}, PID={})'.format(uri, pid))
         except Pyro4.errors.CommunicationError:
             print('Sentinel is not running')
@@ -46,15 +46,16 @@ def query(command, args):
             print('Sentinel is not running')
 
     elif command == 'kill':
-        if not misc.get_pid('sentinel'):
+        if not get_pid('sentinel'):
             print('Sentinel is not running')
-        misc.kill_process('sentinel')
+        kill_process('sentinel')
 
     elif command in ['log', 'tail']:
-        log_path = os.path.join(params.LOG_PATH, 'sentinel.log')
+        log_file = 'sentinel.log'
+        log_path = logging.get_log_path() / log_file
         tail_command = 'tail {} {}'.format(log_path, ' '.join(args))
 
-        misc.execute_long_command(tail_command)
+        execute_long_command(tail_command)
 
     elif command == 'ingest':
         if len(args) != 1:
@@ -88,7 +89,9 @@ def print_instructions():
 
 if __name__ == '__main__':
     if len(sys.argv) == 1:
+        # No command: print help and exit
         print_instructions()
-    else:
-        command, *args = sys.argv[1:]
-        query(command, args)
+        sys.exit()
+
+    command, *args = sys.argv[1:]
+    query(command, args)

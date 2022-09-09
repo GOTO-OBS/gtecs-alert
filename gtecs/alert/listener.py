@@ -3,16 +3,16 @@
 import itertools
 import os
 import socket
-import sys
 import threading
 import time
+import traceback
 from urllib.request import URLError, urlopen
 
 import Pyro4
 
 import gcn.voeventclient as pygcn
 
-from gtecs.common.logging import get_logger
+from gtecs.common import logging
 
 from . import params
 from .events import Event
@@ -26,10 +26,7 @@ class Sentinel:
 
     def __init__(self):
         # get a logger for the sentinel
-        self.log = get_logger('sentinel', params.LOG_PATH,
-                              log_stdout=True,
-                              log_to_file=params.FILE_LOGGING,
-                              log_to_stdout=params.STDOUT_LOGGING)
+        self.log = logging.get_logger('sentinel')
         self.log.info('Sentinel started')
 
         # sentinel variables
@@ -284,11 +281,15 @@ def run():
         sentinel.run(params.PYRO_HOST, params.PYRO_PORT, params.PYRO_TIMEOUT)
     except Exception:
         print('Error detected, shutting down')
-        print(sys.exc_info())
+        traceback.print_exc()
     except KeyboardInterrupt:
         print('Interrupt detected, shutting down')
     finally:
-        sentinel.shutdown()
+        try:
+            sentinel.shutdown()
+        except UnboundLocalError:
+            # class was never created
+            pass
         time.sleep(1)  # wait to stop threads
         send_slack_msg('Sentinel shutdown')
         print('Sentinel done')
