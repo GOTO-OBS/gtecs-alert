@@ -3,11 +3,6 @@
 from gtecs.obs import database as db
 
 
-DEFAULT_USER = 'goto'
-DEFAULT_PW = 'gotoobs'
-DEFAULT_NAME = 'GOTO automated alerts'
-
-
 def remove_previous_events(event, log):
     """Check the database Events table to see if there's a previous instance of the event.
 
@@ -120,11 +115,11 @@ def get_mpointing_info(event):
 
 
 def get_user(session):
-    """Get the database user, or create one if it doesn't exist."""
+    """Get the sentinel database user, or create one if it doesn't exist."""
     try:
-        user = db.get_user(session, username=DEFAULT_USER)
+        user = db.get_user(session, username='sentinel')
     except ValueError:
-        user = db.User(DEFAULT_USER, DEFAULT_PW, DEFAULT_NAME)
+        user = db.User('sentinel', '', 'GOTO Alert Listener')
     return user
 
 
