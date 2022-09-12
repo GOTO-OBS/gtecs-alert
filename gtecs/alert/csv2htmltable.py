@@ -1,4 +1,3 @@
-#! /opt/local/bin/python3.6
 """Functions for converting CSV tables to HTML."""
 
 import os

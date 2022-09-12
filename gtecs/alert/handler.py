@@ -1,4 +1,3 @@
-#! /opt/local/bin/python3.6
 """Event handlers for VOEvents."""
 
 import logging

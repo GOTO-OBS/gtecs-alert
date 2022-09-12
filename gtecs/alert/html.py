@@ -1,4 +1,3 @@
-#! /opt/local/bin/python3.6
 """Functions to write output HTML pages."""
 
 import csv
