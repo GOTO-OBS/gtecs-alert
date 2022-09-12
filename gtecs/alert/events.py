@@ -22,53 +22,7 @@ from . import params
 from .strategy import get_event_strategy
 
 
-# Define interesting events we want to process
-# Primary key is the GCN Packet_Type
-# This should be in params
-EVENT_DICTIONARY = {163: {'notice_type': 'LVC_EARLY_WARNING',
-                          'event_type': 'GW',
-                          'source': 'LVC',
-                          },
-                    150: {'notice_type': 'LVC_PRELIMINARY',
-                          'event_type': 'GW',
-                          'source': 'LVC',
-                          },
-                    151: {'notice_type': 'LVC_INITIAL',
-                          'event_type': 'GW',
-                          'source': 'LVC',
-                          },
-                    152: {'notice_type': 'LVC_UPDATE',
-                          'event_type': 'GW',
-                          'source': 'LVC',
-                          },
-                    164: {'notice_type': 'LVC_RETRACTION',
-                          'event_type': 'GW_RETRACTION',
-                          'source': 'LVC',
-                          },
-                    115: {'notice_type': 'FERMI_GBM_FIN_POS',
-                          'event_type': 'GRB',
-                          'source': 'Fermi',
-                          },
-                    61: {'notice_type': 'SWIFT_BAT_GRB_POS',
-                         'event_type': 'GRB',
-                         'source': 'Swift',
-                         },
-                    173: {'notice_type': 'ICECUBE_ASTROTRACK_GOLD',
-                          'event_type': 'NU',
-                          'source': 'IceCube',
-                          },
-                    174: {'notice_type': 'ICECUBE_ASTROTRACK_BRONZE',
-                          'event_type': 'NU',
-                          'source': 'IceCube',
-                          },
-                    176: {'notice_type': 'ICECUBE_CASCADE',
-                          'event_type': 'NU',
-                          'source': 'IceCube',
-                          },
-                    }
-
-
-class Event(object):
+class Event:
     """A class to represent a single VOEvent.
 
     Some Events are better represented as one of the more specialised subclasses.
@@ -81,17 +35,13 @@ class Event(object):
     """
 
     def __init__(self, payload):
-        # Store the creation time
         self.creation_time = Time.now()
 
-        # Store the payload
-        self.payload = payload
-
         # Load the payload using voeventparse
-        self.voevent = vp.loads(self.payload)
+        self.payload = payload
+        self.voevent = vp.loads(payload)
 
-        # Get key attributes:
-        # IVORN
+        # Store and format IVORN
         self.ivorn = self.voevent.attrib['ivorn']
         # Using the official IVOA terms (ivo://authorityID/resourceKey#local_ID):
         self.authorityID = self.ivorn.split('/')[2]
@@ -102,25 +52,18 @@ class Event(object):
         self.publisher = self.resourceKey
         self.title = self.local_ID
 
-        # Role (observation/test/...)
+        # Key attributes
+        self.packet_type = self._get_packet_type(payload)
         self.role = self.voevent.attrib['role']
-
-        # Event time
-        event_time = vp.convenience.get_event_time_as_utc(self.voevent, index=0)
-        if event_time:
-            self.time = Time(event_time)
-        else:
+        try:
+            self.time = Time(vp.convenience.get_event_time_as_utc(self.voevent, index=0))
+        except Exception:
             # Some test events don't have times
             self.time = None
-
-        # Contact email
         try:
             self.contact = self.voevent.Who.Author.contactEmail
         except AttributeError:
             self.contact = None
-
-        # GCN packet type
-        self.packet_type = self._get_packet_type(payload)
 
         # Set default attributes
         # The subclasses for "interesting" events will overwrite these
@@ -149,30 +92,26 @@ class Event(object):
             packet_type = None
         return packet_type
 
+    @staticmethod
+    def _get_class(payload):
+        """Get the correct class of Event by trying each subclass."""
+        subclasses = [GWEvent, GWRetractionEvent, GRBEvent, NUEvent]
+        for subclass in subclasses:
+            try:
+                return subclass(payload)
+            except ValueError:
+                pass
+        return Event(payload)
+
     @classmethod
     def from_payload(cls, payload):
         """Create an Event from a VOEvent payload."""
-        # Chose a more detailed subclass based on GCN Packet Type, if there is one
-        packet_type = cls._get_packet_type(payload)
-        if not packet_type or packet_type not in EVENT_DICTIONARY:
-            # Not a GCN, or not a recognised packet type
-            event_class = Event
-        else:
-            event_type = EVENT_DICTIONARY[packet_type]['event_type']
-            if event_type == 'GW':
-                event_class = GWEvent
-            elif event_type == 'GW_RETRACTION':
-                event_class = GWRetractionEvent
-            elif event_type == 'GRB':
-                event_class = GRBEvent
-            elif event_type == 'NU':
-                event_class = NUEvent
-            else:
-                # This shouldn't happen?
-                event_class = Event
-
-        # Create and return the instance
-        return event_class(payload)
+        event = cls._get_class(payload)
+        if cls != Event and cls != event.__class__:
+            raise ValueError('Event subtype mismatch (`{}` detected)'.format(
+                             event.__class__.__name__
+                             ))
+        return event
 
     @classmethod
     def from_ivorn(cls, ivorn):
@@ -209,10 +148,10 @@ class Event(object):
             os.mkdir(path)
 
         filename = quote_plus(self.ivorn)
-        savepath = os.path.join(path, filename)
-        with open(savepath, 'wb') as f:
+        out_path = os.path.join(path, filename)
+        with open(out_path, 'wb') as f:
             f.write(self.payload)
-        return savepath
+        return out_path
 
     def get_strategy(self):
         """Get the event observing strategy."""
@@ -223,24 +162,29 @@ class Event(object):
 class GWEvent(Event):
     """A class to represent a Gravitational Wave Event."""
 
+    VALID_PACKET_TYPES = {
+        163: 'LVC_EARLY_WARNING',
+        150: 'LVC_PRELIMINARY',
+        151: 'LVC_INITIAL',
+        152: 'LVC_UPDATE',
+    }
+
     def __init__(self, payload):
         super().__init__(payload)
+        if self.packet_type not in self.VALID_PACKET_TYPES:
+            raise ValueError(f'GCN packet type {self.packet_type} not valid for this event class')
+        self.notice = self.VALID_PACKET_TYPES[self.packet_type]
 
         # Get XML param dicts
         # NB: you can't store these on the Event because they're unpickleable.
         top_params = vp.get_toplevel_params(self.voevent)
         group_params = vp.get_grouped_params(self.voevent)
 
-        # Default params
-        self.notice = EVENT_DICTIONARY[self.packet_type]['notice_type']
+        # Basic attributes
         self.type = 'GW'
-        self.source = EVENT_DICTIONARY[self.packet_type]['source']
-
-        # Get the event ID (e.g. S190510g)
-        self.id = top_params['GraceID']['value']
-
-        # Create our own event name (e.g. LVC_S190510g)
-        self.name = '{}_{}'.format(self.source, self.id)
+        self.source = 'LVC'
+        self.id = top_params['GraceID']['value']  # e.g. S190510g
+        self.name = '{}_{}'.format(self.source, self.id)  # e.g. LVC_S190510g
 
         # Get info from the VOEvent
         # See https://emfollow.docs.ligo.org/userguide/content.html#notice-contents
@@ -314,23 +258,25 @@ class GWEvent(Event):
 class GWRetractionEvent(Event):
     """A class to represent a Gravitational Wave Retraction alert."""
 
+    VALID_PACKET_TYPES = {
+        164: 'LVC_RETRACTION',
+    }
+
     def __init__(self, payload):
         super().__init__(payload)
+        if self.packet_type not in self.VALID_PACKET_TYPES:
+            raise ValueError(f'GCN packet type {self.packet_type} not valid for this event class')
+        self.notice = self.VALID_PACKET_TYPES[self.packet_type]
 
         # Get XML param dicts
         # NB: you can't store these on the Event because they're unpickleable.
         top_params = vp.get_toplevel_params(self.voevent)
 
-        # Default params
-        self.notice = EVENT_DICTIONARY[self.packet_type]['notice_type']
+        # Basic attributes
         self.type = 'GW_RETRACTION'
-        self.source = EVENT_DICTIONARY[self.packet_type]['source']
-
-        # Get the event ID (e.g. S190510g)
-        self.id = top_params['GraceID']['value']
-
-        # Create our own event name (e.g. LVC_S190510g)
-        self.name = '{}_{}'.format(self.source, self.id)
+        self.source = 'LVC'
+        self.id = top_params['GraceID']['value']  # e.g. S190510g
+        self.name = '{}_{}'.format(self.source, self.id)  # e.g. LVC_S190510g
 
         # Get info from the VOEvent
         # Retractions have far fewer params
@@ -340,24 +286,27 @@ class GWRetractionEvent(Event):
 class GRBEvent(Event):
     """A class to represent a Gamma-Ray Burst Event."""
 
+    VALID_PACKET_TYPES = {
+        115: 'FERMI_GBM_FIN_POS',
+        61: 'SWIFT_BAT_GRB_POS',
+    }
+
     def __init__(self, payload):
         super().__init__(payload)
+        if self.packet_type not in self.VALID_PACKET_TYPES:
+            raise ValueError(f'GCN packet type {self.packet_type} not valid for this event class')
+        self.notice = self.VALID_PACKET_TYPES[self.packet_type]
 
         # Get XML param dicts
         # NB: you can't store these on the Event because they're unpickleable.
         top_params = vp.get_toplevel_params(self.voevent)
         group_params = vp.get_grouped_params(self.voevent)
 
-        # Default params
-        self.notice = EVENT_DICTIONARY[self.packet_type]['notice_type']
+        # Basic attributes
         self.type = 'GRB'
-        self.source = EVENT_DICTIONARY[self.packet_type]['source']
-
-        # Get the event ID (e.g. 579943502)
-        self.id = top_params['TrigID']['value']
-
-        # Create our own event name (e.g. Fermi_579943502)
-        self.name = '{}_{}'.format(self.source, self.id)
+        self.source = self.notice.split('_')[0].capitalize()
+        self.id = top_params['TrigID']['value']  # e.g. 579943502
+        self.name = '{}_{}'.format(self.source, self.id)  # e.g. Fermi_579943502
 
         # Get properties from the VOEvent
         if self.source == 'Fermi':
@@ -451,8 +400,17 @@ class GRBEvent(Event):
 class NUEvent(Event):
     """A class to represent a Neutrino (NU) Event."""
 
+    VALID_PACKET_TYPES = {
+        173: 'ICECUBE_ASTROTRACK_GOLD',
+        174: 'ICECUBE_ASTROTRACK_BRONZE',
+        176: 'ICECUBE_CASCADE',
+    }
+
     def __init__(self, payload):
         super().__init__(payload)
+        if self.packet_type not in self.VALID_PACKET_TYPES:
+            raise ValueError(f'GCN packet type {self.packet_type} not valid for this event class')
+        self.notice = self.VALID_PACKET_TYPES[self.packet_type]
 
         # Get XML param dicts
         # NB: you can't store these on the Event because they're unpickleable.
@@ -460,15 +418,10 @@ class NUEvent(Event):
         # group_params = vp.get_grouped_params(self.voevent)
 
         # Default params
-        self.notice = EVENT_DICTIONARY[self.packet_type]['notice_type']
-        self.type = EVENT_DICTIONARY[self.packet_type]['event_type']
-        self.source = EVENT_DICTIONARY[self.packet_type]['source']
-
-        # Get the run and event ID (e.g. 13311922683750)
-        self.id = top_params['AMON_ID']['value']
-
-        # Create our own event name (e.g. ICECUBE_13311922683750)
-        self.name = '{}_{}'.format(self.source, self.id)
+        self.type = 'NU'
+        self.source = 'IceCube'
+        self.id = top_params['AMON_ID']['value']  # e.g. 13311922683750
+        self.name = '{}_{}'.format(self.source, self.id)  # e.g. IceCube_13311922683750
 
         # Get info from the VOEvent
         # signalness: the probability this is an astrophysical signal relative to backgrounds
