@@ -153,6 +153,15 @@ class Event:
             f.write(self.payload)
         return out_path
 
+    def get_skymap(self):
+        """Return None."""
+        return
+
+    def get_strategy(self):
+        """Return default strategy."""
+        self.strategy = get_strategy_details()
+        return self.strategy
+
 
 class GWEvent(Event):
     """A class to represent a Gravitational Wave Event."""
@@ -301,6 +310,14 @@ class GWRetractionEvent(Event):
         # Get info from the VOEvent
         # Retractions have far fewer params
         self.gracedb_url = top_params['EventPage']['value']
+
+    def get_skymap(self):
+        """Return None."""
+        return
+
+    def get_strategy(self):
+        """Return None."""
+        return
 
 
 class GRBEvent(Event):
