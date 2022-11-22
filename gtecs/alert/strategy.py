@@ -1,6 +1,7 @@
 """Functions to define the observing strategy for different events."""
 
 import astropy.units as u
+from astropy.time import Time
 
 
 # Define event strategy options
@@ -165,53 +166,22 @@ EXPOSURE_SETS_DICTIONARY = {'3x60L': [{'num_exp': 3, 'exptime': 60, 'filt': 'L'}
                             }
 
 
-def get_event_strategy(event):
-    """Get the strategy for the given Event."""
-    if not event.interesting:
-        # Uninteresting events shouldn't be added to the database
-        return None
-
-    # Get the specific event strategy
-    strategy = 'DEFAULT'
-    if event.type == 'GW':
-        if event.group == 'CBC':
-            if event.properties['HasNS'] > 0.25:
-                if event.distance < 400:
-                    strategy = 'GW_CLOSE_NS'
-                else:
-                    strategy = 'GW_FAR_NS'
-            else:
-                if event.distance < 100:
-                    strategy = 'GW_CLOSE_BH'
-                else:
-                    strategy = 'GW_FAR_BH'
-        else:
-            strategy = 'GW_BURST'
-    elif event.type == 'GRB':
-        if event.source == 'Swift':
-            strategy = 'GRB_SWIFT'
-        else:
-            if event.duration.lower() == 'short':
-                strategy = 'GRB_FERMI_SHORT'
-            else:
-                strategy = 'GRB_FERMI'
-    elif event.type == 'NU':
-        if event.notice == 'ICECUBE_ASTROTRACK_GOLD':
-            strategy = 'NU_ICECUBE_GOLD'
-        elif event.notice == 'ICECUBE_ASTROTRACK_BRONZE':
-            strategy = 'NU_ICECUBE_BRONZE'
-        elif event.notice == 'ICECUBE_CASCADE':
-            strategy = 'NU_ICECUBE_CASCADE'
-
+def get_strategy_details(name='DEFAULT', time=None):
+    """Get details of the requested strategy."""
     # Get the strategy dictionary
-    strategy_dict = STRATEGY_DICTIONARY[strategy]
-    strategy_dict['strategy'] = strategy
+    try:
+        strategy_dict = STRATEGY_DICTIONARY[name]
+    except KeyError as err:
+        raise ValueError(f'Unknown strategy: {name}') from err
+    strategy_dict['strategy'] = name
 
     # Fill out the other strategy details
+    if time is None:
+        time = Time.now()
     if isinstance(strategy_dict['cadence'], str):
-        strategy_dict['cadence_dict'] = get_cadence_details(strategy_dict['cadence'], event.time)
+        strategy_dict['cadence_dict'] = get_cadence_details(strategy_dict['cadence'], time)
     else:
-        strategy_dict['cadence_dict'] = [get_cadence_details(c, event.time)
+        strategy_dict['cadence_dict'] = [get_cadence_details(c, time)
                                          for c in strategy_dict['cadence']]
     strategy_dict['constraints_dict'] = CONSTRAINTS_DICTIONARY[strategy_dict['constraints']]
     strategy_dict['exposure_sets_dict'] = EXPOSURE_SETS_DICTIONARY[strategy_dict['exposure_sets']]
@@ -220,7 +190,7 @@ def get_event_strategy(event):
 
 
 def get_cadence_details(cadences, start_time):
-    """Get the cadence strategy details for an Event."""
+    """Get the cadence strategy based on the given time."""
     if isinstance(cadences, str):
         cadences = [cadences]
 

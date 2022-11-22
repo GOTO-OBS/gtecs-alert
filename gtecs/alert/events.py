@@ -19,7 +19,7 @@ import voeventdb.remote.apiv1 as vdb
 import voeventparse as vp
 
 from . import params
-from .strategy import get_event_strategy
+from .strategy import get_strategy_details
 
 
 class Event:
@@ -153,11 +153,6 @@ class Event:
             f.write(self.payload)
         return out_path
 
-    def get_strategy(self):
-        """Get the event observing strategy."""
-        self.strategy = get_event_strategy(self)
-        return self.strategy
-
 
 class GWEvent(Event):
     """A class to represent a Gravitational Wave Event."""
@@ -253,6 +248,31 @@ class GWEvent(Event):
             self.contour_areas[contour] = self.skymap.get_contour_area(contour)
 
         return self.skymap
+
+    def get_strategy(self):
+        """Get the event observing strategy."""
+        # Decide which strategy to use
+        if self.group == 'CBC':
+            if self.properties['HasNS'] > 0.25:
+                if self.distance < 400:
+                    strategy = 'GW_CLOSE_NS'
+                else:
+                    # If the skymap hasn't been downloaded yet then we won't know the distance.
+                    # It gets set to infinity, so it will default to the FAR strategy.
+                    # TODO: we should raise a warning here?
+                    strategy = 'GW_FAR_NS'
+            else:
+                if self.distance < 100:
+                    strategy = 'GW_CLOSE_BH'
+                else:
+                    # TODO: Same here as above
+                    strategy = 'GW_FAR_BH'
+        else:
+            strategy = 'GW_BURST'
+
+        # Get the strategy dict
+        self.strategy = get_strategy_details(strategy, time=self.time)
+        return self.strategy
 
 
 class GWRetractionEvent(Event):
@@ -396,6 +416,21 @@ class GRBEvent(Event):
 
         return self.skymap
 
+    def get_strategy(self):
+        """Get the event observing strategy."""
+        # Decide which strategy to use
+        if self.source == 'Swift':
+            strategy = 'GRB_SWIFT'
+        else:
+            if self.duration.lower() == 'short':
+                strategy = 'GRB_FERMI_SHORT'
+            else:
+                strategy = 'GRB_FERMI'
+
+        # Get the strategy dict
+        self.strategy = get_strategy_details(strategy, time=self.time)
+        return self.strategy
+
 
 class NUEvent(Event):
     """A class to represent a Neutrino (NU) Event."""
@@ -491,3 +526,17 @@ class NUEvent(Event):
             self.contour_areas[contour] = self.skymap.get_contour_area(contour)
 
         return self.skymap
+
+    def get_strategy(self):
+        """Get the event observing strategy."""
+        # Decide which strategy to use
+        if self.notice == 'ICECUBE_ASTROTRACK_GOLD':
+            strategy = 'NU_ICECUBE_GOLD'
+        elif self.notice == 'ICECUBE_ASTROTRACK_BRONZE':
+            strategy = 'NU_ICECUBE_BRONZE'
+        elif self.notice == 'ICECUBE_CASCADE':
+            strategy = 'NU_ICECUBE_CASCADE'
+
+        # Get the strategy dict
+        self.strategy = get_strategy_details(strategy, time=self.time)
+        return self.strategy
