@@ -1,4 +1,4 @@
-"""Functions for listening for VOEvents."""
+"""Class for listening for VOEvents."""
 
 import itertools
 import os
