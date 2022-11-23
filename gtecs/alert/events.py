@@ -260,6 +260,9 @@ class GWEvent(Event):
 
     def get_strategy(self):
         """Get the event observing strategy."""
+        if self.strategy:
+            return self.strategy
+
         # Decide which strategy to use
         if self.group == 'CBC':
             if self.properties['HasNS'] > 0.25:
@@ -276,10 +279,12 @@ class GWEvent(Event):
                 else:
                     # TODO: Same here as above
                     strategy = 'GW_FAR_BH'
-        else:
+        elif self.group == 'Burst':
             strategy = 'GW_BURST'
+        else:
+            raise ValueError(f'Cannot determine observing strategy for group "{self.group}"')
 
-        # Get the strategy dict
+        # Store and return the strategy dict
         self.strategy = get_strategy_details(strategy, time=self.time)
         return self.strategy
 
@@ -435,16 +440,21 @@ class GRBEvent(Event):
 
     def get_strategy(self):
         """Get the event observing strategy."""
+        if self.strategy:
+            return self.strategy
+
         # Decide which strategy to use
         if self.source == 'Swift':
             strategy = 'GRB_SWIFT'
-        else:
+        elif self.source == 'Fermi':
             if self.duration.lower() == 'short':
                 strategy = 'GRB_FERMI_SHORT'
             else:
                 strategy = 'GRB_FERMI'
+        else:
+            raise ValueError(f'Cannot determine observing strategy for source "{self.source}"')
 
-        # Get the strategy dict
+        # Store and return the strategy dict
         self.strategy = get_strategy_details(strategy, time=self.time)
         return self.strategy
 
@@ -546,6 +556,9 @@ class NUEvent(Event):
 
     def get_strategy(self):
         """Get the event observing strategy."""
+        if self.strategy:
+            return self.strategy
+
         # Decide which strategy to use
         if self.notice == 'ICECUBE_ASTROTRACK_GOLD':
             strategy = 'NU_ICECUBE_GOLD'
@@ -553,7 +566,9 @@ class NUEvent(Event):
             strategy = 'NU_ICECUBE_BRONZE'
         elif self.notice == 'ICECUBE_CASCADE':
             strategy = 'NU_ICECUBE_CASCADE'
+        else:
+            raise ValueError(f'Cannot determine observing strategy for notice "{self.notice}"')
 
-        # Get the strategy dict
+        # Store and return the strategy dict
         self.strategy = get_strategy_details(strategy, time=self.time)
         return self.strategy
