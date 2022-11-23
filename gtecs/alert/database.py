@@ -65,8 +65,11 @@ def get_grid_tiles(event, grid):
     return masked_table
 
 
-def add_to_database(event, log):
+def add_to_database(event, log, time=None):
     """Add the Event into the database."""
+    if time is None:
+        time = Time.now()
+
     with db.open_session() as session:
         # Get the database Event (or make one if it's new)
         db_event = get_event(session, event)
@@ -85,8 +88,8 @@ def add_to_database(event, log):
             #       For now we always reset the database on every update.
             num_deleted = 0
             for db_target in db_survey.targets:
-                if db_target.status not in ['deleted', 'expired', 'completed']:
-                    db_target.mark_deleted()
+                if db_target.status_at_time(time) not in ['deleted', 'expired', 'completed']:
+                    db_target.mark_deleted(time=time)
                     num_deleted += 1
             if num_deleted > 0:
                 log.debug('Deleted {} Targets for Survey {}'.format(num_deleted, db_survey.name))
@@ -170,7 +173,7 @@ def add_to_database(event, log):
                     weight=float(tile_weight),
                     start_time=cadence_dicts[0]['start_time'],
                     stop_time=cadence_dicts[-1]['stop_time'],
-                    creation_time=Time.now(),
+                    creation_time=time,
                     user=db_user,
                     grid_tile=db_grid_tile,
                     exposure_sets=db_exposure_sets,

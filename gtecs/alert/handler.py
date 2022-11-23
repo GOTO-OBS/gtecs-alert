@@ -6,7 +6,7 @@ from . database import add_to_database
 from .slack import send_database_report, send_event_report, send_slack_msg, send_strategy_report
 
 
-def event_handler(event, send_messages=False, log=None):
+def event_handler(event, send_messages=False, log=None, time=None):
     """Handle a new Event.
 
     Parameters
@@ -20,6 +20,9 @@ def event_handler(event, send_messages=False, log=None):
     log : logging.Logger, optional
         If given, direct log messages to this logger.
         If None, a new logger is created.
+    time : astropy.time.Time, optional
+        If given, insert entries at the given time (useful for testing).
+        If None, use the current time.
 
     Returns
     -------
@@ -85,7 +88,7 @@ def event_handler(event, send_messages=False, log=None):
     log.info('Inserting event {} into GOTO database'.format(event.name))
     try:
         log.debug('Adding to database')
-        add_to_database(event, log)
+        add_to_database(event, log, time=time)
         log.info('Database insertion complete')
 
         # Send Slack database report
