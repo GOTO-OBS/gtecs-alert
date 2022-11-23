@@ -1,0 +1,48 @@
+{
+    "NO_DELAY": {
+        "num_todo": 99,
+        "wait_hours": 0,
+        "valid_days": 3
+    },
+    "TWO_NIGHTS": {
+        "num_todo": 2,
+        "wait_hours": 12,
+        "valid_days": 3
+    },
+    "TWO_FIRST_ONE_SECOND": {
+        "num_todo": 3,
+        "wait_hours": [
+            4,
+            12
+        ],
+        "valid_days": 3
+    },
+    "MANY_FIRST_ONE_SECOND": {
+        "num_todo": 8,
+        "wait_hours": [
+            1,
+            1,
+            2,
+            2,
+            2,
+            2,
+            12
+        ],
+        "valid_days": 3
+    },
+    "HAMMER_EARLY": {
+        "num_todo": 8,
+        "wait_hours": 0.25,
+        "valid_days": 0.125
+    },
+    "FOLLOW_LATE": {
+        "num_todo": 4,
+        "wait_hours": [
+            1,
+            2,
+            4
+        ],
+        "delay_days": 0.125,
+        "valid_days": 2.875
+    }
+}

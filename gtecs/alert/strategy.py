@@ -1,215 +1,65 @@
 """Functions to define the observing strategy for different events."""
 
+import importlib.resources as pkg_resources
+import json
+
 import astropy.units as u
 from astropy.time import Time
 
 
-# Define event strategy options
-# This should be in params too
-STRATEGY_DICTIONARY = {'DEFAULT': {'rank': 309,
-                                   'cadence': 'TWO_NIGHTS',
-                                   'constraints': 'NORMAL',
-                                   'exposure_sets': '4x90L',
-                                   'on_grid': True,
-                                   'tile_limit': 200,
-                                   'prob_limit': 0,
-                                   },
-                       'GW_CLOSE_NS': {'rank': 2,
-                                       'cadence': 'NO_DELAY',
-                                       'constraints': 'LENIENT',
-                                       'exposure_sets': '4x90L',
-                                       'on_grid': True,
-                                       'tile_limit': 200,
-                                       'prob_limit': 0,
-                                       },
-                       'GW_FAR_NS': {'rank': 13,
-                                     'cadence': 'NO_DELAY',
-                                     'constraints': 'LENIENT',
-                                     'exposure_sets': '4x90L',
-                                     'on_grid': True,
-                                     'tile_limit': 200,
-                                     'prob_limit': 0,
-                                     },
-                       'GW_CLOSE_BH': {'rank': 24,
-                                       'cadence': 'TWO_NIGHTS',
-                                       'constraints': 'LENIENT',
-                                       'exposure_sets': '4x90L',
-                                       'on_grid': True,
-                                       'tile_limit': 200,
-                                       'prob_limit': 0,
-                                       },
-                       'GW_FAR_BH': {'rank': 105,
-                                     'cadence': 'TWO_NIGHTS',
-                                     'constraints': 'LENIENT',
-                                     'exposure_sets': '4x90L',
-                                     'on_grid': True,
-                                     'tile_limit': 200,
-                                     'prob_limit': 0,
-                                     },
-                       'GW_BURST': {'rank': 52,
-                                    'cadence': 'NO_DELAY',
-                                    'constraints': 'LENIENT',
-                                    'exposure_sets': '4x90L',
-                                    'on_grid': True,
-                                    'tile_limit': 200,
-                                    'prob_limit': 0,
-                                    },
-                       'GRB_SWIFT': {'rank': 207,
-                                     'cadence': ['HAMMER_EARLY', 'FOLLOW_LATE'],
-                                     'constraints': 'NORMAL',
-                                     'exposure_sets': '6x90LRGB',
-                                     'on_grid': True,
-                                     'tile_limit': 4,
-                                     'prob_limit': 0.05,
-                                     },
-                       'GRB_FERMI': {'rank': 218,
-                                     'cadence': 'MANY_FIRST_ONE_SECOND',
-                                     'constraints': 'NORMAL',
-                                     'exposure_sets': '4x90L',
-                                     'on_grid': True,
-                                     'tile_limit': 5,
-                                     'prob_limit': 0.05,
-                                     },
-                       'GRB_FERMI_SHORT': {'rank': 210,
-                                           'cadence': ['HAMMER_EARLY', 'FOLLOW_LATE'],
-                                           'constraints': 'NORMAL',
-                                           'exposure_sets': '6x90LRGB',
-                                           'on_grid': True,
-                                           'tile_limit': 8,
-                                           'prob_limit': 0.005,
-                                           },
-                       'NU_ICECUBE_GOLD': {'rank': 259,
-                                           'cadence': 'TWO_FIRST_ONE_SECOND',
-                                           'constraints': 'NORMAL',
-                                           'exposure_sets': '4x90L',
-                                           'on_grid': True,
-                                           'tile_limit': 3,
-                                           'prob_limit': 0.05,
-                                           },
-                       'NU_ICECUBE_BRONZE': {'rank': 269,
-                                             'cadence': 'TWO_FIRST_ONE_SECOND',
-                                             'constraints': 'NORMAL',
-                                             'exposure_sets': '4x90L',
-                                             'on_grid': True,
-                                             'tile_limit': 3,
-                                             'prob_limit': 0.05,
-                                             },
-                       'NU_ICECUBE_CASCADE': {'rank': 279,
-                                              'cadence': 'TWO_FIRST_ONE_SECOND',
-                                              'constraints': 'NORMAL',
-                                              'exposure_sets': '4x90L',
-                                              'on_grid': True,
-                                              'tile_limit': 8,
-                                              'prob_limit': 0.005,
-                                              },
-                       }
-
-# Define possible cadence strategies
-CADENCE_DICTIONARY = {'NO_DELAY': {'num_todo': 99,
-                                   'wait_time': 0,
-                                   'valid_days': 3,
-                                   },
-                      'TWO_NIGHTS': {'num_todo': 2,
-                                     'wait_time': 12 * 60,
-                                     'valid_days': 3,
-                                     },
-                      'TWO_FIRST_ONE_SECOND': {'num_todo': 3,
-                                               'wait_time': [4 * 60, 12 * 60],
-                                               'valid_days': 3,
-                                               },
-                      'MANY_FIRST_ONE_SECOND': {'num_todo': 8,
-                                                'wait_time': [60, 60, 120, 120, 120, 120, 12 * 60],
-                                                'valid_days': 3,
-                                                },
-                      'HAMMER_EARLY': {'num_todo': 8,
-                                       'wait_time': 15,
-                                       'valid_days': 2 / 24,
-                                       },
-                      'FOLLOW_LATE': {'num_todo': 4,
-                                      'wait_time': [60, 120, 240],
-                                      'delay_days': 2 / 24,
-                                      'valid_days': 3 - (2 / 24),
-                                      },
-                      }
-
-# Define possible constraint sets
-CONSTRAINTS_DICTIONARY = {'NORMAL': {'max_sunalt': -15,
-                                     'min_alt': 30,
-                                     'min_moonsep': 30,
-                                     'max_moon': 'B',
-                                     },
-                          'LENIENT': {'max_sunalt': -12,
-                                      'min_alt': 30,
-                                      'min_moonsep': 10,
-                                      'max_moon': 'B',
-                                      },
-                          }
-
-# Define possible exposure sets
-EXPOSURE_SETS_DICTIONARY = {'3x60L': [{'num_exp': 3, 'exptime': 60, 'filt': 'L'},
-                                      ],
-                            '9x60L': [{'num_exp': 9, 'exptime': 60, 'filt': 'L'},
-                                      ],
-                            '4x90L': [{'num_exp': 4, 'exptime': 90, 'filt': 'L'},
-                                      ],
-                            '6x90L': [{'num_exp': 6, 'exptime': 90, 'filt': 'L'},
-                                      ],
-                            '3x60RBG': [{'num_exp': 1, 'exptime': 60, 'filt': 'R'},
-                                        {'num_exp': 1, 'exptime': 60, 'filt': 'G'},
-                                        {'num_exp': 1, 'exptime': 60, 'filt': 'B'},
-                                        ],
-                            '6x90LRGB': [{'num_exp': 3, 'exptime': 90, 'filt': 'L'},
-                                         {'num_exp': 1, 'exptime': 90, 'filt': 'R'},
-                                         {'num_exp': 1, 'exptime': 90, 'filt': 'G'},
-                                         {'num_exp': 1, 'exptime': 90, 'filt': 'B'},
-                                         ],
-                            }
+def _load_strategy_files():
+    with pkg_resources.path('gtecs.alert.data', 'strategies.json') as path, open(path) as f:
+        strategies = json.load(f)
+    with pkg_resources.path('gtecs.alert.data', 'cadences.json') as path, open(path) as f:
+        cadences = json.load(f)
+    with pkg_resources.path('gtecs.alert.data', 'constraints.json') as path, open(path) as f:
+        constraints = json.load(f)
+    with pkg_resources.path('gtecs.alert.data', 'exposures.json') as path, open(path) as f:
+        exposures = json.load(f)
+    return strategies, cadences, constraints, exposures
 
 
 def get_strategy_details(name='DEFAULT', time=None):
     """Get details of the requested strategy."""
-    # Get the strategy dictionary
+    if time is None:
+        time = Time.now()
+
+    # Load the strategy files
+    strategies, cadences, constraints, exposures = _load_strategy_files()
+
+    # Get the correct strategy for the given key
     try:
-        strategy_dict = STRATEGY_DICTIONARY[name]
+        strategy_dict = strategies[name]
     except KeyError as err:
         raise ValueError(f'Unknown strategy: {name}') from err
     strategy_dict['strategy'] = name
 
-    # Fill out the other strategy details
-    if time is None:
-        time = Time.now()
+    # Check all the required keys are present
+    if 'cadence' not in strategy_dict:
+        raise ValueError(f'Undefined cadence for strategy {name}')
+    if 'constraints' not in strategy_dict:
+        raise ValueError(f'Undefined constraints for strategy {name}')
+    if 'exposure_sets' not in strategy_dict:
+        raise ValueError(f'Undefined exposure sets for strategy {name}')
+
+    # Fill out the cadence strategy based on the given time
+    # NB A list of cadences can be given
     if isinstance(strategy_dict['cadence'], str):
-        strategy_dict['cadence_dict'] = get_cadence_details(strategy_dict['cadence'], time)
+        cadence_list = [strategy_dict['cadence']]
     else:
-        strategy_dict['cadence_dict'] = [get_cadence_details(c, time)
-                                         for c in strategy_dict['cadence']]
-    strategy_dict['constraints_dict'] = CONSTRAINTS_DICTIONARY[strategy_dict['constraints']]
-    strategy_dict['exposure_sets_dict'] = EXPOSURE_SETS_DICTIONARY[strategy_dict['exposure_sets']]
+        cadence_list = strategy_dict['cadence']
+    strategy_dict['cadence_dict'] = []
+    for cadence in cadence_list:
+        cadence_dict = cadences[cadence]
+        if 'delay_days' in cadence_dict:
+            cadence_dict['start_time'] = time + cadence_dict['delay_days'] * u.day
+        else:
+            cadence_dict['start_time'] = time
+        cadence_dict['stop_time'] = cadence_dict['start_time'] + cadence_dict['valid_days'] * u.day
+        strategy_dict['cadence_dict'].append(cadence_dict)
+
+    # Add other dicts
+    strategy_dict['constraints_dict'] = constraints[strategy_dict['constraints']]
+    strategy_dict['exposure_sets_dict'] = exposures[strategy_dict['exposure_sets']]
 
     return strategy_dict
-
-
-def get_cadence_details(cadences, start_time):
-    """Get the cadence strategy based on the given time."""
-    if isinstance(cadences, str):
-        cadences = [cadences]
-
-    cadence_details = []
-    for cadence in cadences:
-        # Get the cadence dictionary
-        cadence_dict = CADENCE_DICTIONARY[cadence]
-
-        # Calculate stop and start times
-        if 'delay_days' in cadence_dict:
-            cadence_dict['start_time'] = start_time + cadence_dict['delay_days'] * u.day
-        else:
-            cadence_dict['start_time'] = start_time
-        cadence_dict['stop_time'] = cadence_dict['start_time'] + cadence_dict['valid_days'] * u.day
-
-        cadence_details.append(cadence_dict)
-
-    # just return the list for a single cadence
-    if len(cadence_details) == 1:
-        cadence_details = cadence_details[0]
-
-    return cadence_details
