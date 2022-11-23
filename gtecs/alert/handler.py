@@ -2,7 +2,7 @@
 
 import logging
 
-from . import database as db
+from . database import add_to_database
 from .slack import send_database_report, send_event_report, send_slack_msg, send_strategy_report
 
 
@@ -81,18 +81,12 @@ def event_handler(event, send_messages=False, log=None):
             log.error('Error sending Slack report')
             log.debug(err.__class__.__name__, exc_info=True)
 
-    # 4) Add the event into the GOTO observation DB
+    # 4) Add the event into the GOTO observation database
     log.info('Inserting event {} into GOTO database'.format(event.name))
     try:
-        # First we need to see if there's a previous instance of the same event already in the db
-        # If so, then delete any still pending pointings and mpointings associated with the event
-        log.debug('Checking for previous events in database')
-        db.remove_previous_events(event, log)
-
-        # Then add the new pointings
         log.debug('Adding to database')
-        db.add_to_database(event, log)
-        log.info('Database insersion complete')
+        add_to_database(event, log)
+        log.info('Database insertion complete')
 
         # Send Slack database report
         if send_messages:
