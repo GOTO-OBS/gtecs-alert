@@ -68,7 +68,8 @@ def event_handler(event, send_messages=False, log=None):
     #    NB we can only do this after getting the skymap, because GW events need the distance.
     log.debug('Fetching event strategy')
     event.get_strategy()
-    log.debug('Using strategy {}'.format(event.strategy['strategy']))
+    if event.strategy is not None:  # Retractions have no strategy
+        log.debug('Using strategy {}'.format(event.strategy['strategy']))
 
     # Send Slack strategy report
     if send_messages:
