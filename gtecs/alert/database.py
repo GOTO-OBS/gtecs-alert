@@ -10,7 +10,7 @@ def get_user(session):
     try:
         user = db.get_user(session, username='sentinel')
     except ValueError:
-        user = db.User('sentinel', '', 'GOTO Alert Listener')
+        user = db.User('sentinel', '', 'Sentinel Alert Listener')
     return user
 
 
