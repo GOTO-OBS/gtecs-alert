@@ -39,7 +39,10 @@ class Event:
 
         # Load the payload using voeventparse
         self.payload = payload
-        self.voevent = vp.loads(payload)
+        try:
+            self.voevent = vp.loads(payload)
+        except Exception as err:
+            raise ValueError('Invalid payload') from err
 
         # Store and format IVORN
         self.ivorn = self.voevent.attrib['ivorn']
