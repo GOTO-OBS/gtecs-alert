@@ -57,6 +57,7 @@ def query(command, args):
 
         execute_long_command(tail_command)
 
+    # Sentinel commands
     elif command == 'ingest':
         if len(args) != 1:
             raise ValueError('Invalid arguments: sentinel ingest [path|ivorn]')
