@@ -63,8 +63,10 @@ class Event:
         except Exception:
             # Some test events don't have times
             self.time = None
+        self.notice_time = Time(str(self.voevent.Who.Date))
+        self.author = str(self.voevent.Who.Author.contactName)
         try:
-            self.contact = self.voevent.Who.Author.contactEmail
+            self.contact = str(self.voevent.Who.Author.contactEmail)
         except AttributeError:
             self.contact = None
 
