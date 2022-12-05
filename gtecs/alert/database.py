@@ -1,5 +1,6 @@
 """Functions to add events into the GOTO Observation Database."""
 
+from astropy import units as u
 from astropy.time import Time
 
 from gtecs.obs import database as db
@@ -153,12 +154,15 @@ def add_to_database(event, log, time=None):
                     db.Strategy(
                         num_todo=cadence_dict['num_todo'],
                         stop_time=cadence_dict['stop_time'],
+                        wait_time=cadence_dict['wait_hours'] * u.hour,
+                        valid_time=cadence_dict['valid_days'] * u.day,
                         min_time=None,
                         too=True,
                         min_alt=constraints_dict['min_alt'],
                         max_sunalt=constraints_dict['max_sunalt'],
                         max_moon=constraints_dict['max_moon'],
                         min_moonsep=constraints_dict['min_moonsep'],
+                        # TODO: tel_mask?
                     )
                 )
 
