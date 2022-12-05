@@ -43,13 +43,11 @@ def get_strategy_details(name='DEFAULT', time=None):
         raise ValueError(f'Undefined exposure sets for strategy {name}')
 
     # Fill out the cadence strategy based on the given time
-    # NB A list of cadences can be given
+    # NB A list of multiple cadence strategies can be given
     if isinstance(strategy_dict['cadence'], str):
-        cadence_list = [strategy_dict['cadence']]
-    else:
-        cadence_list = strategy_dict['cadence']
+        strategy_dict['cadence'] = [strategy_dict['cadence']]
     strategy_dict['cadence_dict'] = []
-    for cadence in cadence_list:
+    for cadence in strategy_dict['cadence']:
         cadence_dict = cadences[cadence]
         if 'delay_days' in cadence_dict:
             cadence_dict['start_time'] = time + cadence_dict['delay_days'] * u.day

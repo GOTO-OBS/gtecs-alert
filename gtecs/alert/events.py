@@ -6,6 +6,7 @@ from urllib.request import urlopen
 
 from astroplan import FixedTarget
 
+import astropy.units as u
 from astropy.coordinates import Angle, SkyCoord
 from astropy.time import Time
 from astropy.utils.data import download_file
@@ -167,6 +168,17 @@ class Event:
         self.strategy = get_strategy_details()
         return self.strategy
 
+    def get_details(self):
+        """Get a list of the event details for Slack messages."""
+        details = [
+            f'IVORN: {self.ivorn}',
+            f'Event time: {self.time.iso}'
+            f' _({(Time.now() - self.time).to(u.hour).value:.1f}h ago)_',
+            f'Notice time: {self.notice_time.iso}'
+            f' _({(Time.now() - self.notice_time).to(u.hour).value:.1f}h ago)_',
+        ]
+        return details
+
 
 class GWEvent(Event):
     """A class to represent a Gravitational Wave Event."""
@@ -293,6 +305,52 @@ class GWEvent(Event):
         self.strategy = get_strategy_details(strategy, time=self.time)
         return self.strategy
 
+    def get_details(self):
+        """Get a list of the event details for Slack messages."""
+        details = [
+            f'IVORN: {self.ivorn}',
+            f'Event time: {self.time.iso}'
+            f' _({(Time.now() - self.time).to(u.hour).value:.1f}h ago)_',
+            f'Notice time: {self.notice_time.iso}'
+            f' _({(Time.now() - self.notice_time).to(u.hour).value:.1f}h ago)_',
+        ]
+        # Add event properties
+        details += [
+            f'Group: {self.group}',
+            f'FAR: ~1 per {1 / self.far / 3.154e+7:.1f} yrs',
+        ]
+        # Add skymap info only if we have downloaded the skymap
+        if self.distance != np.inf:
+            details += [
+                'Distance: UNKNOWN',
+            ]
+        else:
+            details += [
+                f'Distance: {self.distance:.0f}+/-{self.distance_error:.0f} Mpc'
+                f'90% probability area: {self.contour_areas[0.9]:.0f} sq deg'
+            ]
+        # Add classification info for CBC events
+        if self.group == 'CBC':
+            sorted_class = sorted(
+                self.classification.keys(),
+                key=lambda key: self.classification[key],
+                reverse=True,
+            )
+            class_list = [
+                f'{key}:{self.classification[key]:.1%}'
+                for key in sorted_class
+                if self.classification[key] > 0.0005
+            ]
+            details += [
+                f'Classification: {", ".join(class_list)}',
+                f'HasNS (if real): {self.properties["HasNS"]:.0%}',
+            ]
+        details += [
+            f'GraceDB page: {self.gracedb_url}',
+        ]
+
+        return details
+
 
 class GWRetractionEvent(Event):
     """A class to represent a Gravitational Wave Retraction alert."""
@@ -328,6 +386,23 @@ class GWRetractionEvent(Event):
     def get_strategy(self):
         """Return None."""
         return
+
+    def get_details(self):
+        """Get a list of the event details for Slack messages."""
+        details = [
+            f'IVORN: {self.ivorn}',
+            f'Event time: {self.time.iso}'
+            f' _({(Time.now() - self.time).to(u.hour).value:.1f}h ago)_',
+            f'Notice time: {self.notice_time.iso}'
+            f' _({(Time.now() - self.notice_time).to(u.hour).value:.1f}h ago)_',
+        ]
+        # Nothing much to add, just note clearly it's a retraction event
+        details += [
+            f'GraceDB page: {self.gracedb_url}',
+            f'*THIS IS A RETRACTION OF EVENT {self.id}*',
+        ]
+
+        return details
 
 
 class GRBEvent(Event):
@@ -463,6 +538,28 @@ class GRBEvent(Event):
         self.strategy = get_strategy_details(strategy, time=self.time)
         return self.strategy
 
+    def get_details(self):
+        """Get a list of the event details for Slack messages."""
+        details = [
+            f'IVORN: {self.ivorn}',
+            f'Event time: {self.time.iso}'
+            f' _({(Time.now() - self.time).to(u.hour).value:.1f}h ago)_',
+            f'Notice time: {self.notice_time.iso}'
+            f' _({(Time.now() - self.notice_time).to(u.hour).value:.1f}h ago)_',
+        ]
+        # Add event location
+        details += [
+            f'Position: {self.coord.to_string("hmsdms")} ({self.coord.to_string()})',
+            f'Position error: {self.total_error:.3f}',
+        ]
+        if self.source == 'Fermi':
+            # Add duration (long/short) for Fermi events
+            details += [
+                f'Duration: {self.duration.capitalize()}',
+            ]
+
+        return details
+
 
 class NUEvent(Event):
     """A class to represent a Neutrino (NU) Event."""
@@ -577,3 +674,25 @@ class NUEvent(Event):
         # Store and return the strategy dict
         self.strategy = get_strategy_details(strategy, time=self.time)
         return self.strategy
+
+    def get_details(self):
+        """Get a list of the event details for Slack messages."""
+        details = [
+            f'IVORN: {self.ivorn}',
+            f'Event time: {self.time.iso}'
+            f' _({(Time.now() - self.time).to(u.hour).value:.1f}h ago)_',
+            f'Notice time: {self.notice_time.iso}'
+            f' _({(Time.now() - self.notice_time).to(u.hour).value:.1f}h ago)_',
+        ]
+        # Add event properties
+        details += [
+            f'Signalness: {self.signalness:.0%} probability to be astrophysical in origin',
+            f'FAR: ~1 per {1 / self.far:.1f} yrs',
+        ]
+        # Add event location
+        details += [
+            f'Position: {self.coord.to_string("hmsdms")} ({self.coord.to_string()})',
+            f'Position error: {self.total_error:.3f}',
+        ]
+
+        return details

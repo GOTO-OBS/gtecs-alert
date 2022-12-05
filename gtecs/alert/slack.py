@@ -8,10 +8,10 @@ import astropy.units as u
 from astropy.coordinates import SkyCoord
 from astropy.time import Time
 
-import numpy as np
-
 from gtecs.common.slack import send_message
 from gtecs.obs import database as db
+
+import numpy as np
 
 from . import params
 
@@ -42,261 +42,184 @@ def send_slack_msg(text, channel=None, *args, **kwargs):
 
 def send_event_report(event, slack_channel=None):
     """Send a message to Slack with the event details and skymap."""
-    title = ['*Details for event {}*'.format(event.name)]
+    s = f'*Details for event {event.name}*\n'
 
-    # Basic details
-    details = ['IVORN: {}'.format(event.ivorn),
-               'Event time: {}'.format(event.time.iso),
-               ]
+    # Get list of details based on the event class
+    details = event.get_details()
+    s += '\n'.join(details)
 
-    # Extra details, depending on source type
-    extra_details = []
-    if event.type == 'GW' and event.group == 'CBC':
-        sorted_class = sorted(event.classification.keys(),
-                              key=lambda key: event.classification[key],
-                              reverse=True)
-        class_str = ', '.join(['{}:{:.1f}%'.format(key, event.classification[key] * 100)
-                              for key in sorted_class
-                              if event.classification[key] > 0.0005])
-        extra_details = ['Group: CBC',
-                         'FAR: ~1 per {:.1f} yrs'.format(1 / event.far / 3.154e+7),
-                         'Distance: {:.0f}+/-{:.0f} Mpc'.format(event.distance,
-                                                                event.distance_error),
-                         'Classification: {}'.format(class_str),
-                         'HasNS (if real): {:.0f}%'.format(event.properties['HasNS'] * 100),
-                         '90% probability area: {:.0f} sq deg'.format(event.contour_areas[0.9]),
-                         'GraceDB page: {}'.format(event.gracedb_url),
-                         ]
-    elif event.type == 'GW':
-        # Burst alerts, much less info
-        extra_details = ['Group: Burst',
-                         'FAR: ~1 per {:.1f} yrs'.format(1 / event.far / 3.154e+7),
-                         '90% probability area: {:.0f} sq deg'.format(event.contour_areas[0.9]),
-                         'GraceDB page: {}'.format(event.gracedb_url),
-                         ]
-    elif event.type == 'GW_RETRACTION':
-        # Note clearly it's a retraction event
-        extra_details = ['GraceDB page: {}'.format(event.gracedb_url),
-                         '*THIS IS A RETRACTION OF EVENT {}*'.format(event.id),
-                         ]
-    elif event.type == 'GRB':
-        # GRB events should have a given location
-        extra_details = ['Position: {} ({})'.format(event.coord.to_string('hmsdms'),
-                                                    event.coord.to_string()),
-                         'Position error: {:.3f}'.format(event.total_error),
-                         ]
-        if event.source == 'Fermi':
-            # Fermi events should have a duration parameter
-            extra_details += ['Duration: {}'.format(event.duration.capitalize()),
-                              ]
-    elif event.type == 'NU':
-        # NU events provide a given location
-        extra_details = ['Signalness: {:.0f}% probability to be astrophysical in origin'.format(
-                         event.signalness * 100),
-                         'FAR: ~1 per {:.1f} yrs'.format(1 / event.far),
-                         'Position: {} ({})'.format(event.coord.to_string('hmsdms'),
-                                                    event.coord.to_string()),
-                         'Position error: {:.3f}'.format(event.total_error),
-                         ]
-
-    details += extra_details
-
-    message_text = '\n'.join(title + details)
-
-    # Plot skymap
+    # Plot skymap (if it has one)
     filepath = None
     if event.skymap is not None:
-        # Some events (retractions) won't have skymaps
-        filename = event.name + '_skymap.png'
-        filepath = os.path.join(params.FILE_PATH, filename)
+        direc = os.path.join(params.FILE_PATH, 'plots')
+        if not os.path.exists(direc):
+            os.makedirs(direc)
+        filepath = os.path.join(direc, event.name + '_skymap.png')
         # Plot the centre of events that have one
+        # TODO: Improve the plot!
         if event.coord:
             event.skymap.plot(filename=filepath, coordinates=event.coord)
         else:
             event.skymap.plot(filename=filepath)
 
     # Send the message, with the skymap file attached
-    send_slack_msg(message_text, filepath=filepath, channel=slack_channel)
+    send_slack_msg(s, filepath=filepath, channel=slack_channel)
 
 
 def send_strategy_report(event, slack_channel=None):
     """Send a message to Slack with the event strategy details."""
-    s = '*Strategy for event {}*\n'.format(event.name)
+    if event.strategy is None:
+        return
 
-    # Strategy details
-    strategy = event.strategy
-    s += 'Strategy: `{}`\n'.format(strategy['strategy'])
+    s = f'*Strategy for event {event.name}*\n'
 
-    # Rank
-    s += 'Rank: {}\n'.format(strategy['rank'])
+    # Basic strategy
+    strategy = event.get_strategy()
+    s += f'Strategy: `{strategy["strategy"]}`\n'
+    s += f'Rank: {strategy["rank"]}\n'
 
     # Cadence
-    if isinstance(strategy['cadence'], str):
-        s += 'Cadence: `{}`\n'.format(strategy['cadence'])
-        cadence_dict = strategy['cadence_dict']
-        s += '- Number of visits: {}\n'.format(cadence_dict['num_todo'])
-        s += '- Time between visits (mins): {}\n'.format(cadence_dict['wait_time'])
-        s += '- Start time: {}\n'.format(cadence_dict['start_time'].iso)
-        s += '- Stop time: {}\n'.format(cadence_dict['stop_time'].iso)
-    else:
-        for i, cadence in enumerate(strategy['cadence']):
-            cadence_dict = strategy['cadence_dict'][i]
-            s += 'Cadence {}: `{}`\n'.format(i + 1, cadence)
-            s += '- Number of visits: {}\n'.format(cadence_dict['num_todo'])
-            s += '- Time between visits (mins): {}\n'.format(cadence_dict['wait_time'])
-            s += '- Start time: {}\n'.format(cadence_dict['start_time'].iso)
-            s += '- Stop time: {}\n'.format(cadence_dict['stop_time'].iso)
+    for i, cadence in enumerate(strategy['cadence']):
+        cadence_dict = strategy['cadence_dict'][i]
+        s += f'Cadence {i + 1}: `{cadence}`\n'
+        s += f'- Number of visits: {cadence_dict["num_todo"]}\n'
+        s += f'- Time between visits (hours): {cadence_dict["wait_hours"]}\n'
+        s += f'- Start time: {cadence_dict["start_time"].iso}\n'
+        s += f'- Stop time: {cadence_dict["stop_time"].iso}\n'
 
     # Constraints
-    s += 'Constraints: `{}`\n'.format(strategy['constraints'])
-    s += '- Min Alt: {}\n'.format(strategy['constraints_dict']['min_alt'])
-    s += '- Max Sun Alt: {}\n'.format(strategy['constraints_dict']['max_sunalt'])
-    s += '- Min Moon Sep: {}\n'.format(strategy['constraints_dict']['min_moonsep'])
-    s += '- Max Moon Phase: {}\n'.format(strategy['constraints_dict']['max_moon'])
+    s += f'Constraints: `{strategy["constraints"]}`\n'
+    s += f'- Min Alt: {strategy["constraints_dict"]["min_alt"]}\n'
+    s += f'- Max Sun Alt: {strategy["constraints_dict"]["max_sunalt"]}\n'
+    s += f'- Min Moon Sep: {strategy["constraints_dict"]["min_moonsep"]}\n'
+    s += f'- Max Moon Phase: {strategy["constraints_dict"]["max_moon"]}\n'
 
     # Exposure Sets
-    s += 'ExposureSets: `{}`\n'.format(strategy['exposure_sets'])
+    s += f'ExposureSets: `{strategy["exposure_sets"]}`\n'
     for expset in strategy['exposure_sets_dict']:
-        s += '- NumExp: {:.0f}  Filter: {}  ExpTime: {:.1f}s\n'.format(expset['num_exp'],
-                                                                       expset['filt'],
-                                                                       expset['exptime'],
-                                                                       )
+        s += f'- NumExp: {expset["num_exp"]:.0f}'
+        s += f'  Filter: {expset["filt"]}'
+        s += f'  ExpTime: {expset["exptime"]:.1f}s\n'
 
-    # On Grid
-    s += 'On Grid: {}\n'.format(strategy['on_grid'])
-    if strategy['on_grid']:
-        s += 'Tile number limit: {}\n'.format(strategy['tile_limit'])
-        s += 'Tile probability limit: {:.1f}%\n'.format(strategy['prob_limit'] * 100)
+    # Tiling
+    s += f'Tile number limit: {strategy["tile_limit"]}\n'
+    s += f'Tile probability limit: {strategy["prob_limit"]:.1%}\n'
 
     # Send the message
     send_slack_msg(s, channel=slack_channel)
 
 
-def send_database_report(event, slack_channel=None):
+def send_database_report(event, slack_channel=None, time=None):
     """Send a message to Slack with details of the database pointings and visibility."""
-    title = ['*Visibility for event {}*'.format(event.name)]
+    if time is None:
+        time = Time.now()
 
-    # Basic details
-    details = []
-    filepath = None
+    s = f'*Visibility for event {event.name}*\n'
     with db.open_session() as session:
-        # Query Event table entries
-        db_events = session.query(db.Event).filter(db.Event.name == event.name).all()
+        # Query Event table
+        db_event = session.query(db.Event).filter(db.Event.name == event.name).one_or_none()
+        if db_event is None:
+            # Uh-oh, send a warning message
+            s += '*ERROR: No matching entry found in database*\n'
+            send_slack_msg(s, channel=slack_channel)
+            return
+        s += f'Number of surveys found for this event: {len(db_event.surveys)}\n'
 
-        details += ['Number of entries in the events table: {}'.format(len(db_events))]
-
-        if len(db_events) == 0:
-            # Uh-oh
-            details += ['*ERROR: Nothing found in database*']
-        else:
-            # This event should be the latest added
-            db_event = db_events[-1]
-
-            # Get Mpointings
-            db_mpointings = db_event.mpointings
-
-            details += ['Number of targets for this event: {}'.format(len(db_mpointings))]
-
-            if len(db_mpointings) == 0:
-                # It might be because it's a retraction, so we've removed the previous pointings
-                if event.type == 'GW_RETRACTION':
-                    details += ['- Previous targets removed successfully']
-                # Or it might be because no tiles passed the filter
-                elif (event.strategy['on_grid'] and
-                        event.strategy['prob_limit'] > 0 and
-                        max(event.full_table['prob']) < event.strategy['prob_limit']):
-                    details += ['- No tiles passed the probability limit ' +
-                                '({:.1f}%, '.format(event.strategy['prob_limit'] * 100) +
-                                'highest had {:.1f}%)'.format(max(event.full_table['prob']) * 100),
-                                ]
-                else:
-                    # Uh-oh
-                    details += ['- *ERROR: No Mpointings found in database*']
-
+        # Send different alerts for retractions
+        if event.strategy is None:
+            # Check that all pointings for this event have been deleted
+            pending = [p for p in db_event.pointings
+                       if p.status_at_time(time) not in ['deleted', 'expired', 'completed']]
+            s += f'Number of pending pointings found for this event: {len(pending)}\n'
+            if len(pending) == 0:
+                s += '- Previous targets removed successfully\n'
             else:
-                # Get the Mpointing coordinates
-                ras = [mpointing.ra for mpointing in db_mpointings]
-                decs = [mpointing.dec for mpointing in db_mpointings]
-                coords = SkyCoord(ras, decs, unit='deg')
+                s += '- *ERROR: Retraction failed to remove previous targets*\n'
+            # That's it for retractions
+            send_slack_msg(s, channel=slack_channel)
+            return
 
-                for site in ['La Palma']:  # TODO: should be in params
-                    details += ['Predicted visibility from {}:'.format(site)]
+        # We are considering only the latest survey
+        db_survey = db_event.surveys[-1]
+        s += f'Latest survey: {db_survey.name}\n'
+        s += f'Number of targets for this survey: {len(db_survey.targets)}\n'
 
-                    # Create Astroplan Observer
-                    observer = Observer.at_site(site.lower().replace(' ', ''))
+        # Check non-retractions with no targets
+        if len(db_survey.targets) == 0:
+            # This might be because no tiles passed the filter
+            if (event.strategy['prob_limit'] > 0 and
+                    max(event.full_table['prob']) < event.strategy['prob_limit']):
+                s += '- No tiles passed the probability limit '
+                s += f'({event.strategy["prob_limit"]:.1%}, '
+                s += f'highest had {max(event.full_table["prob"]):.1%})\n'
+            else:
+                # Uh-oh, something went wrong when inserting?
+                s += '- *ERROR: No targets found in database*\n'
+            send_slack_msg(s, channel=slack_channel)
+            return
 
-                    # Create visibility constraints
-                    min_alt = float(event.strategy['constraints_dict']['min_alt']) * u.deg
-                    max_sunalt = float(event.strategy['constraints_dict']['max_sunalt']) * u.deg
-                    alt_constraint = AltitudeConstraint(min=min_alt)
-                    night_constraint = AtNightConstraint(max_solar_altitude=max_sunalt)
-                    constraints = [alt_constraint, night_constraint]
+        # We have at least 1 target, so we can consider the grid visibility
+        coords = SkyCoord([target.ra for target in db_survey.targets],
+                          [target.dec for target in db_survey.targets],
+                          unit='deg')
+        tiles = np.array([target.grid_tile.name for target in db_survey.targets])
 
-                    # Check visibility until the stop time
-                    if isinstance(event.strategy['cadence'], str):
-                        start_time = event.strategy['cadence_dict']['start_time']
-                        stop_time = event.strategy['cadence_dict']['stop_time']
-                    else:
-                        start_time = min(d['start_time'] for d in event.strategy['cadence_dict'])
-                        stop_time = max(d['stop_time'] for d in event.strategy['cadence_dict'])
-                    details += ['- Valid dates: {} to {}'.format(
-                        start_time.datetime.strftime('%Y-%m-%d'),
-                        stop_time.datetime.strftime('%Y-%m-%d'))]
+        # Create visibility plots
+        filepath = None
+        for site in ['La Palma']:  # TODO: should get sites from db
+            observer = Observer.at_site(site.lower().replace(' ', ''))
+            s += f'Predicted visibility from {site}:\n'
 
-                    if stop_time < Time.now():
-                        # The Event pointings will have expired
-                        delta = Time.now() - stop_time
-                        details[-1] += ' _(expired {:.1f} days ago)_'.format(delta.to('day').value)
+            # Find visibility constraints
+            min_alt = float(event.strategy['constraints_dict']['min_alt']) * u.deg
+            max_sunalt = float(event.strategy['constraints_dict']['max_sunalt']) * u.deg
+            alt_constraint = AltitudeConstraint(min=min_alt)
+            night_constraint = AtNightConstraint(max_solar_altitude=max_sunalt)
+            constraints = [alt_constraint, night_constraint]
+            start_time = min(d['start_time'] for d in event.strategy['cadence_dict'])
+            stop_time = max(d['stop_time'] for d in event.strategy['cadence_dict'])
+            s += '- Valid dates:'
+            s += f' {start_time.datetime.strftime("%Y-%m-%d")} to'
+            s += f' {stop_time.datetime.strftime("%Y-%m-%d")}'
+            if stop_time < Time.now():
+                # The pointings will have expired
+                delta = Time.now() - stop_time
+                s += f' _(expired {delta.to("day").value:.1f} days ago)_\n'
+            else:
+                s += '\n'
 
-                    # Find which Mpointings are visible
-                    mps_visible_mask = is_observable(constraints, observer, coords,
-                                                     time_range=[start_time, stop_time])
-                    if not event.strategy['on_grid']:
-                        # Report number of visible Mpointings
-                        details += ['- Targets visible during valid period: {}/{}'.format(
-                            sum(mps_visible_mask), len(db_mpointings))]
-                    else:
-                        # Get the number of unique tiles covered
-                        mp_tiles = np.array([mp.grid_tile.name for mp in db_mpointings])
-                        mp_tiles_all = sorted(set(mp_tiles))
+            # Find which event tiles are visible during the valid period
+            visible_mask = is_observable(constraints, observer, coords,
+                                         time_range=[start_time, stop_time])
+            event_tiles = sorted(set(tiles))
+            event_tiles_visible = sorted(set(tiles[visible_mask]))
+            s += '- Tiles visible during valid period:'
+            s += f' {len(event_tiles_visible)}/{len(event_tiles)}\n'
+            event_tiles_not_visible = sorted(set(tiles[np.invert(visible_mask)]))
 
-                        # Report number of visible tiles
-                        mp_tiles_visible = mp_tiles[mps_visible_mask]
-                        mp_tiles_visible = sorted(set(mp_tiles_visible))
-                        details += ['- Tiles visible during valid period: {}/{}'.format(
-                            len(mp_tiles_visible), len(mp_tiles_all))]
+            # Find the probability for all tiles and those visible
+            total_prob = event.grid.get_probability(event_tiles)
+            s += f'- Total probability in all tiles: {total_prob:.1%}\n'
+            visible_prob = event.grid.get_probability(event_tiles_visible)
+            s += f'- Probability in visible tiles: {visible_prob:.1%}\n'
 
-                        # Find the total probability for all tiles
-                        total_prob = event.grid.get_probability(list(mp_tiles_all)) * 100
-                        details += ['- Total probability in all tiles: {:.1f}%'.format(total_prob)]
+            # Also get which grid tiles are visible
+            grid_visible_mask = is_observable(constraints, observer, event.grid.coords,
+                                              time_range=[start_time, stop_time])
+            grid_tiles = np.array(event.grid.tilenames)
+            grid_tiles_not_visible = grid_tiles[np.invert(grid_visible_mask)]
 
-                        # Get visible mp tile names
-                        visible_prob = event.grid.get_probability(list(mp_tiles_visible)) * 100
-                        details += ['- Probability in visible tiles: {:.1f}%'.format(visible_prob)]
+            # Create a plot of the tiles, showing visibility tonight
+            # TODO: multiple sites? Need multiple plots or one combined?
+            # TODO: this could be much nicer!
+            filename = event.name + '_tiles.png'
+            filepath = os.path.join(params.FILE_PATH, filename)
+            event.grid.plot(filename=filepath,
+                            plot_skymap=True,
+                            highlight=[event_tiles_visible, event_tiles_not_visible],
+                            highlight_color=['blue', 'red'],
+                            color={tilename: '0.5' for tilename in grid_tiles_not_visible},
+                            )
 
-                        # Get non-visible mp tile names
-                        mps_notvisible_tonight_mask = np.invert(mps_visible_mask)
-                        mp_tiles_notvisible = mp_tiles[mps_notvisible_tonight_mask]
-                        mp_tiles_notvisible = sorted(set(mp_tiles_notvisible))
-
-                        # Get all non-visible tiles
-                        tiles_visible_mask = is_observable(constraints, observer, event.grid.coords,
-                                                           time_range=[start_time, stop_time])
-                        tiles_notvisible_mask = np.invert(tiles_visible_mask)
-                        tiles_notvisible = np.array(event.grid.tilenames)[tiles_notvisible_mask]
-
-                        # Create a plot of the tiles, showing visibility tonight
-                        # TODO: multiple sites? Need multiple plots or one combined?
-                        filename = event.name + '_tiles.png'
-                        filepath = os.path.join(params.FILE_PATH, filename)
-                        event.grid.plot(filename=filepath,
-                                        plot_skymap=True,
-                                        highlight=[mp_tiles_visible, mp_tiles_notvisible],
-                                        highlight_color=['blue', 'red'],
-                                        color={tilename: '0.5' for tilename in tiles_notvisible},
-                                        )
-
-    message_text = '\n'.join(title + details)
-
-    # Send the message, with the plot attached if one was generated
-    send_slack_msg(message_text, filepath=filepath, channel=slack_channel)
+        # Send the message with the plot attached
+        send_slack_msg(s, filepath=filepath, channel=slack_channel)

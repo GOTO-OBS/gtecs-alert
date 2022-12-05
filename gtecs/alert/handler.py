@@ -95,7 +95,7 @@ def event_handler(event, send_messages=False, log=None, time=None):
         if send_messages:
             log.debug('Sending Slack database report')
             try:
-                send_database_report(event)
+                send_database_report(event, time=time)
                 log.debug('Slack report sent')
             except Exception as err:
                 log.error('Error sending Slack report')
