@@ -5,11 +5,14 @@ import os
 from astroplan import AltitudeConstraint, AtNightConstraint, Observer, is_observable
 
 import astropy.units as u
-from astropy.coordinates import SkyCoord
 from astropy.time import Time
 
 from gtecs.common.slack import send_message
 from gtecs.obs import database as db
+
+import ligo.skymap.plot  # noqa: F401  (for extra projections)
+
+from matplotlib import pyplot as plt
 
 import numpy as np
 
@@ -48,30 +51,74 @@ def send_event_report(event, slack_channel=None):
     details = event.get_details()
     s += '\n'.join(details)
 
-    # Plot skymap (if it has one)
     filepath = None
     if event.skymap is not None:
+        # Create skymap plot
+        plt.figure(figsize=(8, 4), dpi=120, facecolor='white', tight_layout=True)
+        axes = plt.axes(projection='astro hours mollweide')
+        axes.grid()
+
+        # Plot the skymap data and contours
+        event.skymap.healpix.plot(axes, rasterize=False, cmap='cylon', cbar=False)
+        axes.contour_hpx(
+            event.skymap.contours / max(event.skymap.contours),
+            nested=event.skymap.is_nested,
+            levels=[0.5, 0.9],
+            colors='black', linewidths=0.5, linestyles=['dashed', 'solid'],
+            zorder=1.2,
+        )
+
+        # For small areas, add a marker
+        if event.coord and event.skymap.get_contour_area(0.9) < 10:
+            axes.scatter(
+                event.coord.ra.value, event.coord.dec.value,
+                transform=axes.get_transform('world'),
+                s=99, c='tab:blue', marker='*',
+                zorder=9,
+            )
+            axes.text(
+                event.coord.ra.value, event.coord.dec.value,
+                event.coord.to_string('hmsdms').replace(' ', '\n') + '\n',
+                transform=axes.get_transform('world'),
+                ha='center', va='bottom',
+                size='x-small',
+                zorder=12,
+            )
+
+        # Add text
+        axes.set_title(f'Skymap for {event.type} event {event.name}', y=1.06)
+        axes.text(0.5, 1.03, f'{event.ivorn}', fontsize=8, ha='center', transform=axes.transAxes)
+        axes.text(-0.03, -0.1, f'Detection time: {event.time.strftime("%Y-%m-%d %H:%M:%S")}',
+                  ha='left', va='bottom', transform=axes.transAxes)
+        if event.skymap.get_contour_area(0.9) < 10:
+            text = f'50% area: {event.skymap.get_contour_area(0.5):.2f} deg²\n'
+            text += f'90% area: {event.skymap.get_contour_area(0.9):.2f} deg²'
+        else:
+            text = f'50% area: {event.skymap.get_contour_area(0.5):.0f} deg²\n'
+            text += f'90% area: {event.skymap.get_contour_area(0.9):.0f} deg²'
+        axes.text(0.8, -0.1, text, ha='left', va='bottom', transform=axes.transAxes)
+
+        # Save
         direc = os.path.join(params.FILE_PATH, 'plots')
         if not os.path.exists(direc):
             os.makedirs(direc)
         filepath = os.path.join(direc, event.name + '_skymap.png')
-        # Plot the centre of events that have one
-        # TODO: Improve the plot!
-        if event.coord:
-            event.skymap.plot(filename=filepath, coordinates=event.coord)
-        else:
-            event.skymap.plot(filename=filepath)
+        plt.savefig(filepath)
+        plt.close(plt.gcf())
 
-    # Send the message, with the skymap file attached
+    # Send the message, with the skymap file attached (if it has one)
     send_slack_msg(s, filepath=filepath, channel=slack_channel)
 
 
 def send_strategy_report(event, slack_channel=None):
     """Send a message to Slack with the event strategy details."""
-    if event.strategy is None:
-        return
-
     s = f'*Strategy for event {event.name}*\n'
+
+    if event.strategy is None:
+        # Something is being run out-of-order
+        s += '*ERROR: No strategy defined*\n'
+        send_slack_msg(s, channel=slack_channel)
+        return
 
     # Basic strategy
     strategy = event.get_strategy()
@@ -148,10 +195,10 @@ def send_database_report(event, slack_channel=None, time=None):
         if len(db_survey.targets) == 0:
             # This might be because no tiles passed the filter
             if (event.strategy['prob_limit'] > 0 and
-                    max(event.full_table['prob']) < event.strategy['prob_limit']):
+                    max(event.tiles['prob']) < event.strategy['prob_limit']):
                 s += '- No tiles passed the probability limit '
                 s += f'({event.strategy["prob_limit"]:.1%}, '
-                s += f'highest had {max(event.full_table["prob"]):.1%})\n'
+                s += f'highest had {max(event.tiles["prob"]):.1%})\n'
             else:
                 # Uh-oh, something went wrong when inserting?
                 s += '- *ERROR: No targets found in database*\n'
@@ -159,67 +206,119 @@ def send_database_report(event, slack_channel=None, time=None):
             return
 
         # We have at least 1 target, so we can consider the grid visibility
-        coords = SkyCoord([target.ra for target in db_survey.targets],
-                          [target.dec for target in db_survey.targets],
-                          unit='deg')
-        tiles = np.array([target.grid_tile.name for target in db_survey.targets])
+        # Get info from the database here, so we can close the connection
+        survey_name = db_survey.name
+        event_tiles = np.array([target.grid_tile.name for target in db_survey.targets])
+        db_sites = session.query(db.Site).all()
+        sites = [site.location for site in db_sites]
+        site_names = [site.name for site in db_sites]
 
-        # Create visibility plots
-        filepath = None
-        for site in ['La Palma']:  # TODO: should get sites from db
-            observer = Observer.at_site(site.lower().replace(' ', ''))
-            s += f'Predicted visibility from {site}:\n'
+    # Find visibility constraints
+    min_alt = float(event.strategy['constraints_dict']['min_alt']) * u.deg
+    max_sunalt = float(event.strategy['constraints_dict']['max_sunalt']) * u.deg
+    alt_constraint = AltitudeConstraint(min=min_alt)
+    night_constraint = AtNightConstraint(max_solar_altitude=max_sunalt)
+    constraints = [alt_constraint, night_constraint]
+    start_time = min(d['start_time'] for d in event.strategy['cadence_dict'])
+    stop_time = max(d['stop_time'] for d in event.strategy['cadence_dict'])
+    s += 'Valid dates:'
+    s += f' {start_time.datetime.strftime("%Y-%m-%d")} to'
+    s += f' {stop_time.datetime.strftime("%Y-%m-%d")}'
+    if stop_time < Time.now():
+        # The pointings will have expired
+        delta = Time.now() - stop_time
+        s += f' _(expired {delta.to("day").value:.1f} days ago)_\n'
+    else:
+        s += '\n'
 
-            # Find visibility constraints
-            min_alt = float(event.strategy['constraints_dict']['min_alt']) * u.deg
-            max_sunalt = float(event.strategy['constraints_dict']['max_sunalt']) * u.deg
-            alt_constraint = AltitudeConstraint(min=min_alt)
-            night_constraint = AtNightConstraint(max_solar_altitude=max_sunalt)
-            constraints = [alt_constraint, night_constraint]
-            start_time = min(d['start_time'] for d in event.strategy['cadence_dict'])
-            stop_time = max(d['stop_time'] for d in event.strategy['cadence_dict'])
-            s += '- Valid dates:'
-            s += f' {start_time.datetime.strftime("%Y-%m-%d")} to'
-            s += f' {stop_time.datetime.strftime("%Y-%m-%d")}'
-            if stop_time < Time.now():
-                # The pointings will have expired
-                delta = Time.now() - stop_time
-                s += f' _(expired {delta.to("day").value:.1f} days ago)_\n'
-            else:
-                s += '\n'
+    total_prob = event.grid.get_probability(event_tiles)
+    s += f'Total probability in all tiles: {total_prob:.1%}\n'
 
-            # Find which event tiles are visible during the valid period
-            visible_mask = is_observable(constraints, observer, coords,
-                                         time_range=[start_time, stop_time])
-            event_tiles = sorted(set(tiles))
-            event_tiles_visible = sorted(set(tiles[visible_mask]))
-            s += '- Tiles visible during valid period:'
-            s += f' {len(event_tiles_visible)}/{len(event_tiles)}\n'
-            event_tiles_not_visible = sorted(set(tiles[np.invert(visible_mask)]))
+    # Create visibility plot
+    fig = plt.figure(figsize=(9, 4 * len(sites)), dpi=120, facecolor='white', tight_layout=True)
 
-            # Find the probability for all tiles and those visible
-            total_prob = event.grid.get_probability(event_tiles)
-            s += f'- Total probability in all tiles: {total_prob:.1%}\n'
-            visible_prob = event.grid.get_probability(event_tiles_visible)
-            s += f'- Probability in visible tiles: {visible_prob:.1%}\n'
+    for i, site in enumerate(sites):
+        observer = Observer(site)
+        site_name = site_names[i]
+        if site_name == 'Roque de los Muchachos, La Palma':
+            site_name = 'La Palma'
+        elif site_name == 'Siding Spring Observatory':
+            site_name = 'Siding Spring'
+        s += f'Predicted visibility from {site_name}:\n'
 
-            # Also get which grid tiles are visible
-            grid_visible_mask = is_observable(constraints, observer, event.grid.coords,
-                                              time_range=[start_time, stop_time])
-            grid_tiles = np.array(event.grid.tilenames)
-            grid_tiles_not_visible = grid_tiles[np.invert(grid_visible_mask)]
+        # Find which grid tiles are visible from this site
+        visible_mask = is_observable(constraints, observer, event.grid.coords,
+                                     time_range=[start_time, stop_time])
+        grid_tiles = np.array(event.grid.tilenames)
+        grid_tiles_vis = set(grid_tiles[visible_mask])
 
-            # Create a plot of the tiles, showing visibility tonight
-            # TODO: multiple sites? Need multiple plots or one combined?
-            # TODO: this could be much nicer!
-            filename = event.name + '_tiles.png'
-            filepath = os.path.join(params.FILE_PATH, filename)
-            event.grid.plot(filename=filepath,
-                            plot_skymap=True,
-                            highlight=[event_tiles_visible, event_tiles_not_visible],
-                            highlight_color=['blue', 'red'],
-                            color={tilename: '0.5' for tilename in grid_tiles_not_visible},
-                            )
+        # Now find which event tiles are visible
+        event_tiles_vis = set([t for t in event_tiles if t in grid_tiles_vis])
+        s += '- Tiles visible during valid period:'
+        s += f' {len(event_tiles_vis)}/{len(event_tiles)}\n'
 
-        # Send the message with the plot attached
-        send_slack_msg(s, filepath=filepath, channel=slack_channel)
+        # Find the probability for all tiles and those visible
+        visible_prob = event.grid.get_probability(event_tiles_vis)
+        s += f'- Probability in visible tiles: {visible_prob:.1%}\n'
+
+        # Add to plot
+        axes = plt.subplot(11 + len(sites) * 100 + i, projection='astro hours mollweide')
+
+        # Plot the tiles coloured by probability
+        t = event.grid.plot_tiles(
+            axes, array=event.grid.probs,
+            ec='none', alpha=0.8, cmap='cylon',
+            zorder=1,
+        )
+        t.set_clim(vmin=0, vmax=max(event.grid.probs))
+        event.grid.plot_tiles(axes, fc='none', ec='0.3', lw=0.1, zorder=1.2)
+
+        # Add the colorbar, formatting as a percentage
+        fig.colorbar(
+            t, ax=axes, fraction=0.02, pad=0.05,
+            # label='Tile contained probability',
+            format=lambda x, _: f'{x:.1%}' if max(event.grid.probs) < 0.1 else f'{x:.0%}',
+        )
+
+        # Add contours
+        axes.contour_hpx(
+            event.skymap.contours / max(event.skymap.contours),
+            nested=event.skymap.is_nested,
+            levels=[0.5, 0.9],
+            colors='black', linewidths=0.5, linestyles=['dashed', 'solid'],
+            zorder=1.15,
+        )
+
+        # Overcast non-visible tiles
+        alphas = [0 if t in grid_tiles_vis else 0.3 for t in grid_tiles]
+        event.grid.plot_tiles(axes, fc='0.5', ec='none', alpha=alphas, zorder=1.1)
+
+        # Add the tile outlines coloured by visibility
+        ec = ['tab:blue' if tilename in event_tiles_vis
+              else 'tab:red' if tilename in event_tiles
+              else 'none'
+              for tilename in grid_tiles]
+        event.grid.plot_tiles(axes, fc='none', ec=ec, lw=1, zorder=1.21)
+
+        # Add text
+        if i == 0:
+            axes.set_title(f'Tiling for survey {survey_name}', y=1.06)
+            text = f'Showing site visibility for {(stop_time-start_time).to(u.h).value:.1f}h '
+            text += f'starting {start_time.strftime("%Y-%m-%d %H:%M:%S")}'
+            axes.text(0.5, 1.03, text, fontsize=8, ha='center', transform=axes.transAxes)
+        axes.text(-0.03, -0.06, f'Site: {site_name}',
+                  ha='left', va='bottom', transform=axes.transAxes)
+        text = f'Visible tiles: {len(event_tiles_vis)}/{len(event_tiles)}\n'
+        text += f'Visible probability: {visible_prob:.1%}'
+        axes.text(0.78, -0.06, text, ha='left', va='bottom', transform=axes.transAxes)
+
+    # Save
+    direc = os.path.join(params.FILE_PATH, 'plots')
+    if not os.path.exists(direc):
+        os.makedirs(direc)
+    filepath = os.path.join(direc, event.name + '_tiles.png')
+    plt.savefig(filepath)
+    plt.close(plt.gcf())
+
+    # Send the message with the plot attached
+    send_slack_msg(s, filepath=filepath, channel=slack_channel)
