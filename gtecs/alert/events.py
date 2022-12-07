@@ -320,7 +320,7 @@ class GWEvent(Event):
             f'FAR: ~1 per {1 / self.far / 3.154e+7:.1f} yrs',
         ]
         # Add skymap info only if we have downloaded the skymap
-        if self.distance != np.inf:
+        if self.distance == np.inf:
             details += [
                 'Distance: UNKNOWN',
             ]
