@@ -198,7 +198,7 @@ class Sentinel:
                         self.interesting_events += 1
 
                         # Start a followup thread to wait for the skymap of Fermi events
-                        if self.event.source == 'Fermi':
+                        if event.source == 'Fermi':
                             try:
                                 # Might as well try once
                                 urlopen(event.skymap_url)
