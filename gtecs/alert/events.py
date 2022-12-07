@@ -190,12 +190,22 @@ class Event:
         if self.strategy is None or selection_contour is None:
             return self.tiles
 
-        # Select tiles to add to the database, depending on the event strategy
-        selected_tiles = self.grid.select_tiles(
-            contour=selection_contour,
-            max_tiles=self.strategy['tile_limit'],
-            min_tile_prob=self.strategy['prob_limit'],
-        )
+        # Limit tiles to add to the database
+        # First select only tiles covering the given contour level
+        mask = self.grid.contours < selection_contour
+
+        # Then limit the number of tiles, if given
+        if self.strategy['tile_limit'] is not None and sum(mask) > self.strategy['tile_limit']:
+            # Limit by probability above `tile_limit`th tile
+            min_tile_prob = sorted(self.grid.probs, reverse=True)[self.strategy['tile_limit']]
+            mask &= self.grid.probs > min_tile_prob
+
+        # Finally limit to tiles which contain more than a given probability
+        if self.strategy['prob_limit'] is not None:
+            mask &= self.grid.probs > self.strategy['prob_limit']
+
+        # Mask and return the selected tile table
+        selected_tiles = self.tiles[mask]
         selected_tiles.sort('prob')
         selected_tiles.reverse()
         return selected_tiles
