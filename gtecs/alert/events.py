@@ -178,10 +178,7 @@ class Event:
             self.grid.apply_skymap(self.skymap)
 
             # Sort and store the full table of tiles on the Event
-            tiles = self.grid.get_table()
-            tiles.sort('prob')
-            tiles.reverse()
-            self.tiles = tiles
+            self.tiles = self.grid.get_table()
 
         # If no selection or strategy then just return the full table
         # TODO: I hate having to get the strategy like this, it's just because of the GW distances
@@ -204,11 +201,8 @@ class Event:
         if self.strategy['prob_limit'] is not None:
             mask &= self.grid.probs > self.strategy['prob_limit']
 
-        # Mask and return the selected tile table
-        selected_tiles = self.tiles[mask]
-        selected_tiles.sort('prob')
-        selected_tiles.reverse()
-        return selected_tiles
+        # Return the masked table
+        return self.tiles[mask]
 
     def get_strategy(self):
         """Return default strategy."""

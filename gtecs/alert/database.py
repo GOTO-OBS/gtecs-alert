@@ -93,6 +93,8 @@ def add_to_database(event, time=None, log=None):
 
         # Get the masked tile table
         selected_tiles = event.get_tiles(grid, contour_level)
+        selected_tiles.sort('prob')
+        selected_tiles.reverse()
         log.debug('Masked tile table has {} entries'.format(len(selected_tiles)))
         if len(selected_tiles) < 1:
             log.warning('No tiles passed filtering, nothing to add to the database')
