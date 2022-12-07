@@ -82,6 +82,8 @@ class Event:
         self.skymap = None
         self.properties = {}
         self.strategy = None
+        self.grid = None
+        self.tiles = None
 
     def __repr__(self):
         return '{}(ivorn={})'.format(self.__class__.__name__, self.ivorn)
@@ -162,6 +164,41 @@ class Event:
     def get_skymap(self):
         """Return None."""
         return
+
+    def get_tiles(self, grid, selection_contour=None):
+        """Apply the Event skymap to the given grid and return a table of filtered tiles."""
+        if self.tiles is None:
+            # Apply the Event skymap to the grid
+            if self.skymap is None:
+                self.get_skymap()
+            if self.skymap is None:
+                # Can't get tiles if there's no skymap!
+                return
+            self.grid = grid
+            self.grid.apply_skymap(self.skymap)
+
+            # Sort and store the full table of tiles on the Event
+            tiles = self.grid.get_table()
+            tiles.sort('prob')
+            tiles.reverse()
+            self.tiles = tiles
+
+        # If no selection or strategy then just return the full table
+        # TODO: I hate having to get the strategy like this, it's just because of the GW distances
+        if self.strategy is None:
+            self.get_strategy()
+        if self.strategy is None or selection_contour is None:
+            return self.tiles
+
+        # Select tiles to add to the database, depending on the event strategy
+        selected_tiles = self.grid.select_tiles(
+            contour=selection_contour,
+            max_tiles=self.strategy['tile_limit'],
+            min_tile_prob=self.strategy['prob_limit'],
+        )
+        selected_tiles.sort('prob')
+        selected_tiles.reverse()
+        return selected_tiles
 
     def get_strategy(self):
         """Return default strategy."""

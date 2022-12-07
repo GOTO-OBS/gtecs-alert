@@ -28,44 +28,6 @@ def get_event(session, event):
     return db_event
 
 
-def get_grid_tiles(event, grid):
-    """Apply the Event skymap to the current grid and return a table of filtered tiles."""
-    # Apply the Event skymap to the grid
-    event.grid = grid
-    if not event.skymap:
-        event.get_skymap()
-    grid.apply_skymap(event.skymap)
-
-    # Chose the contour level.
-    # NOTE: The code below is rather preliminary, based of what's best for 4- or 8-UT systems.
-    # It needs simulating to find the optimal value.
-    if grid.tile_area < 20:
-        # GOTO-4
-        contour_level = 0.9
-    else:
-        # GOTO-8
-        contour_level = 0.95
-
-    # Get the table of tiles selected depending on the event
-    masked_table = grid.select_tiles(contour=contour_level,
-                                     max_tiles=event.strategy['tile_limit'],
-                                     min_tile_prob=event.strategy['prob_limit'],
-                                     )
-
-    # Sort the tables and store on the Event
-    masked_table.sort('prob')
-    masked_table.reverse()
-    event.masked_table = masked_table
-
-    # Also sort and store the full table
-    full_table = grid.get_table()
-    full_table.sort('prob')
-    full_table.reverse()
-    event.full_table = full_table
-
-    return masked_table
-
-
 def add_to_database(event, log, time=None):
     """Add the Event into the database."""
     if time is None:
@@ -112,11 +74,24 @@ def add_to_database(event, log, time=None):
         # Get the grid tiles from the skymap
         db_grid = db.get_current_grid(session)
         log.info('Applying to Grid {}'.format(db_grid.name))
-        tile_table = get_grid_tiles(event, db_grid.skygrid)
-        log.debug('Masked tile table has {} entries'.format(len(tile_table)))
-        if len(tile_table) < 1:
+        grid = db_grid.skygrid
+
+        # Chose the contour level
+        # NOTE: The code below is rather preliminary, based of what's best for 4- or 8-UT systems.
+        # It needs simulating to find the optimal value.
+        if grid.tile_area < 20:
+            # GOTO-4
+            contour_level = 0.9
+        else:
+            # GOTO-8
+            contour_level = 0.95
+
+        # Get the masked tile table
+        selected_tiles = event.get_tiles(grid, contour_level)
+        log.debug('Masked tile table has {} entries'.format(len(selected_tiles)))
+        if len(selected_tiles) < 1:
             log.warning('No tiles passed filtering, nothing to add to the database')
-            log.debug('Highest tile has {:.2f}%'.format(max(event.full_table['prob']) * 100))
+            log.debug('Highest tile has {:.2f}%'.format(max(event.tiles['prob']) * 100))
             return
 
         # Get the database User, or make it if it doesn't exist
@@ -124,7 +99,7 @@ def add_to_database(event, log, time=None):
 
         # Create Targets for each tile
         db_targets = []
-        for tile_name, _, _, tile_weight in tile_table:
+        for tile_name, _, _, tile_weight in selected_tiles:
             # Find the matching GridTile
             query = session.query(db.GridTile)
             query = query.filter(db.GridTile.grid == db_grid)
