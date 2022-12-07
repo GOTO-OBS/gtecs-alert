@@ -74,15 +74,15 @@ def event_handler(event, send_messages=False, log=None, time=None):
     if event.strategy is not None:  # Retractions have no strategy
         log.debug('Using strategy {}'.format(event.strategy['strategy']))
 
-    # Send Slack strategy report
-    if send_messages:
-        log.debug('Sending Slack strategy report')
-        try:
-            send_strategy_report(event)
-            log.debug('Slack report sent')
-        except Exception as err:
-            log.error('Error sending Slack report')
-            log.debug(err.__class__.__name__, exc_info=True)
+        # Send Slack strategy report
+        if send_messages:
+            log.debug('Sending Slack strategy report')
+            try:
+                send_strategy_report(event)
+                log.debug('Slack report sent')
+            except Exception as err:
+                log.error('Error sending Slack report')
+                log.debug(err.__class__.__name__, exc_info=True)
 
     # 4) Add the event into the GOTO observation database
     log.info('Inserting event {} into GOTO database'.format(event.name))
