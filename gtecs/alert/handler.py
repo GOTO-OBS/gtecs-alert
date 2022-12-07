@@ -88,7 +88,7 @@ def event_handler(event, send_messages=False, log=None, time=None):
     log.info('Inserting event {} into GOTO database'.format(event.name))
     try:
         log.debug('Adding to database')
-        add_to_database(event, log, time=time)
+        add_to_database(event, time, log)
         log.info('Database insertion complete')
 
         # Send Slack database report

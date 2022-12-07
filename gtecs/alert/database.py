@@ -1,5 +1,7 @@
 """Functions to add events into the GOTO Observation Database."""
 
+import logging
+
 from astropy import units as u
 from astropy.time import Time
 
@@ -28,10 +30,13 @@ def get_event(session, event):
     return db_event
 
 
-def add_to_database(event, log, time=None):
+def add_to_database(event, time=None, log=None):
     """Add the Event into the database."""
     if time is None:
         time = Time.now()
+    if log is None:
+        log = logging.getLogger('database')
+        log.setLevel(level=logging.DEBUG)
 
     with db.open_session() as session:
         # Get the database Event (or make one if it's new)
