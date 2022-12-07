@@ -363,7 +363,7 @@ class GWEvent(Event):
             ]
         else:
             details += [
-                f'Distance: {self.distance:.0f}+/-{self.distance_error:.0f} Mpc'
+                f'Distance: {self.distance:.0f}+/-{self.distance_error:.0f} Mpc',
                 f'90% probability area: {self.contour_areas[0.9]:.0f} sq deg'
             ]
         # Add classification info for CBC events
