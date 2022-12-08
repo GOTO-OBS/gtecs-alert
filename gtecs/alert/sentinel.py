@@ -185,16 +185,13 @@ class Sentinel:
                     # Call the event handler, which will return True if it was processed
                     # or False if it was ignored (e.g. test events, or no matching subclasses)
                     try:
-                        send_slack_msg('Sentinel is processing event {}'.format(event.ivorn))
                         processed = event_handler(event,
                                                   send_messages=params.ENABLE_SLACK,
                                                   log=self.log,
                                                   )
-
                     except Exception:
                         self.log.exception('Exception in event handler')
-                        send_slack_msg('Sentinel reports exception in event handler')
-                        return
+                        send_slack_msg('Exception in event handler for event {event.ivorn}')
 
                     if processed:
                         self.log.info('Event {} processed'.format(event.name))
