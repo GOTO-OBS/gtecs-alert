@@ -2,6 +2,7 @@
 
 import logging
 
+from . import params
 from . database import add_to_database
 from .slack import send_database_report, send_event_report, send_slack_msg, send_strategy_report
 
@@ -27,8 +28,7 @@ def event_handler(event, send_messages=False, log=None, time=None):
     Returns
     -------
     processed : bool
-        Will return True if the Event was processed (if event.interesting == True).
-        If the Event was not interesting then it will be ignored and return False.
+        Will return True if the Event was processed.
 
     """
     # Create a logger if one isn't given
@@ -39,11 +39,10 @@ def event_handler(event, send_messages=False, log=None, time=None):
     log.info('Handling Event {}'.format(event.ivorn))
 
     # 1) Check if it's an event we want to process, otherwise return here
-    if not event.interesting:
-        log.warning('Ignoring uninteresting event (type={}, role={})'.format(event.type,
-                                                                             event.role))
+    if event.type == 'unknown' or event.role in params.IGNORE_ROLES:
+        log.warning(f'Ignoring {event.type} {event.role} event')
         return False
-    log.info('Processing interesting {} Event {}'.format(event.type, event.name))
+    log.info('Processing {} Event {}'.format(event.type, event.name))
 
     # Send initial Slack report
     if send_messages:

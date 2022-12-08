@@ -19,7 +19,6 @@ import voeventdb.remote.apiv1 as vdb
 
 import voeventparse as vp
 
-from . import params
 from .strategy import get_strategy_details
 
 
@@ -72,10 +71,10 @@ class Event:
             self.contact = None
 
         # Set default attributes
-        # The subclasses for "interesting" events will overwrite these
-        self.notice = 'Unknown'
-        self.type = 'Unknown'
-        self.source = 'Unknown'
+        # Any subclass will overwrite these
+        self.notice = 'unknown'
+        self.type = 'unknown'
+        self.source = 'unknown'
         self.position = None
         self.coord = None
         self.target = None
@@ -140,15 +139,6 @@ class Event:
         with open(filepath, 'rb') as f:
             payload = f.read()
         return cls.from_payload(payload)
-
-    @property
-    def interesting(self):
-        """Check if this Event is classified as interesting."""
-        if self.type == 'Unknown':
-            return False
-        if self.role in params.IGNORE_ROLES:
-            return False
-        return True
 
     def archive(self, path):
         """Archive this event in the given directory."""

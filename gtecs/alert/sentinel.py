@@ -33,8 +33,8 @@ class Sentinel:
         self.running = False
         self.events_queue = []
         self.latest_event = None
+        self.received_events = 0
         self.processed_events = 0
-        self.interesting_events = 0
 
     def __del__(self):
         self.shutdown()
@@ -182,20 +182,23 @@ class Sentinel:
                     event.archive(path)
                     self.log.info('Archived to {}'.format(path))
 
-                    # If the event's not interesting we don't care
-                    if event.interesting:
-                        try:
-                            # Call the event handler
-                            send_slack_msg('Sentinel is processing event {}'.format(event.ivorn))
-                            event_handler(event, send_messages=params.ENABLE_SLACK, log=self.log)
+                    # Call the event handler, which will return True if it was processed
+                    # or False if it was ignored (e.g. test events, or no matching subclasses)
+                    try:
+                        send_slack_msg('Sentinel is processing event {}'.format(event.ivorn))
+                        processed = event_handler(event,
+                                                  send_messages=params.ENABLE_SLACK,
+                                                  log=self.log,
+                                                  )
 
-                        except Exception:
-                            self.log.exception('Exception in event handler')
-                            send_slack_msg('Sentinel reports exception in event handler')
-                            return
+                    except Exception:
+                        self.log.exception('Exception in event handler')
+                        send_slack_msg('Sentinel reports exception in event handler')
+                        return
 
-                        self.log.info('Interesting event {} processed'.format(event.name))
-                        self.interesting_events += 1
+                    if processed:
+                        self.log.info('Event {} processed'.format(event.name))
+                        self.processed_events += 1
 
                         # Start a followup thread to wait for the skymap of Fermi events
                         if event.source == 'Fermi':
@@ -212,7 +215,7 @@ class Sentinel:
                                     self.log.exception('Error in Fermi followup thread')
 
                     # Done!
-                    self.processed_events += 1
+                    self.received_events += 1
 
                 except Exception:
                     self.log.exception('Error handling event {}'.format(event.name))
