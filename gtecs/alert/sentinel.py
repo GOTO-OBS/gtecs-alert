@@ -258,13 +258,13 @@ class Sentinel:
         """Ingest an event payload."""
         event = Event.from_payload(payload)
         self.events_queue.append(event)
-        return 'Event {} added to queue'.format(event.name)
+        return 'Event added to queue'
 
     def ingest_from_file(self, filepath):
         """Ingest an event payload from a file."""
         event = Event.from_file(filepath)
         self.events_queue.append(event)
-        return 'Event {} added to queue'.format(event.name)
+        return 'Event added to queue'
 
     def ingest_from_ivorn(self, ivorn):
         """Ingest an event from its IVORN.
@@ -273,7 +273,7 @@ class Sentinel:
         """
         event = Event.from_ivorn(ivorn)
         self.events_queue.append(event)
-        return 'Event {} added to queue'.format(event.name)
+        return 'Event added to queue'
 
 
 def run():
