@@ -12,6 +12,8 @@ import Pyro4
 
 import gcn.voeventclient as pygcn
 
+from gcn_kafka import Consumer
+
 from gtecs.common import logging
 
 from . import params
@@ -44,7 +46,10 @@ class Sentinel:
         self.running = True
 
         # Start threads
-        t1 = threading.Thread(target=self._listener_thread)
+        if params.KAFKA_CLIENT_ID != 'unknown':  # TODO: Switch, or even have multiple?
+            t1 = threading.Thread(target=self._kafka_listener_thread)
+        else:
+            t1 = threading.Thread(target=self._socket_listener_thread)
         t1.daemon = True
         t1.start()
 
@@ -94,7 +99,7 @@ class Sentinel:
         self.running = False
 
     # Internal threads
-    def _listener_thread(self):
+    def _socket_listener_thread(self):
         """Connect to a VOEvent Transport Protocol server and listen for VOEvents.
 
         Based on PyGCN's listen function:
@@ -160,6 +165,60 @@ class Sentinel:
                 self.log.debug('', exc_info=True)
             else:
                 self.log.info('Closed socket connection')
+
+        self.log.info('Alert listener thread stopped')
+        return
+
+    def _kafka_listener_thread(self):
+        """Connect to a Kafka server and listen for VOEvents.
+
+        This uses GCN Kafka (https://github.com/nasa-gcn/gcn-kafka-python) which is built around
+        Confluent Kafka (https://github.com/confluentinc/confluent-kafka-python).
+
+        """
+        self.log.info('Alert listener thread started')
+
+        # This first while loop means the connection will be recreated if it fails.
+        while self.running:
+            # Create a Kafka Consumer
+            consumer = Consumer(client_id=params.KAFKA_CLIENT_ID,
+                                client_secret=params.KAFKA_CLIENT_SECRET
+                                )
+
+            # Subscribe to any notices we want
+            # TODO: Also params? Or we could get from Events?
+            #       For now just subscribe to everything...
+            all_topics = [t for t in consumer.list_topics().topics.keys() if 'voevent' in t]
+            consumer.subscribe(all_topics)
+
+            # This second loop will monitor the connection
+            try:
+                while self.running:
+                    msg = consumer.poll(1.0)
+                    if msg is None:
+                        # self.log.info('Waiting...')
+                        continue
+                    if msg.error():
+                        self.log.error(msg.error())
+                    else:
+                        # Handle the event
+                        payload = msg.value()
+                        event = Event.from_payload(payload)
+                        self.events_queue.append(event)
+            except KeyboardInterrupt:
+                pass
+            except Exception:
+                self.log.exception('Error in alert listener')
+            finally:
+                # Either the listener failed or self.running has been set to False
+                # Make sure the connection is closed nicely
+                try:
+                    consumer.close()
+                except Exception:
+                    self.log.error('Could not close consumer')
+                    self.log.debug('', exc_info=True)
+                else:
+                    self.log.info('Closed connection')
 
         self.log.info('Alert listener thread stopped')
         return
