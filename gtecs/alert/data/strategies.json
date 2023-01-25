@@ -1,0 +1,104 @@
+{
+    "DEFAULT": {
+        "rank": 309,
+        "cadence": "TWO_NIGHTS",
+        "constraints": "NORMAL",
+        "exposure_sets": "4x90L",
+        "tile_limit": 200,
+        "prob_limit": 0
+    },
+    "GW_CLOSE_NS": {
+        "rank": 2,
+        "cadence": "NO_DELAY",
+        "constraints": "LENIENT",
+        "exposure_sets": "4x90L",
+        "tile_limit": 200,
+        "prob_limit": 0
+    },
+    "GW_FAR_NS": {
+        "rank": 13,
+        "cadence": "NO_DELAY",
+        "constraints": "LENIENT",
+        "exposure_sets": "4x90L",
+        "tile_limit": 200,
+        "prob_limit": 0
+    },
+    "GW_CLOSE_BH": {
+        "rank": 24,
+        "cadence": "TWO_NIGHTS",
+        "constraints": "LENIENT",
+        "exposure_sets": "4x90L",
+        "tile_limit": 200,
+        "prob_limit": 0
+    },
+    "GW_FAR_BH": {
+        "rank": 105,
+        "cadence": "TWO_NIGHTS",
+        "constraints": "LENIENT",
+        "exposure_sets": "4x90L",
+        "tile_limit": 200,
+        "prob_limit": 0
+    },
+    "GW_BURST": {
+        "rank": 52,
+        "cadence": "NO_DELAY",
+        "constraints": "LENIENT",
+        "exposure_sets": "4x90L",
+        "tile_limit": 200,
+        "prob_limit": 0
+    },
+    "GRB_SWIFT": {
+        "rank": 207,
+        "cadence": [
+            "HAMMER_EARLY",
+            "FOLLOW_LATE"
+        ],
+        "constraints": "NORMAL",
+        "exposure_sets": "6x90LRGB",
+        "tile_limit": 4,
+        "prob_limit": 0.05
+    },
+    "GRB_FERMI": {
+        "rank": 218,
+        "cadence": "MANY_FIRST_ONE_SECOND",
+        "constraints": "NORMAL",
+        "exposure_sets": "4x90L",
+        "tile_limit": 5,
+        "prob_limit": 0.05
+    },
+    "GRB_FERMI_SHORT": {
+        "rank": 210,
+        "cadence": [
+            "HAMMER_EARLY",
+            "FOLLOW_LATE"
+        ],
+        "constraints": "NORMAL",
+        "exposure_sets": "6x90LRGB",
+        "tile_limit": 8,
+        "prob_limit": 0.005
+    },
+    "NU_ICECUBE_GOLD": {
+        "rank": 259,
+        "cadence": "TWO_FIRST_ONE_SECOND",
+        "constraints": "NORMAL",
+        "exposure_sets": "4x90L",
+        "tile_limit": 3,
+        "prob_limit": 0.05
+    },
+    "NU_ICECUBE_BRONZE": {
+        "rank": 269,
+        "cadence": "TWO_FIRST_ONE_SECOND",
+        "constraints": "NORMAL",
+        "exposure_sets": "4x90L",
+        "tile_limit": 3,
+        "prob_limit": 0.05
+    },
+    "NU_ICECUBE_CASCADE": {
+        "rank": 279,
+        "cadence": "TWO_FIRST_ONE_SECOND",
+        "constraints": "NORMAL",
+        "exposure_sets": "4x90L",
+        "tile_limit": 8,
+        "prob_limit": 0.005
+    }
+}

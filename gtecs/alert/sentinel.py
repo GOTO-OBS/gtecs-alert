@@ -1,4 +1,4 @@
-"""Functions for listening for VOEvents."""
+"""Class for listening for VOEvents."""
 
 import itertools
 import os
@@ -33,8 +33,8 @@ class Sentinel:
         self.running = False
         self.events_queue = []
         self.latest_event = None
+        self.received_events = 0
         self.processed_events = 0
-        self.interesting_events = 0
 
     def __del__(self):
         self.shutdown()
@@ -182,23 +182,23 @@ class Sentinel:
                     event.archive(path)
                     self.log.info('Archived to {}'.format(path))
 
-                    # If the event's not interesting we don't care
-                    if event.interesting:
-                        try:
-                            # Call the event handler
-                            send_slack_msg('Sentinel is processing event {}'.format(event.ivorn))
-                            event_handler(event, send_messages=params.ENABLE_SLACK, log=self.log)
+                    # Call the event handler, which will return True if it was processed
+                    # or False if it was ignored (e.g. test events, or no matching subclasses)
+                    try:
+                        processed = event_handler(event,
+                                                  send_messages=params.ENABLE_SLACK,
+                                                  log=self.log,
+                                                  )
+                    except Exception:
+                        self.log.exception('Exception in event handler')
+                        send_slack_msg('Exception in event handler for event {event.ivorn}')
 
-                        except Exception:
-                            self.log.exception('Exception in event handler')
-                            send_slack_msg('Sentinel reports exception in event handler')
-                            return
-
-                        self.log.info('Interesting event {} processed'.format(event.name))
-                        self.interesting_events += 1
+                    if processed:
+                        self.log.info('Event {} processed'.format(event.name))
+                        self.processed_events += 1
 
                         # Start a followup thread to wait for the skymap of Fermi events
-                        if self.event.source == 'Fermi':
+                        if event.source == 'Fermi':
                             try:
                                 # Might as well try once
                                 urlopen(event.skymap_url)
@@ -212,7 +212,7 @@ class Sentinel:
                                     self.log.exception('Error in Fermi followup thread')
 
                     # Done!
-                    self.processed_events += 1
+                    self.received_events += 1
 
                 except Exception:
                     self.log.exception('Error handling event {}'.format(event.name))
@@ -255,13 +255,13 @@ class Sentinel:
         """Ingest an event payload."""
         event = Event.from_payload(payload)
         self.events_queue.append(event)
-        return 'Event {} added to queue'.format(event.name)
+        return 'Event added to queue'
 
     def ingest_from_file(self, filepath):
         """Ingest an event payload from a file."""
         event = Event.from_file(filepath)
         self.events_queue.append(event)
-        return 'Event {} added to queue'.format(event.name)
+        return 'Event added to queue'
 
     def ingest_from_ivorn(self, ivorn):
         """Ingest an event from its IVORN.
@@ -270,7 +270,7 @@ class Sentinel:
         """
         event = Event.from_ivorn(ivorn)
         self.events_queue.append(event)
-        return 'Event {} added to queue'.format(event.name)
+        return 'Event added to queue'
 
 
 def run():

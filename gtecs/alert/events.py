@@ -6,6 +6,7 @@ from urllib.request import urlopen
 
 from astroplan import FixedTarget
 
+import astropy.units as u
 from astropy.coordinates import Angle, SkyCoord
 from astropy.time import Time
 from astropy.utils.data import download_file
@@ -18,57 +19,10 @@ import voeventdb.remote.apiv1 as vdb
 
 import voeventparse as vp
 
-from . import params
-from .strategy import get_event_strategy
+from .strategy import get_strategy_details
 
 
-# Define interesting events we want to process
-# Primary key is the GCN Packet_Type
-# This should be in params
-EVENT_DICTIONARY = {163: {'notice_type': 'LVC_EARLY_WARNING',
-                          'event_type': 'GW',
-                          'source': 'LVC',
-                          },
-                    150: {'notice_type': 'LVC_PRELIMINARY',
-                          'event_type': 'GW',
-                          'source': 'LVC',
-                          },
-                    151: {'notice_type': 'LVC_INITIAL',
-                          'event_type': 'GW',
-                          'source': 'LVC',
-                          },
-                    152: {'notice_type': 'LVC_UPDATE',
-                          'event_type': 'GW',
-                          'source': 'LVC',
-                          },
-                    164: {'notice_type': 'LVC_RETRACTION',
-                          'event_type': 'GW_RETRACTION',
-                          'source': 'LVC',
-                          },
-                    115: {'notice_type': 'FERMI_GBM_FIN_POS',
-                          'event_type': 'GRB',
-                          'source': 'Fermi',
-                          },
-                    61: {'notice_type': 'SWIFT_BAT_GRB_POS',
-                         'event_type': 'GRB',
-                         'source': 'Swift',
-                         },
-                    173: {'notice_type': 'ICECUBE_ASTROTRACK_GOLD',
-                          'event_type': 'NU',
-                          'source': 'IceCube',
-                          },
-                    174: {'notice_type': 'ICECUBE_ASTROTRACK_BRONZE',
-                          'event_type': 'NU',
-                          'source': 'IceCube',
-                          },
-                    176: {'notice_type': 'ICECUBE_CASCADE',
-                          'event_type': 'NU',
-                          'source': 'IceCube',
-                          },
-                    }
-
-
-class Event(object):
+class Event:
     """A class to represent a single VOEvent.
 
     Some Events are better represented as one of the more specialised subclasses.
@@ -81,17 +35,16 @@ class Event(object):
     """
 
     def __init__(self, payload):
-        # Store the creation time
         self.creation_time = Time.now()
 
-        # Store the payload
-        self.payload = payload
-
         # Load the payload using voeventparse
-        self.voevent = vp.loads(self.payload)
+        self.payload = payload
+        try:
+            self.voevent = vp.loads(payload)
+        except Exception as err:
+            raise ValueError('Invalid payload') from err
 
-        # Get key attributes:
-        # IVORN
+        # Store and format IVORN
         self.ivorn = self.voevent.attrib['ivorn']
         # Using the official IVOA terms (ivo://authorityID/resourceKey#local_ID):
         self.authorityID = self.ivorn.split('/')[2]
@@ -102,37 +55,34 @@ class Event(object):
         self.publisher = self.resourceKey
         self.title = self.local_ID
 
-        # Role (observation/test/...)
+        # Key attributes
+        self.packet_type = self._get_packet_type(payload)
         self.role = self.voevent.attrib['role']
-
-        # Event time
-        event_time = vp.convenience.get_event_time_as_utc(self.voevent, index=0)
-        if event_time:
-            self.time = Time(event_time)
-        else:
+        try:
+            self.time = Time(vp.convenience.get_event_time_as_utc(self.voevent, index=0))
+        except Exception:
             # Some test events don't have times
             self.time = None
-
-        # Contact email
+        self.notice_time = Time(str(self.voevent.Who.Date))
+        self.author = str(self.voevent.Who.Author.contactName)
         try:
-            self.contact = self.voevent.Who.Author.contactEmail
+            self.contact = str(self.voevent.Who.Author.contactEmail)
         except AttributeError:
             self.contact = None
 
-        # GCN packet type
-        self.packet_type = self._get_packet_type(payload)
-
         # Set default attributes
-        # The subclasses for "interesting" events will overwrite these
-        self.notice = 'Unknown'
-        self.type = 'Unknown'
-        self.source = 'Unknown'
+        # Any subclass will overwrite these
+        self.notice = 'unknown'
+        self.type = 'unknown'
+        self.source = 'unknown'
         self.position = None
         self.coord = None
         self.target = None
         self.skymap = None
         self.properties = {}
         self.strategy = None
+        self.grid = None
+        self.tiles = None
 
     def __repr__(self):
         return '{}(ivorn={})'.format(self.__class__.__name__, self.ivorn)
@@ -149,30 +99,26 @@ class Event(object):
             packet_type = None
         return packet_type
 
+    @staticmethod
+    def _get_class(payload):
+        """Get the correct class of Event by trying each subclass."""
+        subclasses = [GWEvent, GWRetractionEvent, GRBEvent, NUEvent]
+        for subclass in subclasses:
+            try:
+                return subclass(payload)
+            except ValueError:
+                pass
+        return Event(payload)
+
     @classmethod
     def from_payload(cls, payload):
         """Create an Event from a VOEvent payload."""
-        # Chose a more detailed subclass based on GCN Packet Type, if there is one
-        packet_type = cls._get_packet_type(payload)
-        if not packet_type or packet_type not in EVENT_DICTIONARY:
-            # Not a GCN, or not a recognised packet type
-            event_class = Event
-        else:
-            event_type = EVENT_DICTIONARY[packet_type]['event_type']
-            if event_type == 'GW':
-                event_class = GWEvent
-            elif event_type == 'GW_RETRACTION':
-                event_class = GWRetractionEvent
-            elif event_type == 'GRB':
-                event_class = GRBEvent
-            elif event_type == 'NU':
-                event_class = NUEvent
-            else:
-                # This shouldn't happen?
-                event_class = Event
-
-        # Create and return the instance
-        return event_class(payload)
+        event = cls._get_class(payload)
+        if cls != Event and cls != event.__class__:
+            raise ValueError('Event subtype mismatch (`{}` detected)'.format(
+                             event.__class__.__name__
+                             ))
+        return event
 
     @classmethod
     def from_ivorn(cls, ivorn):
@@ -194,53 +140,103 @@ class Event(object):
             payload = f.read()
         return cls.from_payload(payload)
 
-    @property
-    def interesting(self):
-        """Check if this Event is classified as interesting."""
-        if self.type == 'Unknown':
-            return False
-        if self.role in params.IGNORE_ROLES:
-            return False
-        return True
-
     def archive(self, path):
         """Archive this event in the given directory."""
         if not os.path.exists(path):
             os.mkdir(path)
 
         filename = quote_plus(self.ivorn)
-        savepath = os.path.join(path, filename)
-        with open(savepath, 'wb') as f:
+        out_path = os.path.join(path, filename)
+        with open(out_path, 'wb') as f:
             f.write(self.payload)
-        return savepath
+        return out_path
+
+    def get_skymap(self):
+        """Return None."""
+        return
+
+    def get_tiles(self, grid, selection_contour=None):
+        """Apply the Event skymap to the given grid and return a table of filtered tiles."""
+        if self.tiles is None:
+            # Apply the Event skymap to the grid
+            if self.skymap is None:
+                self.get_skymap()
+            if self.skymap is None:
+                # Can't get tiles if there's no skymap!
+                return
+            self.grid = grid
+            self.grid.apply_skymap(self.skymap)
+
+            # Sort and store the full table of tiles on the Event
+            self.tiles = self.grid.get_table()
+
+        # If no selection or strategy then just return the full table
+        # TODO: I hate having to get the strategy like this, it's just because of the GW distances
+        if self.strategy is None:
+            self.get_strategy()
+        if self.strategy is None or selection_contour is None:
+            return self.tiles
+
+        # Limit tiles to add to the database
+        # First select only tiles covering the given contour level
+        mask = self.grid.contours < selection_contour
+
+        # Then limit the number of tiles, if given
+        if self.strategy['tile_limit'] is not None and sum(mask) > self.strategy['tile_limit']:
+            # Limit by probability above `tile_limit`th tile
+            min_tile_prob = sorted(self.grid.probs, reverse=True)[self.strategy['tile_limit']]
+            mask &= self.grid.probs > min_tile_prob
+
+        # Finally limit to tiles which contain more than a given probability
+        if self.strategy['prob_limit'] is not None:
+            mask &= self.grid.probs > self.strategy['prob_limit']
+
+        # Return the masked table
+        return self.tiles[mask]
 
     def get_strategy(self):
-        """Get the event observing strategy."""
-        self.strategy = get_event_strategy(self)
+        """Return default strategy."""
+        self.strategy = get_strategy_details()
         return self.strategy
+
+    def get_details(self):
+        """Get a list of the event details for Slack messages."""
+        details = [
+            f'IVORN: {self.ivorn}',
+            f'Event time: {self.time.iso}'
+            f' _({(Time.now() - self.time).to(u.hour).value:.1f}h ago)_',
+            f'Notice time: {self.notice_time.iso}'
+            f' _({(Time.now() - self.notice_time).to(u.hour).value:.1f}h ago)_',
+        ]
+        return details
 
 
 class GWEvent(Event):
     """A class to represent a Gravitational Wave Event."""
 
+    VALID_PACKET_TYPES = {
+        163: 'LVC_EARLY_WARNING',
+        150: 'LVC_PRELIMINARY',
+        151: 'LVC_INITIAL',
+        152: 'LVC_UPDATE',
+    }
+
     def __init__(self, payload):
         super().__init__(payload)
+        if self.packet_type not in self.VALID_PACKET_TYPES:
+            raise ValueError(f'GCN packet type {self.packet_type} not valid for this event class')
+        self.notice = self.VALID_PACKET_TYPES[self.packet_type]
 
         # Get XML param dicts
         # NB: you can't store these on the Event because they're unpickleable.
         top_params = vp.get_toplevel_params(self.voevent)
         group_params = vp.get_grouped_params(self.voevent)
 
-        # Default params
-        self.notice = EVENT_DICTIONARY[self.packet_type]['notice_type']
+        # Basic attributes
         self.type = 'GW'
-        self.source = EVENT_DICTIONARY[self.packet_type]['source']
-
-        # Get the event ID (e.g. S190510g)
-        self.id = top_params['GraceID']['value']
-
-        # Create our own event name (e.g. LVC_S190510g)
-        self.name = '{}_{}'.format(self.source, self.id)
+        self.source = 'LVC'
+        self.id = top_params['GraceID']['value']  # e.g. S190510g
+        self.name = '{}_{}'.format(self.source, self.id)  # e.g. LVC_S190510g
 
         # Get info from the VOEvent
         # See https://emfollow.docs.ligo.org/userguide/content.html#notice-contents
@@ -310,54 +306,160 @@ class GWEvent(Event):
 
         return self.skymap
 
+    def get_strategy(self):
+        """Get the event observing strategy."""
+        if self.strategy:
+            return self.strategy
+
+        # Decide which strategy to use
+        if self.group == 'CBC':
+            if self.properties['HasNS'] > 0.25:
+                if self.distance < 400:
+                    strategy = 'GW_CLOSE_NS'
+                else:
+                    # If the skymap hasn't been downloaded yet then we won't know the distance.
+                    # It gets set to infinity, so it will default to the FAR strategy.
+                    # TODO: we should raise a warning here?
+                    strategy = 'GW_FAR_NS'
+            else:
+                if self.distance < 100:
+                    strategy = 'GW_CLOSE_BH'
+                else:
+                    # TODO: Same here as above
+                    strategy = 'GW_FAR_BH'
+        elif self.group == 'Burst':
+            strategy = 'GW_BURST'
+        else:
+            raise ValueError(f'Cannot determine observing strategy for group "{self.group}"')
+
+        # Store and return the strategy dict
+        self.strategy = get_strategy_details(strategy, time=self.time)
+        return self.strategy
+
+    def get_details(self):
+        """Get a list of the event details for Slack messages."""
+        details = [
+            f'IVORN: {self.ivorn}',
+            f'Event time: {self.time.iso}'
+            f' _({(Time.now() - self.time).to(u.hour).value:.1f}h ago)_',
+            f'Notice time: {self.notice_time.iso}'
+            f' _({(Time.now() - self.notice_time).to(u.hour).value:.1f}h ago)_',
+        ]
+        # Add event properties
+        details += [
+            f'Group: {self.group}',
+            f'FAR: ~1 per {1 / self.far / 3.154e+7:.1f} yrs',
+        ]
+        # Add skymap info only if we have downloaded the skymap
+        if self.distance == np.inf:
+            details += [
+                'Distance: UNKNOWN',
+            ]
+        else:
+            details += [
+                f'Distance: {self.distance:.0f}+/-{self.distance_error:.0f} Mpc',
+                f'90% probability area: {self.contour_areas[0.9]:.0f} sq deg'
+            ]
+        # Add classification info for CBC events
+        if self.group == 'CBC':
+            sorted_class = sorted(
+                self.classification.keys(),
+                key=lambda key: self.classification[key],
+                reverse=True,
+            )
+            class_list = [
+                f'{key}:{self.classification[key]:.1%}'
+                for key in sorted_class
+                if self.classification[key] > 0.0005
+            ]
+            details += [
+                f'Classification: {", ".join(class_list)}',
+                f'HasNS (if real): {self.properties["HasNS"]:.0%}',
+            ]
+        details += [
+            f'GraceDB page: {self.gracedb_url}',
+        ]
+
+        return details
+
 
 class GWRetractionEvent(Event):
     """A class to represent a Gravitational Wave Retraction alert."""
 
+    VALID_PACKET_TYPES = {
+        164: 'LVC_RETRACTION',
+    }
+
     def __init__(self, payload):
         super().__init__(payload)
+        if self.packet_type not in self.VALID_PACKET_TYPES:
+            raise ValueError(f'GCN packet type {self.packet_type} not valid for this event class')
+        self.notice = self.VALID_PACKET_TYPES[self.packet_type]
 
         # Get XML param dicts
         # NB: you can't store these on the Event because they're unpickleable.
         top_params = vp.get_toplevel_params(self.voevent)
 
-        # Default params
-        self.notice = EVENT_DICTIONARY[self.packet_type]['notice_type']
+        # Basic attributes
         self.type = 'GW_RETRACTION'
-        self.source = EVENT_DICTIONARY[self.packet_type]['source']
-
-        # Get the event ID (e.g. S190510g)
-        self.id = top_params['GraceID']['value']
-
-        # Create our own event name (e.g. LVC_S190510g)
-        self.name = '{}_{}'.format(self.source, self.id)
+        self.source = 'LVC'
+        self.id = top_params['GraceID']['value']  # e.g. S190510g
+        self.name = '{}_{}'.format(self.source, self.id)  # e.g. LVC_S190510g
 
         # Get info from the VOEvent
         # Retractions have far fewer params
         self.gracedb_url = top_params['EventPage']['value']
 
+    def get_skymap(self):
+        """Return None."""
+        return
+
+    def get_strategy(self):
+        """Return None."""
+        return
+
+    def get_details(self):
+        """Get a list of the event details for Slack messages."""
+        details = [
+            f'IVORN: {self.ivorn}',
+            f'Event time: {self.time.iso}'
+            f' _({(Time.now() - self.time).to(u.hour).value:.1f}h ago)_',
+            f'Notice time: {self.notice_time.iso}'
+            f' _({(Time.now() - self.notice_time).to(u.hour).value:.1f}h ago)_',
+        ]
+        # Nothing much to add, just note clearly it's a retraction event
+        details += [
+            f'GraceDB page: {self.gracedb_url}',
+            f'*THIS IS A RETRACTION OF EVENT {self.id}*',
+        ]
+
+        return details
+
 
 class GRBEvent(Event):
     """A class to represent a Gamma-Ray Burst Event."""
 
+    VALID_PACKET_TYPES = {
+        115: 'FERMI_GBM_FIN_POS',
+        61: 'SWIFT_BAT_GRB_POS',
+    }
+
     def __init__(self, payload):
         super().__init__(payload)
+        if self.packet_type not in self.VALID_PACKET_TYPES:
+            raise ValueError(f'GCN packet type {self.packet_type} not valid for this event class')
+        self.notice = self.VALID_PACKET_TYPES[self.packet_type]
 
         # Get XML param dicts
         # NB: you can't store these on the Event because they're unpickleable.
         top_params = vp.get_toplevel_params(self.voevent)
         group_params = vp.get_grouped_params(self.voevent)
 
-        # Default params
-        self.notice = EVENT_DICTIONARY[self.packet_type]['notice_type']
+        # Basic attributes
         self.type = 'GRB'
-        self.source = EVENT_DICTIONARY[self.packet_type]['source']
-
-        # Get the event ID (e.g. 579943502)
-        self.id = top_params['TrigID']['value']
-
-        # Create our own event name (e.g. Fermi_579943502)
-        self.name = '{}_{}'.format(self.source, self.id)
+        self.source = self.notice.split('_')[0].capitalize()
+        self.id = top_params['TrigID']['value']  # e.g. 579943502
+        self.name = '{}_{}'.format(self.source, self.id)  # e.g. Fermi_579943502
 
         # Get properties from the VOEvent
         if self.source == 'Fermi':
@@ -447,12 +549,63 @@ class GRBEvent(Event):
 
         return self.skymap
 
+    def get_strategy(self):
+        """Get the event observing strategy."""
+        if self.strategy:
+            return self.strategy
+
+        # Decide which strategy to use
+        if self.source == 'Swift':
+            strategy = 'GRB_SWIFT'
+        elif self.source == 'Fermi':
+            if self.duration.lower() == 'short':
+                strategy = 'GRB_FERMI_SHORT'
+            else:
+                strategy = 'GRB_FERMI'
+        else:
+            raise ValueError(f'Cannot determine observing strategy for source "{self.source}"')
+
+        # Store and return the strategy dict
+        self.strategy = get_strategy_details(strategy, time=self.time)
+        return self.strategy
+
+    def get_details(self):
+        """Get a list of the event details for Slack messages."""
+        details = [
+            f'IVORN: {self.ivorn}',
+            f'Event time: {self.time.iso}'
+            f' _({(Time.now() - self.time).to(u.hour).value:.1f}h ago)_',
+            f'Notice time: {self.notice_time.iso}'
+            f' _({(Time.now() - self.notice_time).to(u.hour).value:.1f}h ago)_',
+        ]
+        # Add event location
+        details += [
+            f'Position: {self.coord.to_string("hmsdms")} ({self.coord.to_string()})',
+            f'Position error: {self.total_error:.3f}',
+        ]
+        if self.source == 'Fermi':
+            # Add duration (long/short) for Fermi events
+            details += [
+                f'Duration: {self.duration.capitalize()}',
+            ]
+
+        return details
+
 
 class NUEvent(Event):
     """A class to represent a Neutrino (NU) Event."""
 
+    VALID_PACKET_TYPES = {
+        173: 'ICECUBE_ASTROTRACK_GOLD',
+        174: 'ICECUBE_ASTROTRACK_BRONZE',
+        176: 'ICECUBE_CASCADE',
+    }
+
     def __init__(self, payload):
         super().__init__(payload)
+        if self.packet_type not in self.VALID_PACKET_TYPES:
+            raise ValueError(f'GCN packet type {self.packet_type} not valid for this event class')
+        self.notice = self.VALID_PACKET_TYPES[self.packet_type]
 
         # Get XML param dicts
         # NB: you can't store these on the Event because they're unpickleable.
@@ -460,15 +613,10 @@ class NUEvent(Event):
         # group_params = vp.get_grouped_params(self.voevent)
 
         # Default params
-        self.notice = EVENT_DICTIONARY[self.packet_type]['notice_type']
-        self.type = EVENT_DICTIONARY[self.packet_type]['event_type']
-        self.source = EVENT_DICTIONARY[self.packet_type]['source']
-
-        # Get the run and event ID (e.g. 13311922683750)
-        self.id = top_params['AMON_ID']['value']
-
-        # Create our own event name (e.g. ICECUBE_13311922683750)
-        self.name = '{}_{}'.format(self.source, self.id)
+        self.type = 'NU'
+        self.source = 'IceCube'
+        self.id = top_params['AMON_ID']['value']  # e.g. 13311922683750
+        self.name = '{}_{}'.format(self.source, self.id)  # e.g. IceCube_13311922683750
 
         # Get info from the VOEvent
         # signalness: the probability this is an astrophysical signal relative to backgrounds
@@ -538,3 +686,44 @@ class NUEvent(Event):
             self.contour_areas[contour] = self.skymap.get_contour_area(contour)
 
         return self.skymap
+
+    def get_strategy(self):
+        """Get the event observing strategy."""
+        if self.strategy:
+            return self.strategy
+
+        # Decide which strategy to use
+        if self.notice == 'ICECUBE_ASTROTRACK_GOLD':
+            strategy = 'NU_ICECUBE_GOLD'
+        elif self.notice == 'ICECUBE_ASTROTRACK_BRONZE':
+            strategy = 'NU_ICECUBE_BRONZE'
+        elif self.notice == 'ICECUBE_CASCADE':
+            strategy = 'NU_ICECUBE_CASCADE'
+        else:
+            raise ValueError(f'Cannot determine observing strategy for notice "{self.notice}"')
+
+        # Store and return the strategy dict
+        self.strategy = get_strategy_details(strategy, time=self.time)
+        return self.strategy
+
+    def get_details(self):
+        """Get a list of the event details for Slack messages."""
+        details = [
+            f'IVORN: {self.ivorn}',
+            f'Event time: {self.time.iso}'
+            f' _({(Time.now() - self.time).to(u.hour).value:.1f}h ago)_',
+            f'Notice time: {self.notice_time.iso}'
+            f' _({(Time.now() - self.notice_time).to(u.hour).value:.1f}h ago)_',
+        ]
+        # Add event properties
+        details += [
+            f'Signalness: {self.signalness:.0%} probability to be astrophysical in origin',
+            f'FAR: ~1 per {1 / self.far:.1f} yrs',
+        ]
+        # Add event location
+        details += [
+            f'Position: {self.coord.to_string("hmsdms")} ({self.coord.to_string()})',
+            f'Position error: {self.total_error:.3f}',
+        ]
+
+        return details

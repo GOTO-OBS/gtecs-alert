@@ -1,0 +1,268 @@
+#!/usr/bin/env python3
+"""A backup script for processing gravitational-wave events."""
+
+import sys
+
+from astropy import units as u
+from astropy.time import Time
+
+from gototile.skymap import SkyMap
+
+from gtecs.common import logging
+from gtecs.common.system import get_pid, make_pid_file
+from gtecs.obs import database as db
+
+import voeventdb.remote.apiv1 as vdb
+
+import voeventparse as vp
+
+
+def get_skymap(log):
+    """Try and get the LVC sky map."""
+    # 1) Check the archive for the latest event
+    log.info('Checking for LVC GCNs in the 4pisky database...')
+    try:
+        event_list = vdb.list_ivorn(
+            filters={vdb.FilterKeys.role: 'observation',
+                     vdb.FilterKeys.ivorn_contains: 'LVC',
+                     },
+            order=vdb.OrderValues.author_datetime_desc,
+            n_max=1,
+        )
+        log.info('VOEventDB returned: {}'.format(event_list))
+    except Exception:
+        log.error('Failed to check VOEventDB', exc_info=True)
+
+    # 2) Get the payload, extract the skymap url
+    try:
+        ivorn = event_list[0]
+        log.info('Found the latest LVC VOEvent: {}'.format(ivorn))
+        payload = vdb.packet_xml(ivorn)
+        voevent = vp.loads(payload)
+        group_params = vp.get_grouped_params(voevent)
+        for group in group_params:
+            if 'skymap_fits' in group_params[group]:
+                skymap_url = group_params[group]['skymap_fits']['value']
+        log.info('Extracted sky map url: {}'.format(skymap_url))
+    except Exception:
+        log.error('Failed to extract sky map url', exc_info=True)
+
+        # Fallback: Ask the user for the URL
+        while skymap_url is None:
+            log.warning('Failed to find skymap from VOEvent archive')
+            log.info('Backup: Please enter a url to the location where the skymap can be found.')
+            log.info('It should look something like')
+            log.info('https://gracedb.ligo.org/api/superevents/<XXXXXX>/files/bayestar.fits.gz')
+            skymap_url = input('Please enter the url: ')
+            log.debug('User entered "{}"'.format(skymap_url))
+
+    # 3) Create a GOTO-tile SkyMap instance
+    log.info('Creating GOTO-tile SkyMap from url {}'.format(skymap_url))
+    try:
+        skymap = SkyMap.from_fits(skymap_url)
+        skymap.regrade(128)
+        log.info(f'Skymap loaded: {skymap}')
+        skymap.path = skymap_url
+        return skymap
+    except Exception:
+        log.error('Failed to create SkyMap', exc_info=True)
+
+        # Fallback: Ask the user to download it!
+        skymap_path = None
+        while skymap_path is None:
+            log.warning('Unable to download sky map')
+            log.info('Last resort: please download the sky map yourself.')
+            log.info('If you have already done that, please enter the path to the sky map below.')
+            log.info('If you have not then kill this script, do it, and run the script again.')
+            try:
+                skymap_path = input('Please enter the path: ')
+            except KeyboardInterrupt:
+                sys.exit()
+            log.debug('User entered "{}"'.format(skymap_path))
+
+        log.info('Creating GOTO-tile SkyMap from path {}'.format(skymap_path))
+        skymap = SkyMap.from_fits(skymap_path)
+        skymap.regrade(128)
+        skymap.path = skymap_path
+        return skymap
+
+
+def get_tile_table(skymap, log):
+    """Apply the skymap to a grid and get the masked table back."""
+    with db.open_session() as session:
+        # Get the current grid
+        db_grid = db.get_current_grid(session)
+        log.info('Found database grid {}'.format(db_grid))
+
+        # Create a SkyGrid from the database Grid
+        grid = db_grid.skygrid
+        grid.db_id = db_grid.db_id  # store on the SkyGrid class
+        log.info('Created grid {}'.format(grid))
+
+    # Apply the sky map to the grid
+    grid.apply_skymap(skymap)
+
+    # Get the table of tiles and contained probability
+    table = grid.get_table()
+    table.sort('prob')
+    table.reverse()
+
+    # Mask the table based on tile probs (just using some default strategy)
+    mask = table['prob'] > 0.01
+    masked_table = table[mask][:50]
+
+    # Print the table rows
+    log.info('Created tile table:')
+    formatted_table = masked_table.copy()
+    formatted_table['ra'].format = '.6f'
+    formatted_table['dec'].format = '.6f'
+    formatted_table['prob'].format = '.4f'
+    table_arr = formatted_table.pformat(max_lines=-1, max_width=-1)
+    for row in table_arr:
+        log.info(row)
+
+    return masked_table, grid
+
+
+def add_to_db(grid, tile_table, log):
+    """Add the skymap tiles to the database."""
+    now = Time.now()
+    with db.open_session() as session:
+        # Get the User, or make it if it doesn't exist
+        try:
+            db_user = db.get_user(session, username='GW_fallback')
+        except ValueError:
+            db_user = db.User('GW_fallback', '', 'GW fallback script')
+
+        # Create a placeholder Event and add it to the database
+        event_name = f'LVC_manual_{now.isot}'
+        db_event = db.Event(name=event_name,
+                            source='LVC',
+                            type='GW',
+                            time=now,
+                            )
+        log.info(f'Created Event: {db_event}')
+
+        # Create Survey and add it to the database
+        db_survey = db.Survey(name=event_name,
+                              skymap=grid.skymap.path,
+                              )
+        db_survey.event = db_event
+        log.info(f'Created Survey: {db_survey}')
+
+        # Get the current grid
+        db_grid = db.get_current_grid(session)
+
+        # Create Targets for each tile
+        # This is basically the same as in gtecs.alert.database, but because we don't have
+        # an Event class or strategy we use a load of defaults
+        db_targets = []
+        for tile_name, _, _, tile_weight in tile_table:
+            # Find the matching GridTile
+            query = session.query(db.GridTile)
+            query = query.filter(db.GridTile.grid == db_grid)
+            query = query.filter(db.GridTile.name == str(tile_name))
+            db_grid_tile = query.one_or_none()
+
+            # Create ExposureSets
+            db_exposure_sets = [
+                db.ExposureSet(
+                    num_exp=4,
+                    exptime=60,
+                    filt='L',
+                )
+            ]
+
+            # Create Strategies
+            db_strategies = [
+                db.Strategy(
+                    num_todo=99,
+                    stop_time=None,
+                    min_time=None,
+                    too=True,
+                    min_alt=30,
+                    max_sunalt=-12,
+                    max_moon='B',
+                    min_moonsep=10,
+                )
+            ]
+
+            # Create Target (this will automatically create Pointings)
+            db_target = db.Target(
+                name=f'{event_name}_{tile_name}',
+                ra=None,  # RA/Dec are inherited from the grid tile
+                dec=None,
+                rank=1,
+                weight=float(tile_weight),
+                start_time=now,
+                stop_time=now + 3 * u.day,
+                creation_time=now,
+                user=db_user,
+                grid_tile=db_grid_tile,
+                exposure_sets=db_exposure_sets,
+                strategies=db_strategies,
+                survey=db_survey,
+                event=db_event,
+            )
+            db_targets.append(db_target)
+            log.info(f'Created Target: {db_target}')
+
+        # Add everything to the database
+        log.info('Adding {} Targets to the database'.format(len(db_targets)))
+        db.insert_items(session, db_targets)
+
+        # Commit changes
+        try:
+            session.commit()
+            log.info('Changes committed')
+        except Exception:
+            log.warning('Failed to insert: rolling back database')
+            # Undo database changes before raising
+            session.rollback()
+            raise
+
+
+def run():
+    """Run backup functions."""
+    log = logging.get_logger('backstop')
+    log.info('~~~~~~~~~~~~~~~~~~~~~~~~~')
+    log.info('Backup script started')
+
+    log.info('~~~~~~~~~~~~~~~~~~~~~~~~~')
+    log.info('1) Fetching the event skymap...')
+    try:
+        skymap = get_skymap(log)
+    except Exception:
+        log.error('FATAL: Failed to create skymap', exc_info=True)
+        log.error('Cannot continue, please report this to the #ops GOTO Slack channel')
+        sys.exit(1)
+
+    log.info('~~~~~~~~~~~~~~~~~~~~~~~~~')
+    log.info('2) Applying skymap to the all-sky grid...')
+    try:
+        table, grid = get_tile_table(skymap, log)
+    except Exception:
+        log.error('FATAL: Failed to apply skymap to the grid', exc_info=True)
+        log.error('Cannot continue, please report this to the #ops GOTO Slack channel')
+        sys.exit(1)
+
+    log.info('~~~~~~~~~~~~~~~~~~~~~~~~~')
+    log.info('3) Adding targets to the database...')
+    try:
+        add_to_db(grid, table, log)
+    except Exception:
+        log.error('FATAL: Failed to add targets to the database', exc_info=True)
+        log.error('Cannot continue, please report this to the #ops GOTO Slack channel')
+        sys.exit(1)
+
+    log.info('~~~~~~~~~~~~~~~~~~~~~~~~~')
+    log.info('Done')
+
+
+if __name__ == '__main__':
+    pid = get_pid('backstop')
+    if pid:
+        print(f'ERROR: Script is already running (PID={pid})')
+        sys.exit(0)
+    with make_pid_file('backstop'):
+        run()

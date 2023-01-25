@@ -6,7 +6,7 @@ import sys
 import Pyro4
 
 from gtecs.alert import params
-from gtecs.alert.listener import run
+from gtecs.alert.sentinel import run
 from gtecs.common import logging
 from gtecs.common.system import execute_long_command, get_pid, kill_process, make_pid_file
 
@@ -57,6 +57,7 @@ def query(command, args):
 
         execute_long_command(tail_command)
 
+    # Sentinel commands
     elif command == 'ingest':
         if len(args) != 1:
             raise ValueError('Invalid arguments: sentinel ingest [path|ivorn]')

@@ -1,4 +1,3 @@
-#! /opt/local/bin/python3.6
 """Functions to extract event and observing data."""
 
 import warnings
