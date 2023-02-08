@@ -32,6 +32,8 @@ Several scripts from the `scripts` folder should also be added to your path, in 
 
 The module will look for a file named `.alert.conf` either in the user's home directory, the `gtecs` subdirectory, or a path specified by the `GTECS_CONF` environment variable. An example file is included in the base directory of this repository.
 
+To use the newer GCN Kafka streams (https://gcn.nasa.gov) you will need to register here using https://gcn.nasa.gov/quickstart and get a client ID and secret, then add them to your config file.
+
 ### Testing
 
 After installing the module, you can test it works correctly using the included `test_gotoalert.py` script in the `gotoalert/tests/` directory.

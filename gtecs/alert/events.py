@@ -248,21 +248,36 @@ class GWEvent(Event):
 
         # Get classification probabilities and properties
         if self.group == 'CBC':
-            classification_dict = group_params.allitems()[1][1]  # Horrible, but blame XML
-            self.classification = {key: float(classification_dict[key]['value'])
-                                   for key in classification_dict}
-            properties_dict = group_params.allitems()[2][1]
-            self.properties = {key: float(properties_dict[key]['value'])
-                               for key in properties_dict}
+            try:
+                classification_group = group_params['Classification']
+            except KeyError:
+                # Fallback for older events that weren't keyed properly
+                for _, group_dict in group_params.allitems():
+                    if 'BNS' in group_dict:
+                        classification_group = group_dict
+            self.classification = {key: float(classification_group[key]['value'])
+                                   for key in classification_group}
+
+            try:
+                properties_group = group_params['Properties']
+            except KeyError:
+                for _, group_dict in group_params.allitems():
+                    if 'HasNS' in group_dict:
+                        properties_group = group_dict
+            self.properties = {key: float(properties_group[key]['value'])
+                               for key in properties_group}
         else:
             self.classification = {}
             self.properties = {}
 
         # Get skymap URL
-        for group in group_params:
-            if 'skymap_fits' in group_params[group]:
-                self.skymap_url = group_params[group]['skymap_fits']['value']
-                self.skymap_type = group
+        try:
+            skymap_group = group_params['GW_SKYMAP']
+        except KeyError:
+            for _, group_dict in group_params.allitems():
+                if 'skymap_fits' in group_dict:
+                    skymap_group = group_dict
+        self.skymap_url = skymap_group['skymap_fits']['value']
 
         # Don't download the skymap here, it may well be very large.
         # Only do it when it's absolutely necessary
