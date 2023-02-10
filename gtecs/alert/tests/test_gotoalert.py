@@ -7,7 +7,7 @@ from astropy import units as u
 
 from gtecs.alert import params
 from gtecs.alert.events import Event
-from gtecs.alert.handler import event_handler
+from gtecs.alert.handler import handle_event
 
 
 if __name__ == '__main__':
@@ -23,4 +23,4 @@ if __name__ == '__main__':
         with pkg_resources.path('gtecs.alert.data.test_events', test_file) as f:
             print(f'Loading {f}')
             event = Event.from_file(f)
-        event_handler(event, send_messages=params.ENABLE_SLACK, time=event.notice_time + 60 * u.s)
+        handle_event(event, send_messages=params.ENABLE_SLACK, time=event.notice_time + 60 * u.s)

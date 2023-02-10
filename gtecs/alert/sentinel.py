@@ -18,7 +18,7 @@ from gtecs.common import logging
 
 from . import params
 from .events import Event
-from .handler import event_handler
+from .handler import handle_event
 from .slack import send_slack_msg
 
 
@@ -244,10 +244,10 @@ class Sentinel:
                     # Call the event handler, which will return True if it was processed
                     # or False if it was ignored (e.g. test events, or no matching subclasses)
                     try:
-                        processed = event_handler(event,
-                                                  send_messages=params.ENABLE_SLACK,
-                                                  log=self.log,
-                                                  )
+                        processed = handle_event(event,
+                                                 send_messages=params.ENABLE_SLACK,
+                                                 log=self.log,
+                                                 )
                     except Exception:
                         self.log.exception('Exception in event handler')
                         send_slack_msg('Exception in event handler for event {event.ivorn}')
@@ -299,7 +299,7 @@ class Sentinel:
         if found_skymap:
             try:
                 # Call the handler for the new event
-                event_handler(event, send_messages=params.ENABLE_SLACK, log=self.log)
+                handle_event(event, send_messages=params.ENABLE_SLACK, log=self.log)
                 send_slack_msg('Latest skymap used for {}'.format(event.name))
             except Exception:
                 self.log.exception('Exception in event handler')
