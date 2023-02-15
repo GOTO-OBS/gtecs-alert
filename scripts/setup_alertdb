@@ -1,0 +1,51 @@
+#!/usr/bin/env python3
+"""Create a blank alert database."""
+
+import argparse
+import sys
+
+from gtecs.alert import params
+from gtecs.alert.database import Base
+from gtecs.common.database import create_database
+
+
+def run(overwrite=False, verbose=False):
+    """Create and fill the database."""
+    # Create a blank database
+    print('Creating blank database...')
+    try:
+        create_database(
+            Base,
+            name='alert',
+            description='Sentinel alert database',
+            user=params.DATABASE_USER,
+            password=params.DATABASE_PASSWORD,
+            host=params.DATABASE_HOST,
+            overwrite=overwrite,
+            verbose=verbose,
+        )
+    except ValueError as err:
+        if 'already exists' in str(err):
+            print('ERROR: Database already exists.')
+            print('       Rerun with -o/--overwrite to drop existing data.')
+            sys.exit()
+        else:
+            raise
+
+    print('Done')
+
+
+if __name__ == '__main__':
+    description = """Create the sentinel alert database."""
+
+    parser = argparse.ArgumentParser(description=description,
+                                     formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+
+    parser.add_argument('-v', '--verbose', action='store_true', default=False,
+                        help='Print SQL statements?')
+    parser.add_argument('-o', '--overwrite', action='store_true', default=False,
+                        help='Overwrite an existing database [WARNING: WILL LOSE DATA]?')
+
+    args = parser.parse_args()
+
+    run(args.overwrite, args.verbose)

@@ -35,6 +35,15 @@ KAFKA_CLIENT_SECRET = config['KAFKA_CLIENT_SECRET']
 # Filter parameters
 IGNORE_ROLES = config['IGNORE_ROLES']
 
+############################################################
+# Database parameters
+DATABASE_USER = config['DATABASE_USER']
+DATABASE_PASSWORD = config['DATABASE_PASSWORD']
+DATABASE_HOST = config['DATABASE_HOST']
+DATABASE_ECHO = bool(config['DATABASE_ECHO'])
+DATABASE_PRE_PING = bool(config['DATABASE_PRE_PING'])
+
+############################################################
 # Slack bot parameters
 ENABLE_SLACK = config['ENABLE_SLACK']
 SLACK_BOT_TOKEN = config['SLACK_BOT_TOKEN']
