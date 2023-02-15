@@ -299,7 +299,8 @@ class GWEvent(Event):
 
         # Create the skymap object and regrade
         self.skymap = SkyMap.from_fits(self.skymap_file)
-        self.skymap.regrade(nside)
+        if nside is not None:
+            self.skymap.regrade(nside)
 
         # Store basic info on the skymap
         self.skymap.object = self.name
@@ -530,7 +531,7 @@ class GRBEvent(Event):
         # These params will only be set once the skymap is downloaded
         self.contour_areas = {0.5: None, 0.9: None}
 
-    def get_skymap(self, nside=128):
+    def get_skymap(self, nside=128, gaussian_nside=128):
         """Download the Event skymap and return it as a `gototile.skymap.SkyMap object."""
         if self.skymap:
             return self.skymap
@@ -541,7 +542,8 @@ class GRBEvent(Event):
                 # Download the skymap from the URL, create the skymap object and regrade
                 self.skymap_file = download_file(self.skymap_url, cache=False)
                 self.skymap = SkyMap.from_fits(self.skymap_file)
-                self.skymap.regrade(nside)
+                if nside is not None:
+                    self.skymap.regrade(nside)
             except Exception:
                 # Worth a try, fall back to creating our own
                 pass
@@ -551,7 +553,7 @@ class GRBEvent(Event):
             self.skymap = SkyMap.from_position(self.coord.ra.deg,
                                                self.coord.dec.deg,
                                                self.total_error.deg,
-                                               nside=nside)
+                                               nside=gaussian_nside)
 
         # Store basic info on the skymap
         self.skymap.object = self.name
@@ -666,7 +668,7 @@ class NUEvent(Event):
         # These params will only be set once the skymap is downloaded
         self.contour_areas = {0.5: None, 0.9: None}
 
-    def get_skymap(self, nside=128):
+    def get_skymap(self, nside=128, gaussian_nside=128):
         """Download the Event skymap and return it as a `gototile.skymap.SkyMap object."""
         if self.skymap:
             return self.skymap
@@ -679,7 +681,8 @@ class NUEvent(Event):
             try:
                 self.skymap_file = download_file(self.skymap_url, cache=False)
                 self.skymap = SkyMap.from_fits(self.skymap_file)
-                self.skymap.regrade(nside)
+                if nside is not None:
+                    self.skymap.regrade(nside)
             except Exception:
                 # Fall back to creating our own
                 pass
@@ -689,7 +692,7 @@ class NUEvent(Event):
             self.skymap = SkyMap.from_position(self.coord.ra.deg,
                                                self.coord.dec.deg,
                                                self.total_error.deg,
-                                               nside=nside)
+                                               nside=gaussian_nside)
 
         # Store basic info on the skymap
         self.skymap.object = self.name
