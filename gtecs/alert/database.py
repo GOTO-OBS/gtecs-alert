@@ -1,13 +1,16 @@
 """Alert database archive functions and ORM."""
 
-
+import datetime
 from contextlib import contextmanager
+
+from astropy.time import Time
 
 from gtecs.common.database import get_session
 
 from sqlalchemy import Column, DateTime, Integer, LargeBinary, String
 from sqlalchemy import func
 from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import validates
 
 from . import params
 
@@ -80,3 +83,20 @@ class VOEvent(Base):
                    'received={}'.format(self.received),
                    ]
         return 'VOEvent({})'.format(', '.join(strings))
+
+    @validates('received')
+    def validate_times(self, key, field):
+        """Use validators to allow various types of input for times."""
+        if field is None:
+            # time is nullable
+            return None
+
+        if isinstance(field, datetime.datetime):
+            value = field.strftime('%Y-%m-%d %H:%M:%S')
+        elif isinstance(field, Time):
+            field.precision = 0  # no D.P on seconds
+            value = field.iso
+        else:
+            # just hope the string works!
+            value = str(field)
+        return value
