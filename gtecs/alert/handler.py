@@ -205,7 +205,7 @@ def add_event_to_obsdb(event, time=None, log=None):
     return grid
 
 
-def handle_event(event, send_messages=False, log=None, time=None):
+def handle_event(event, send_messages=False, ignore_roles=None, log=None, time=None):
     """Handle a new Event.
 
     Parameters
@@ -216,6 +216,9 @@ def handle_event(event, send_messages=False, log=None, time=None):
     send_messages : bool, optional
         If True, send Slack messages.
         Default is False.
+    ignore_roles : list of str, optional
+        If given, ignore events with the given roles (e.g. 'test').
+        If None, all events are processed.
     log : logging.Logger, optional
         If given, direct log messages to this logger.
         If None, a new logger is created.
@@ -229,20 +232,22 @@ def handle_event(event, send_messages=False, log=None, time=None):
         Will return True if the Event was processed.
 
     """
-    # Create a logger if one isn't given
     if log is None:
         logging.basicConfig(level=logging.INFO)
         log = logging.getLogger('event_handler')
         log.setLevel(level=logging.DEBUG)
+    if time is None:
+        time = Time.now()
+    if ignore_roles is None:
+        ignore_roles = []
+
     log.info('Handling Event {}'.format(event.ivorn))
 
     # 1) Check if it's an event we want to process, otherwise return here
-    if event.type == 'unknown' or event.role in params.IGNORE_ROLES:
+    if event.type == 'unknown' or event.role in ignore_roles:
         log.warning(f'Ignoring {event.type} {event.role} event')
         return False
     log.info('Processing {} Event {}'.format(event.type, event.name))
-
-    # Send initial Slack report
     if send_messages:
         log.debug('Sending initial Slack report')
         msg = '*Processing new {} {} event: {}*'.format(event.source, event.type, event.id)
