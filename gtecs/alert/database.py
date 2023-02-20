@@ -6,11 +6,11 @@ from contextlib import contextmanager
 from astropy.time import Time
 
 from gtecs.common.database import get_session
+from gtecs.obs.database.models import Base
 
-from sqlalchemy import Column, DateTime, Integer, LargeBinary, String
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, LargeBinary, String
 from sqlalchemy import func
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import validates
+from sqlalchemy.orm import backref, relationship, validates
 
 from . import params
 
@@ -38,10 +38,6 @@ def open_session():
         session.close()
 
 
-Base = declarative_base()
-Base.metadata.schema = 'alert'
-
-
 class VOEvent(Base):
     """A VOEvent message.
 
@@ -58,16 +54,31 @@ class VOEvent(Base):
         The skymap associated with this VOEvent, if any.
         The skymap is stored in the database as binary data.
 
+    When created the instance can be linked to the following other tables as parameters,
+    otherwise they are populated when it is added to the database:
+
+    Primary relationships
+    ---------------------
+    survey : `gtecs.obs.database.Survey`, optional
+        the Survey created from this VOEvent, if any
+        can also be added with the survey_id parameter
+
     Attributes
     ----------
     db_id : int
         primary database key
         only populated when the instance is added to the database
 
+    Secondary relationships
+    -----------------------
+    event : `gtecs.obs.database.Event`
+        the Event this VOEvent is part of, if any
+
     """
 
     # Set corresponding SQL table name
     __tablename__ = 'voevents'
+    __table_args__ = {'schema': 'alert'}
 
     # Primary key
     db_id = Column('id', Integer, primary_key=True)
@@ -78,9 +89,37 @@ class VOEvent(Base):
     payload = Column(LargeBinary, nullable=False)
     skymap = Column(LargeBinary, nullable=True)
 
+    # Foreign keys
+    survey_id = Column(Integer, ForeignKey('obs.surveys.id'), nullable=True)
+
+    # Foreign relationships
+    survey = relationship(
+        'Survey',
+        uselist=False,
+        backref=backref(  # NB Use legacy backref to add corresponding relationship to Surveys
+            'voevent',
+            uselist=False,
+        ),
+    )
+
+    # Secondary relationships
+    event = relationship(
+        'Event',
+        uselist=False,
+        secondary='obs.surveys',
+        primaryjoin='Survey.db_id == VOEvent.survey_id',
+        secondaryjoin='Survey.event_id == Event.db_id',
+        backref=backref(  # NB Use legacy backref to add corresponding relationship to Events
+            'voevents',
+            order_by='VOEvent.db_id',
+        ),
+        viewonly=True,
+    )
+
     def __repr__(self):
         strings = ['ivorn={}'.format(self.ivorn),
                    'received={}'.format(self.received),
+                   'survey_id={}'.format(self.survey_id),
                    ]
         return 'VOEvent({})'.format(', '.join(strings))
 
