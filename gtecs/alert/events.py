@@ -4,8 +4,6 @@ import os
 from urllib.parse import quote_plus
 from urllib.request import urlopen
 
-from astroplan import FixedTarget
-
 import astropy.units as u
 from astropy.coordinates import Angle, SkyCoord
 from astropy.time import Time
@@ -55,7 +53,7 @@ class Event:
         self.publisher = self.resourceKey
         self.title = self.local_ID
 
-        # Key attributes
+        # Key attributes (unknowns will be overwritten by subclasses)
         self.packet_type = self._get_packet_type(payload)
         self.role = self.voevent.attrib['role']
         try:
@@ -63,26 +61,18 @@ class Event:
         except Exception:
             # Some test events don't have times
             self.time = None
+        self.notice = 'unknown'
         self.notice_time = Time(str(self.voevent.Who.Date))
         self.author = str(self.voevent.Who.Author.contactName)
         try:
             self.contact = str(self.voevent.Who.Author.contactEmail)
         except AttributeError:
             self.contact = None
-
-        # Set default attributes
-        # Any subclass will overwrite these
-        self.notice = 'unknown'
         self.type = 'unknown'
         self.source = 'unknown'
-        self.position = None
         self.coord = None
-        self.target = None
         self.skymap = None
-        self.properties = {}
-        self.strategy = None
-        self.grid = None
-        self.tiles = None
+        self.skymap_url = None
 
     def __repr__(self):
         return '{}(ivorn={})'.format(self.__class__.__name__, self.ivorn)
@@ -140,8 +130,8 @@ class Event:
             payload = f.read()
         return cls.from_payload(payload)
 
-    def archive(self, path):
-        """Archive this event in the given directory."""
+    def save(self, path):
+        """Save this event to a file in the given directory."""
         if not os.path.exists(path):
             os.mkdir(path)
 
@@ -151,53 +141,45 @@ class Event:
             f.write(self.payload)
         return out_path
 
-    def get_skymap(self):
-        """Return None."""
-        return
+    def get_skymap(self, nside=128):
+        """Return the Event skymap as a `gototile.skymap.SkyMap object."""
+        if self.skymap is not None:
+            # Don't do anything if the skymap has already been downloaded/created
+            return self.skymap
 
-    def get_tiles(self, grid, selection_contour=None):
-        """Apply the Event skymap to the given grid and return a table of filtered tiles."""
-        if self.tiles is None:
-            # Apply the Event skymap to the grid
-            if self.skymap is None:
-                self.get_skymap()
-            if self.skymap is None:
-                # Can't get tiles if there's no skymap!
-                return
-            self.grid = grid
-            self.grid.apply_skymap(self.skymap)
+        # Try to download the skymap from the Event URL
+        if self.skymap_url is not None:
+            try:
+                # The file gets stored in /tmp/
+                # Don't cache, force redownload every time
+                # https://github.com/GOTO-OBS/goto-alert/issues/36
+                self.skymap_file = download_file(self.skymap_url, cache=False)
+                self.skymap = SkyMap.from_fits(self.skymap_file)
+            except Exception:
+                # Some error meant we can't download the skymap
+                # So instead we'll try and create our own
+                pass
 
-            # Sort and store the full table of tiles on the Event
-            self.tiles = self.grid.get_table()
+        # If the Event has coordinates then create a Gaussian skymap
+        if self.skymap is None and self.coord is not None:
+            self.skymap = SkyMap.from_position(
+                self.coord.ra.deg,
+                self.coord.dec.deg,
+                self.total_error.deg,
+                nside=nside,
+            )
 
-        # If no selection or strategy then just return the full table
-        # TODO: I hate having to get the strategy like this, it's just because of the GW distances
-        if self.strategy is None:
-            self.get_strategy()
-        if self.strategy is None or selection_contour is None:
-            return self.tiles
+        return self.skymap
 
-        # Limit tiles to add to the database
-        # First select only tiles covering the given contour level
-        mask = self.grid.contours < selection_contour
+    @property
+    def strategy(self):
+        """Get the event observing strategy key."""
+        return 'DEFAULT'
 
-        # Then limit the number of tiles, if given
-        if self.strategy['tile_limit'] is not None and sum(mask) > self.strategy['tile_limit']:
-            # Limit by probability above `tile_limit`th tile
-            min_tile_prob = sorted(self.grid.probs, reverse=True)[self.strategy['tile_limit']]
-            mask &= self.grid.probs > min_tile_prob
-
-        # Finally limit to tiles which contain more than a given probability
-        if self.strategy['prob_limit'] is not None:
-            mask &= self.grid.probs > self.strategy['prob_limit']
-
-        # Return the masked table
-        return self.tiles[mask]
-
-    def get_strategy(self):
-        """Return default strategy."""
-        self.strategy = get_strategy_details()
-        return self.strategy
+    @property
+    def strategy_dict(self):
+        """Get the event observing strategy details."""
+        return get_strategy_details(self.strategy)
 
     def get_details(self):
         """Get a list of the event details for Slack messages."""
@@ -279,78 +261,29 @@ class GWEvent(Event):
                     skymap_group = group_dict
         self.skymap_url = skymap_group['skymap_fits']['value']
 
-        # Don't download the skymap here, it may well be very large.
-        # Only do it when it's absolutely necessary
-        # These params will only be set once the skymap is downloaded
-        self.distance = np.inf
-        self.distance_error = 0
-        self.contour_areas = {0.5: None, 0.9: None}
+    @property
+    def strategy(self):
+        """Get the event observing strategy key."""
+        if self.skymap is None:
+            # This is very annoying, but we need to get the skymap to get the distance
+            # TODO: We could assume it is far, would that be better?
+            raise ValueError('Cannot determine strategy without skymap')
 
-    def get_skymap(self, nside=128):
-        """Download the Event skymap and return it as a `gototile.skymap.SkyMap object."""
-        if self.skymap:
-            return self.skymap
-
-        # Download the skymap from the URL
-        # The file gets stored in /tmp/
-        # Don't cache, force redownload every time
-        # https://github.com/GOTO-OBS/goto-alert/issues/36
-        self.skymap_file = download_file(self.skymap_url, cache=False)
-
-        # Create the skymap object and regrade
-        self.skymap = SkyMap.from_fits(self.skymap_file)
-        if nside is not None:
-            self.skymap.regrade(nside)
-
-        # Store basic info on the skymap
-        self.skymap.object = self.name
-        self.skymap.objid = self.id
-
-        # Get info from the skymap header
-        try:
-            self.distance = self.skymap.header['distmean']
-            self.distance_error = self.skymap.header['diststd']
-        except KeyError:
-            # Older skymaps (& Burst?) might not have distances
-            self.distance = np.inf
-            self.distance_error = 0
-
-        # Get info from the skymap itself
-        self.contour_areas = {}
-        for contour in [0.5, 0.9]:
-            self.contour_areas[contour] = self.skymap.get_contour_area(contour)
-
-        return self.skymap
-
-    def get_strategy(self):
-        """Get the event observing strategy."""
-        if self.strategy:
-            return self.strategy
-
-        # Decide which strategy to use
         if self.group == 'CBC':
             if self.properties['HasNS'] > 0.25:
-                if self.distance < 400:
-                    strategy = 'GW_CLOSE_NS'
+                if self.skymap.header['distmean'] < 400:
+                    return 'GW_CLOSE_NS'
                 else:
-                    # If the skymap hasn't been downloaded yet then we won't know the distance.
-                    # It gets set to infinity, so it will default to the FAR strategy.
-                    # TODO: we should raise a warning here?
-                    strategy = 'GW_FAR_NS'
+                    return 'GW_FAR_NS'
             else:
-                if self.distance < 100:
-                    strategy = 'GW_CLOSE_BH'
+                if self.skymap.header['distmean'] < 100:
+                    return 'GW_CLOSE_BH'
                 else:
-                    # TODO: Same here as above
-                    strategy = 'GW_FAR_BH'
+                    return 'GW_FAR_BH'
         elif self.group == 'Burst':
-            strategy = 'GW_BURST'
+            return 'GW_BURST'
         else:
             raise ValueError(f'Cannot determine observing strategy for group "{self.group}"')
-
-        # Store and return the strategy dict
-        self.strategy = get_strategy_details(strategy, time=self.time)
-        return self.strategy
 
     def get_details(self):
         """Get a list of the event details for Slack messages."""
@@ -367,14 +300,17 @@ class GWEvent(Event):
             f'FAR: ~1 per {1 / self.far / 3.154e+7:.1f} yrs',
         ]
         # Add skymap info only if we have downloaded the skymap
-        if self.distance == np.inf:
+        if self.skymap is not None:
+            distance = self.skymap.header['distmean']
+            distance_error = self.skymap.header['diststd']
+            area = self.skymap.get_contour_area(0.9)
             details += [
-                'Distance: UNKNOWN',
+                f'Distance: {distance:.0f}+/-{distance_error:.0f} Mpc',
+                f'90% probability area: {area:.0f} sq deg'
             ]
         else:
             details += [
-                f'Distance: {self.distance:.0f}+/-{self.distance_error:.0f} Mpc',
-                f'90% probability area: {self.contour_areas[0.9]:.0f} sq deg'
+                'Distance: UNKNOWN',
             ]
         # Add classification info for CBC events
         if self.group == 'CBC':
@@ -426,13 +362,10 @@ class GWRetractionEvent(Event):
         # Retractions have far fewer params
         self.gracedb_url = top_params['EventPage']['value']
 
-    def get_skymap(self):
-        """Return None."""
-        return
-
-    def get_strategy(self):
-        """Return None."""
-        return
+    @property
+    def strategy(self):
+        """Get the event observing strategy key."""
+        return None  # Retractions don't have an observing strategy
 
     def get_details(self):
         """Get a list of the event details for Slack messages."""
@@ -496,13 +429,10 @@ class GRBEvent(Event):
             elif self.properties[key] == 'false':
                 self.properties[key] = False
 
-        # Position coordinates
-        self.position = vp.get_event_position(self.voevent)
-        self.coord = SkyCoord(ra=self.position.ra, dec=self.position.dec, unit=self.position.units)
-        self.target = FixedTarget(self.coord)
-
-        # Position error
-        self.coord_error = Angle(self.position.err, unit=self.position.units)
+        # Position coordinates & error
+        position = vp.get_event_position(self.voevent)
+        self.coord = SkyCoord(ra=position.ra, dec=position.dec, unit=position.units)
+        self.coord_error = Angle(position.err, unit=position.units)
         if self.source == 'Fermi':
             self.systematic_error = Angle(5.6, unit='deg')
         else:
@@ -526,65 +456,18 @@ class GRBEvent(Event):
             # Worth a try, fall back to creating our own
             self.skymap_url = None
 
-        # Don't create or download the skymap here, it may well be very large.
-        # Only do it when it's absolutely necessary
-        # These params will only be set once the skymap is downloaded
-        self.contour_areas = {0.5: None, 0.9: None}
-
-    def get_skymap(self, nside=128, gaussian_nside=128):
-        """Download the Event skymap and return it as a `gototile.skymap.SkyMap object."""
-        if self.skymap:
-            return self.skymap
-
-        # Try downloading the Fermi skymap
-        if self.skymap_url:
-            try:
-                # Download the skymap from the URL, create the skymap object and regrade
-                self.skymap_file = download_file(self.skymap_url, cache=False)
-                self.skymap = SkyMap.from_fits(self.skymap_file)
-                if nside is not None:
-                    self.skymap.regrade(nside)
-            except Exception:
-                # Worth a try, fall back to creating our own
-                pass
-
-        # Create a Gaussian skymap (if we didn't download one above)
-        if not self.skymap:
-            self.skymap = SkyMap.from_position(self.coord.ra.deg,
-                                               self.coord.dec.deg,
-                                               self.total_error.deg,
-                                               nside=gaussian_nside)
-
-        # Store basic info on the skymap
-        self.skymap.object = self.name
-        self.skymap.objid = self.id
-
-        # Get info from the skymap itself
-        self.contour_areas = {}
-        for contour in [0.5, 0.9]:
-            self.contour_areas[contour] = self.skymap.get_contour_area(contour)
-
-        return self.skymap
-
-    def get_strategy(self):
-        """Get the event observing strategy."""
-        if self.strategy:
-            return self.strategy
-
-        # Decide which strategy to use
+    @property
+    def strategy(self):
+        """Get the event observing strategy key."""
         if self.source == 'Swift':
-            strategy = 'GRB_SWIFT'
+            return 'GRB_SWIFT'
         elif self.source == 'Fermi':
             if self.duration.lower() == 'short':
-                strategy = 'GRB_FERMI_SHORT'
+                return 'GRB_FERMI_SHORT'
             else:
-                strategy = 'GRB_FERMI'
+                return 'GRB_FERMI'
         else:
             raise ValueError(f'Cannot determine observing strategy for source "{self.source}"')
-
-        # Store and return the strategy dict
-        self.strategy = get_strategy_details(strategy, time=self.time)
-        return self.strategy
 
     def get_details(self):
         """Get a list of the event details for Slack messages."""
@@ -640,89 +523,35 @@ class NUEvent(Event):
         self.signalness = float(top_params['signalness']['value'])
         self.far = float(top_params['FAR']['value'])
 
-        # Position coordinates
-        self.position = vp.get_event_position(self.voevent)
-        self.coord = SkyCoord(ra=self.position.ra, dec=self.position.dec, unit=self.position.units)
-        self.target = FixedTarget(self.coord)
-
-        # Position error
-        self.coord_error = Angle(self.position.err, unit=self.position.units)
-
-        # Systematic error for cascade event is given, so = 0
+        # Position coordinates & error
+        position = vp.get_event_position(self.voevent)
+        self.coord = SkyCoord(ra=position.ra, dec=position.dec, unit=position.units)
+        self.coord_error = Angle(position.err, unit=position.units)
         if self.notice == 'ICECUBE_CASCADE':
+            # Systematic error for cascade event is given, so = 0
             self.systematic_error = Angle(0, unit='deg')
         else:
             self.systematic_error = Angle(.2, unit='deg')
         self.total_error = Angle(np.sqrt(self.coord_error ** 2 + self.systematic_error ** 2),
                                  unit='deg')
 
-        # Enclosed skymap url for CASCADE_EVENT, but others
         # Get skymap URL
         if 'skymap_fits' in top_params:
             self.skymap_url = top_params['skymap_fits']['value']
         else:
             self.skymap_url = None
 
-        # Don't download the skymap here, it may well be very large.
-        # Only do it when it's absolutely necessary
-        # These params will only be set once the skymap is downloaded
-        self.contour_areas = {0.5: None, 0.9: None}
-
-    def get_skymap(self, nside=128, gaussian_nside=128):
-        """Download the Event skymap and return it as a `gototile.skymap.SkyMap object."""
-        if self.skymap:
-            return self.skymap
-
-        # Download the skymap from the URL
-        # The file gets stored in /tmp/
-        # Don't cache, force redownload every time
-        # https://github.com/GOTO-OBS/goto-alert/issues/36
-        if self.skymap_url:
-            try:
-                self.skymap_file = download_file(self.skymap_url, cache=False)
-                self.skymap = SkyMap.from_fits(self.skymap_file)
-                if nside is not None:
-                    self.skymap.regrade(nside)
-            except Exception:
-                # Fall back to creating our own
-                pass
-
-        # Create a Gaussian skymap (if we didn't download one above)
-        if not self.skymap:
-            self.skymap = SkyMap.from_position(self.coord.ra.deg,
-                                               self.coord.dec.deg,
-                                               self.total_error.deg,
-                                               nside=gaussian_nside)
-
-        # Store basic info on the skymap
-        self.skymap.object = self.name
-        self.skymap.objid = self.id
-
-        # Get info from the skymap itself
-        self.contour_areas = {}
-        for contour in [0.5, 0.9]:
-            self.contour_areas[contour] = self.skymap.get_contour_area(contour)
-
-        return self.skymap
-
-    def get_strategy(self):
-        """Get the event observing strategy."""
-        if self.strategy:
-            return self.strategy
-
-        # Decide which strategy to use
+    @property
+    def strategy(self):
+        """Get the event observing strategy key."""
         if self.notice == 'ICECUBE_ASTROTRACK_GOLD':
-            strategy = 'NU_ICECUBE_GOLD'
+            return 'NU_ICECUBE_GOLD'
         elif self.notice == 'ICECUBE_ASTROTRACK_BRONZE':
-            strategy = 'NU_ICECUBE_BRONZE'
+            return 'NU_ICECUBE_BRONZE'
         elif self.notice == 'ICECUBE_CASCADE':
-            strategy = 'NU_ICECUBE_CASCADE'
+            return 'NU_ICECUBE_CASCADE'
         else:
             raise ValueError(f'Cannot determine observing strategy for notice "{self.notice}"')
-
-        # Store and return the strategy dict
-        self.strategy = get_strategy_details(strategy, time=self.time)
-        return self.strategy
 
     def get_details(self):
         """Get a list of the event details for Slack messages."""

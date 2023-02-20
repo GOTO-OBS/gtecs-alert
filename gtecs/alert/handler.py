@@ -7,8 +7,39 @@ from astropy.time import Time
 
 from gtecs.obs import database as db
 
-from . import params
 from .slack import send_database_report, send_event_report, send_slack_msg, send_strategy_report
+
+
+def get_event_tiles(event, grid, selection_contour=None):
+    """Apply the Event skymap to the given grid and return a table of filtered tiles."""
+    # Apply the Event skymap to the grid
+    skymap = event.get_skymap()
+    grid.apply_skymap(skymap)
+
+    # Sort and store the full table of tiles on the Event
+    tiles = grid.get_table()
+
+    # If no selection or strategy then just return the full table
+    if event.strategy is None or selection_contour is None:
+        return tiles
+
+    # Limit tiles to add to the database
+    # First select only tiles covering the given contour level
+    mask = grid.contours < selection_contour
+
+    # Then limit the number of tiles, if given
+    if (event.strategy_dict['tile_limit'] is not None and
+            sum(mask) > event.strategy_dict['tile_limit']):
+        # Limit by probability above `tile_limit`th tile
+        min_tile_prob = sorted(grid.probs, reverse=True)[event.strategy_dict['tile_limit']]
+        mask &= grid.probs > min_tile_prob
+
+    # Finally limit to tiles which contain more than a given probability
+    if event.strategy_dict['prob_limit'] is not None:
+        mask &= grid.probs > event.strategy_dict['prob_limit']
+
+    # Return the masked table
+    return tiles[mask]
 
 
 def add_event_to_obsdb(event, time=None, log=None):
@@ -80,13 +111,12 @@ def add_event_to_obsdb(event, time=None, log=None):
             contour_level = 0.95
 
         # Get the masked tile table
-        selected_tiles = event.get_tiles(grid, contour_level)
+        selected_tiles = get_event_tiles(event, grid, contour_level)
         selected_tiles.sort('prob')
         selected_tiles.reverse()
         log.debug('Masked tile table has {} entries'.format(len(selected_tiles)))
         if len(selected_tiles) < 1:
             log.warning('No tiles passed filtering, nothing to add to the database')
-            log.debug('Highest tile has {:.2f}%'.format(max(event.tiles['prob']) * 100))
             return
 
         # Get the database User, or make it if it doesn't exist
@@ -106,7 +136,7 @@ def add_event_to_obsdb(event, time=None, log=None):
 
             # Create ExposureSets
             db_exposure_sets = []
-            for exposure_sets_dict in event.strategy['exposure_sets_dict']:
+            for exposure_sets_dict in event.strategy_dict['exposure_sets_dict']:
                 db_exposure_sets.append(
                     db.ExposureSet(
                         num_exp=exposure_sets_dict['num_exp'],
@@ -116,11 +146,11 @@ def add_event_to_obsdb(event, time=None, log=None):
                 )
 
             # Create Strategies
-            constraints_dict = event.strategy['constraints_dict']
-            if isinstance(event.strategy['cadence_dict'], dict):
-                cadence_dicts = [event.strategy['cadence_dict']]
+            constraints_dict = event.strategy_dict['constraints_dict']
+            if isinstance(event.strategy_dict['cadence_dict'], dict):
+                cadence_dicts = [event.strategy_dict['cadence_dict']]
             else:
-                cadence_dicts = event.strategy['cadence_dict']
+                cadence_dicts = event.strategy_dict['cadence_dict']
             db_strategies = []
             for cadence_dict in cadence_dicts:
                 db_strategies.append(
@@ -146,7 +176,7 @@ def add_event_to_obsdb(event, time=None, log=None):
                     name=f'{event.name}_{tile_name}',
                     ra=None,  # RA/Dec are inherited from the grid tile
                     dec=None,
-                    rank=event.strategy['rank'],
+                    rank=event.strategy_dict['rank'],
                     weight=float(tile_weight),
                     start_time=cadence_dicts[0]['start_time'],
                     stop_time=cadence_dicts[-1]['stop_time'],
@@ -171,6 +201,8 @@ def add_event_to_obsdb(event, time=None, log=None):
             # Undo database changes before raising
             session.rollback()
             raise
+
+    return grid
 
 
 def handle_event(event, send_messages=False, log=None, time=None):
@@ -220,9 +252,8 @@ def handle_event(event, send_messages=False, log=None, time=None):
     # 2) Fetch the event skymap
     log.debug('Fetching event skymap')
     event.get_skymap()
+    event.skymap.regrade(128)
     log.debug('Skymap created')
-
-    # Send Slack event report
     if send_messages:
         log.debug('Sending Slack event report')
         try:
@@ -232,14 +263,10 @@ def handle_event(event, send_messages=False, log=None, time=None):
             log.error('Error sending Slack report')
             log.debug(err.__class__.__name__, exc_info=True)
 
-    # 3) Get the observing strategy for this event (stored on the event as event.strategy)
+    # 3) Determine the event strategy
     #    NB we can only do this after getting the skymap, because GW events need the distance.
-    log.debug('Fetching event strategy')
-    event.get_strategy()
     if event.strategy is not None:  # Retractions have no strategy
-        log.debug('Using strategy {}'.format(event.strategy['strategy']))
-
-        # Send Slack strategy report
+        log.debug('Using strategy {}'.format(event.strategy))
         if send_messages:
             log.debug('Sending Slack strategy report')
             try:
@@ -253,14 +280,12 @@ def handle_event(event, send_messages=False, log=None, time=None):
     log.info('Inserting event {} into GOTO database'.format(event.name))
     try:
         log.debug('Adding to database')
-        add_event_to_obsdb(event, time, log)
+        grid = add_event_to_obsdb(event, time, log)
         log.info('Database insertion complete')
-
-        # Send Slack database report
         if send_messages:
             log.debug('Sending Slack database report')
             try:
-                send_database_report(event, time=time)
+                send_database_report(event, grid, time=time)
                 log.debug('Slack report sent')
             except Exception as err:
                 log.error('Error sending Slack report')
@@ -269,8 +294,6 @@ def handle_event(event, send_messages=False, log=None, time=None):
     except Exception as err:
         log.error('Unable to insert event into database')
         log.debug(err.__class__.__name__, exc_info=True)
-
-        # Send Slack error report
         if send_messages:
             log.debug('Sending Slack error report')
             msg = '*ERROR*: Failed to insert event {} into database'.format(event.name)

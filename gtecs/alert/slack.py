@@ -115,19 +115,18 @@ def send_strategy_report(event, slack_channel=None):
     s = f'*Strategy for event {event.name}*\n'
 
     if event.strategy is None:
-        # Something is being run out-of-order
+        # This is a retraction
         s += '*ERROR: No strategy defined*\n'
         send_slack_msg(s, channel=slack_channel)
         return
 
     # Basic strategy
-    strategy = event.get_strategy()
-    s += f'Strategy: `{strategy["strategy"]}`\n'
-    s += f'Rank: {strategy["rank"]}\n'
+    s += f'Strategy: `{event.strategy_dict["strategy"]}`\n'
+    s += f'Rank: {event.strategy_dict["rank"]}\n'
 
     # Cadence
-    for i, cadence in enumerate(strategy['cadence']):
-        cadence_dict = strategy['cadence_dict'][i]
+    for i, cadence in enumerate(event.strategy_dict['cadence']):
+        cadence_dict = event.strategy_dict['cadence_dict'][i]
         s += f'Cadence {i + 1}: `{cadence}`\n'
         s += f'- Number of visits: {cadence_dict["num_todo"]}\n'
         s += f'- Time between visits (hours): {cadence_dict["wait_hours"]}\n'
@@ -135,28 +134,28 @@ def send_strategy_report(event, slack_channel=None):
         s += f'- Stop time: {cadence_dict["stop_time"].iso}\n'
 
     # Constraints
-    s += f'Constraints: `{strategy["constraints"]}`\n'
-    s += f'- Min Alt: {strategy["constraints_dict"]["min_alt"]}\n'
-    s += f'- Max Sun Alt: {strategy["constraints_dict"]["max_sunalt"]}\n'
-    s += f'- Min Moon Sep: {strategy["constraints_dict"]["min_moonsep"]}\n'
-    s += f'- Max Moon Phase: {strategy["constraints_dict"]["max_moon"]}\n'
+    s += f'Constraints: `{event.strategy_dict["constraints"]}`\n'
+    s += f'- Min Alt: {event.strategy_dict["constraints_dict"]["min_alt"]}\n'
+    s += f'- Max Sun Alt: {event.strategy_dict["constraints_dict"]["max_sunalt"]}\n'
+    s += f'- Min Moon Sep: {event.strategy_dict["constraints_dict"]["min_moonsep"]}\n'
+    s += f'- Max Moon Phase: {event.strategy_dict["constraints_dict"]["max_moon"]}\n'
 
     # Exposure Sets
-    s += f'ExposureSets: `{strategy["exposure_sets"]}`\n'
-    for expset in strategy['exposure_sets_dict']:
+    s += f'ExposureSets: `{event.strategy_dict["exposure_sets"]}`\n'
+    for expset in event.strategy_dict['exposure_sets_dict']:
         s += f'- NumExp: {expset["num_exp"]:.0f}'
         s += f'  Filter: {expset["filt"]}'
         s += f'  ExpTime: {expset["exptime"]:.1f}s\n'
 
     # Tiling
-    s += f'Tile number limit: {strategy["tile_limit"]}\n'
-    s += f'Tile probability limit: {strategy["prob_limit"]:.1%}\n'
+    s += f'Tile number limit: {event.strategy_dict["tile_limit"]}\n'
+    s += f'Tile probability limit: {event.strategy_dict["prob_limit"]:.1%}\n'
 
     # Send the message
     send_slack_msg(s, channel=slack_channel)
 
 
-def send_database_report(event, slack_channel=None, time=None):
+def send_database_report(event, grid, slack_channel=None, time=None):
     """Send a message to Slack with details of the database pointings and visibility."""
     if time is None:
         time = Time.now()
@@ -194,11 +193,12 @@ def send_database_report(event, slack_channel=None, time=None):
         # Check non-retractions with no targets
         if len(db_survey.targets) == 0:
             # This might be because no tiles passed the filter
-            if (event.strategy['prob_limit'] > 0 and
-                    max(event.tiles['prob']) < event.strategy['prob_limit']):
+            all_tiles = grid.get_table()
+            if (event.strategy_dict['prob_limit'] > 0 and
+                    max(all_tiles['prob']) < event.strategy_dict['prob_limit']):
                 s += '- No tiles passed the probability limit '
-                s += f'({event.strategy["prob_limit"]:.1%}, '
-                s += f'highest had {max(event.tiles["prob"]):.1%})\n'
+                s += f'({event.strategy_dict["prob_limit"]:.1%}, '
+                s += f'highest had {max(all_tiles["prob"]):.1%})\n'
             else:
                 # Uh-oh, something went wrong when inserting?
                 s += '- *ERROR: No targets found in database*\n'
@@ -214,13 +214,13 @@ def send_database_report(event, slack_channel=None, time=None):
         site_names = [site.name for site in db_sites]
 
     # Find visibility constraints
-    min_alt = float(event.strategy['constraints_dict']['min_alt']) * u.deg
-    max_sunalt = float(event.strategy['constraints_dict']['max_sunalt']) * u.deg
+    min_alt = float(event.strategy_dict['constraints_dict']['min_alt']) * u.deg
+    max_sunalt = float(event.strategy_dict['constraints_dict']['max_sunalt']) * u.deg
     alt_constraint = AltitudeConstraint(min=min_alt)
     night_constraint = AtNightConstraint(max_solar_altitude=max_sunalt)
     constraints = [alt_constraint, night_constraint]
-    start_time = min(d['start_time'] for d in event.strategy['cadence_dict'])
-    stop_time = max(d['stop_time'] for d in event.strategy['cadence_dict'])
+    start_time = min(d['start_time'] for d in event.strategy_dict['cadence_dict'])
+    stop_time = max(d['stop_time'] for d in event.strategy_dict['cadence_dict'])
     s += 'Valid dates:'
     s += f' {start_time.datetime.strftime("%Y-%m-%d")} to'
     s += f' {stop_time.datetime.strftime("%Y-%m-%d")}'
@@ -231,7 +231,7 @@ def send_database_report(event, slack_channel=None, time=None):
     else:
         s += '\n'
 
-    total_prob = event.grid.get_probability(event_tiles)
+    total_prob = grid.get_probability(event_tiles)
     s += f'Total probability in all tiles: {total_prob:.1%}\n'
 
     # Create visibility plot
@@ -247,9 +247,9 @@ def send_database_report(event, slack_channel=None, time=None):
         s += f'Predicted visibility from {site_name}:\n'
 
         # Find which grid tiles are visible from this site
-        visible_mask = is_observable(constraints, observer, event.grid.coords,
+        visible_mask = is_observable(constraints, observer, grid.coords,
                                      time_range=[start_time, stop_time])
-        grid_tiles = np.array(event.grid.tilenames)
+        grid_tiles = np.array(grid.tilenames)
         grid_tiles_vis = set(grid_tiles[visible_mask])
 
         # Now find which event tiles are visible
@@ -258,26 +258,26 @@ def send_database_report(event, slack_channel=None, time=None):
         s += f' {len(event_tiles_vis)}/{len(event_tiles)}\n'
 
         # Find the probability for all tiles and those visible
-        visible_prob = event.grid.get_probability(event_tiles_vis)
+        visible_prob = grid.get_probability(event_tiles_vis)
         s += f'- Probability in visible tiles: {visible_prob:.1%}\n'
 
         # Add to plot
         axes = plt.subplot(11 + len(sites) * 100 + i, projection='astro hours mollweide')
 
         # Plot the tiles coloured by probability
-        t = event.grid.plot_tiles(
-            axes, array=event.grid.probs,
+        t = grid.plot_tiles(
+            axes, array=grid.probs,
             ec='none', alpha=0.8, cmap='cylon',
             zorder=1,
         )
-        t.set_clim(vmin=0, vmax=max(event.grid.probs))
-        event.grid.plot_tiles(axes, fc='none', ec='0.3', lw=0.1, zorder=1.2)
+        t.set_clim(vmin=0, vmax=max(grid.probs))
+        grid.plot_tiles(axes, fc='none', ec='0.3', lw=0.1, zorder=1.2)
 
         # Add the colorbar, formatting as a percentage
         fig.colorbar(
             t, ax=axes, fraction=0.02, pad=0.05,
             # label='Tile contained probability',
-            format=lambda x, _: f'{x:.1%}' if max(event.grid.probs) < 0.1 else f'{x:.0%}',
+            format=lambda x, _: f'{x:.1%}' if max(grid.probs) < 0.1 else f'{x:.0%}',
         )
 
         # Add contours
@@ -291,14 +291,14 @@ def send_database_report(event, slack_channel=None, time=None):
 
         # Overcast non-visible tiles
         alphas = [0 if t in grid_tiles_vis else 0.3 for t in grid_tiles]
-        event.grid.plot_tiles(axes, fc='0.5', ec='none', alpha=alphas, zorder=1.1)
+        grid.plot_tiles(axes, fc='0.5', ec='none', alpha=alphas, zorder=1.1)
 
         # Add the tile outlines coloured by visibility
         ec = ['tab:blue' if tilename in event_tiles_vis
               else 'tab:red' if tilename in event_tiles
               else 'none'
               for tilename in grid_tiles]
-        event.grid.plot_tiles(axes, fc='none', ec=ec, lw=1, zorder=1.21)
+        grid.plot_tiles(axes, fc='none', ec=ec, lw=1, zorder=1.21)
 
         # Add text
         if i == 0:

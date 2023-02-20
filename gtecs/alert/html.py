@@ -4,6 +4,7 @@ import csv
 import os
 from collections import OrderedDict
 
+from astroplan import FixedTarget
 from astroplan.plots import dark_style_sheet, plot_airmass, plot_finder_image
 
 import astropy.units as u
@@ -102,7 +103,8 @@ def create_graphs(file_path, event, site_data, fov=30):
     import warnings
     with warnings.catch_warnings():
         warnings.simplefilter('ignore')
-        plot_finder_image(event.target, fov_radius=fov * u.arcmin, grid=False, reticle=True)
+        target = FixedTarget(coord=event.coord)
+        plot_finder_image(target, fov_radius=fov * u.arcmin, grid=False, reticle=True)
 
     finder_path = os.path.join(file_path, 'finder_charts')
     if not os.path.exists(finder_path):
