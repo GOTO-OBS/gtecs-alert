@@ -204,7 +204,7 @@ def add_event_to_obsdb(event, time=None, log=None):
     return grid
 
 
-def handle_event(event, send_messages=False, ignore_roles=None, log=None, time=None):
+def handle_event(event, send_messages=False, ignore_test=True, log=None, time=None):
     """Handle a new Event.
 
     Parameters
@@ -215,9 +215,9 @@ def handle_event(event, send_messages=False, ignore_roles=None, log=None, time=N
     send_messages : bool, optional
         If True, send Slack messages.
         Default is False.
-    ignore_roles : list of str, optional
-        If given, ignore events with the given roles (e.g. 'test').
-        If None, all events are processed.
+    ignore_test : bool, optional
+        If True, ignore events with the 'test' role.
+        Default is True.
     log : logging.Logger, optional
         If given, direct log messages to this logger.
         If None, a new logger is created.
@@ -237,8 +237,9 @@ def handle_event(event, send_messages=False, ignore_roles=None, log=None, time=N
         log.setLevel(level=logging.DEBUG)
     if time is None:
         time = Time.now()
-    if ignore_roles is None:
-        ignore_roles = []
+    ignore_roles = ['utility']  # We never want to process utility events
+    if ignore_test:
+        ignore_roles.append('test')
 
     log.info('Handling Event {}'.format(event.ivorn))
 
@@ -252,7 +253,10 @@ def handle_event(event, send_messages=False, ignore_roles=None, log=None, time=N
     #    We send this first so if downloading the skymap fails we already have some sort of record
     if send_messages:
         log.debug('Sending initial Slack report')
-        msg = '*Processing new {} {} event: {}*'.format(event.source, event.type, event.id)
+        if event.role == 'observation':
+            msg = f'*Processing new {event.source} {event.type} event: {event.id}*'
+        else:
+            msg = f'*Processing new {event.source} {event.type} {event.role} event: {event.id}*'
         send_slack_msg(msg)
         log.debug('Slack report sent')
 

@@ -33,7 +33,7 @@ KAFKA_CLIENT_ID = config['KAFKA_CLIENT_ID']
 KAFKA_CLIENT_SECRET = config['KAFKA_CLIENT_SECRET']
 
 # Filter parameters
-IGNORE_ROLES = config['IGNORE_ROLES']
+PROCESS_TEST_EVENTS = config['PROCESS_TEST_EVENTS']
 
 ############################################################
 # Database parameters

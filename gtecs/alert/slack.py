@@ -45,11 +45,17 @@ def send_slack_msg(text, channel=None, *args, **kwargs):
 
 def send_event_report(event, slack_channel=None):
     """Send a message to Slack with the event details and skymap."""
-    s = f'*Details for event {event.name}*\n'
+    if event.role == 'observation':
+        s = f'*Details for event {event.name}*\n'
+    else:
+        s = f'*Details for {event.role} event {event.name}*\n'
 
     # Get list of details based on the event class
     details = event.get_details()
     s += '\n'.join(details)
+
+    if event.role != 'observation':
+        s += f'\n*NOTE: THIS IS A {event.role.upper()} EVENT*'
 
     filepath = None
     if event.skymap is not None:
@@ -112,7 +118,10 @@ def send_event_report(event, slack_channel=None):
 
 def send_strategy_report(event, slack_channel=None):
     """Send a message to Slack with the event strategy details."""
-    s = f'*Strategy for event {event.name}*\n'
+    if event.role == 'observation':
+        s = f'*Strategy for event {event.name}*\n'
+    else:
+        s = f'*Strategy for {event.role} event {event.name}*\n'
 
     if event.strategy is None:
         # This is a retraction
@@ -160,7 +169,11 @@ def send_database_report(event, grid, slack_channel=None, time=None):
     if time is None:
         time = Time.now()
 
-    s = f'*Visibility for event {event.name}*\n'
+    if event.role == 'observation':
+        s = f'*Visibility for event {event.name}*\n'
+    else:
+        s = f'*Visibility for {event.role} event {event.name}*\n'
+
     with db.open_session() as session:
         # Query Event table
         db_event = session.query(db.Event).filter(db.Event.name == event.name).one_or_none()

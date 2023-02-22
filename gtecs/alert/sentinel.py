@@ -240,7 +240,7 @@ class Sentinel:
                     try:
                         processed = handle_event(event,
                                                  send_messages=params.ENABLE_SLACK,
-                                                 ignore_roles=params.IGNORE_ROLES,
+                                                 ignore_test=not params.PROCESS_TEST_EVENTS,
                                                  log=self.log,
                                                  )
                     except Exception:
