@@ -88,7 +88,6 @@ def add_event_to_obsdb(event, time=None, log=None):
 
         # Create the new Survey
         db_survey = db.Survey(name=f'{event.name}_{len(db_event.surveys) + 1}',
-                              skymap=event.skymap_url,  # TODO: What about Gaussian/file skymaps?
                               )
         db_survey.event = db_event
         log.debug('Adding Survey {} to database'.format(db_survey.name))
@@ -248,54 +247,60 @@ def handle_event(event, send_messages=False, ignore_roles=None, log=None, time=N
         log.warning(f'Ignoring {event.type} {event.role} event')
         return False
     log.info('Processing {} Event {}'.format(event.type, event.name))
+
+    # 2) Send the initial Slack message
+    #    We send this first so if downloading the skymap fails we already have some sort of record
     if send_messages:
         log.debug('Sending initial Slack report')
         msg = '*Processing new {} {} event: {}*'.format(event.source, event.type, event.id)
         send_slack_msg(msg)
         log.debug('Slack report sent')
 
-    # 2) Fetch the event skymap
-    log.debug('Fetching event skymap')
+    # 3) Fetch the event skymap
+    #    We do this here so that we don't bother downloading for events we rejected already
+    log.info('Fetching event skymap')
     event.get_skymap()
-    event.skymap.regrade(128)
     log.debug('Skymap created')
+
+    # 4) Add to the alert database
+    #    We have to do this after we've downloaded the skymap
+    #    TODO: What about the survey ID?
+    log.info('Adding event to the alert database')
+    try:
+        event.add_to_database()
+        log.debug('Event added to the database')
+    except Exception as err:
+        log.error('Error adding event to the database')
+        log.debug(err.__class__.__name__, exc_info=True)
+
+    # 5) Send the event & strategy reports to Slack
+    #    Retractions have no strategy, so we only send one report for them
     if send_messages:
         log.debug('Sending Slack event report')
         try:
             send_event_report(event)
-            log.debug('Slack report sent')
+            if event.strategy is not None:
+                send_strategy_report(event)
+            log.debug('Slack reports sent')
         except Exception as err:
             log.error('Error sending Slack report')
             log.debug(err.__class__.__name__, exc_info=True)
 
-    # 3) Determine the event strategy
-    #    NB we can only do this after getting the skymap, because GW events need the distance.
+    # 6) Create targets and add them into the observation database
+    #    (after removing previous targets for the same event (which is all we do for retractions))
+    #    TODO: Do the tiling in a separate step?
+    log.info('Adding targets to the observation database')
     if event.strategy is not None:  # Retractions have no strategy
-        log.debug('Using strategy {}'.format(event.strategy))
-        if send_messages:
-            log.debug('Sending Slack strategy report')
-            try:
-                send_strategy_report(event)
-                log.debug('Slack report sent')
-            except Exception as err:
-                log.error('Error sending Slack report')
-                log.debug(err.__class__.__name__, exc_info=True)
-
-    # 4) Add the event into the GOTO observation database
-    log.info('Inserting event {} into GOTO database'.format(event.name))
+        log.info('Using strategy {}'.format(event.strategy))
     try:
-        log.debug('Adding to database')
+        # Need to regrade if the skymap is too big
+        # (note we do this after adding the origional to the alert database)
+        # TODO: This could be in the tiling step
+        if (event.skymap is not None and event.skymap.is_moc is False and
+                (event.skymap.nside > 128 or event.skymap.order == 'RING')):
+            event.skymap.regrade(nside=128, order='NESTED')
         grid = add_event_to_obsdb(event, time, log)
-        log.info('Database insertion complete')
-        if send_messages:
-            log.debug('Sending Slack database report')
-            try:
-                send_database_report(event, grid, time=time)
-                log.debug('Slack report sent')
-            except Exception as err:
-                log.error('Error sending Slack report')
-                log.debug(err.__class__.__name__, exc_info=True)
-
+        log.info('Targets added to the database')
     except Exception as err:
         log.error('Unable to insert event into database')
         log.debug(err.__class__.__name__, exc_info=True)
@@ -305,8 +310,18 @@ def handle_event(event, send_messages=False, ignore_roles=None, log=None, time=N
             send_slack_msg(msg)
             log.debug('Slack report sent')
 
-        raise
+    # 7) Send the database report to Slack
+    if send_messages:
+        log.debug('Sending Slack database report')
+        try:
+            # TODO: If adding the event fails then the grid won't be defined
+            #       (see splitting off the tiling step above)
+            send_database_report(event, grid, time=time)
+            log.debug('Slack report sent')
+        except Exception as err:
+            log.error('Error sending Slack report')
+            log.debug(err.__class__.__name__, exc_info=True)
 
-    # 5) Done
+    # Done
     log.info('Event {} processed'.format(event.name))
     return True

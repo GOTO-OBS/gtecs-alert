@@ -1,7 +1,6 @@
 """Class for listening for VOEvents."""
 
 import itertools
-import os
 import socket
 import threading
 import time
@@ -236,11 +235,6 @@ class Sentinel:
                 self.log.info('Processing new event: {}'.format(event.ivorn))
 
                 try:
-                    # First archive the event
-                    path = os.path.join(params.FILE_PATH, 'voevents')
-                    event.archive(path)
-                    self.log.info('Archived to {}'.format(path))
-
                     # Call the event handler, which will return True if it was processed
                     # or False if it was ignored (e.g. test events, or no matching subclasses)
                     try:
