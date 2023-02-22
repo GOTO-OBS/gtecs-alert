@@ -65,14 +65,11 @@ def send_event_report(event, slack_channel=None):
         axes.grid()
 
         # Plot the skymap data and contours
-        event.skymap.healpix.plot(axes, rasterize=False, cmap='cylon', cbar=False)
-        axes.contour_hpx(
-            event.skymap.contours / max(event.skymap.contours),
-            nested=event.skymap.is_nested,
-            levels=[0.5, 0.9],
-            colors='black', linewidths=0.5, linestyles=['dashed', 'solid'],
-            zorder=1.2,
-        )
+        event.skymap.plot_data(axes, rasterize=False, cmap='cylon', cbar=False)
+        event.skymap.plot_contours(axes, levels=[0.5, 0.9],
+                                   colors='black', linewidths=0.5, linestyles=['dashed', 'solid'],
+                                   zorder=1.2,
+                                   )
 
         # For small areas, add a marker
         if event.coord and event.skymap.get_contour_area(0.9) < 10:
@@ -294,10 +291,8 @@ def send_database_report(event, grid, slack_channel=None, time=None):
         )
 
         # Add contours
-        axes.contour_hpx(
-            event.skymap.contours / max(event.skymap.contours),
-            nested=event.skymap.is_nested,
-            levels=[0.5, 0.9],
+        event.skymap.plot_contours(
+            axes, levels=[0.5, 0.9],
             colors='black', linewidths=0.5, linestyles=['dashed', 'solid'],
             zorder=1.15,
         )
