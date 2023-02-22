@@ -7,6 +7,7 @@ from astropy.time import Time
 
 from gtecs.obs import database as db
 
+from . import database as alert_db
 from .slack import send_database_report, send_event_report, send_slack_msg, send_strategy_report
 
 
@@ -83,7 +84,7 @@ def add_event_to_obsdb(event, tiles, time=None, log=None):
 
         # If it's a retraction event that's all we need to do
         if event.strategy is None:
-            return
+            return None
 
         # Create the new Survey
         db_survey = db.Survey(name=f'{event.name}_{len(db_event.surveys) + 1}',
@@ -94,10 +95,10 @@ def add_event_to_obsdb(event, tiles, time=None, log=None):
         session.commit()
 
         # It's possible no tiles passed the selection criteria (or it failed),
-        # if so then return now
+        # if so then there's nothing to do (but we still add the "empty" survey above)
         if tiles is None or len(tiles) < 1:
             log.warning('Nothing to add to the database')
-            return
+            return db_survey.db_id
 
         # Get the database User, or make it if it doesn't exist, and the current Grid,
         # so we can link them to the new Targets
@@ -184,6 +185,8 @@ def add_event_to_obsdb(event, tiles, time=None, log=None):
             session.rollback()
             raise
 
+        return db_survey.db_id
+
 
 def handle_event(event, send_messages=False, ignore_test=True, log=None, time=None):
     """Handle a new Event.
@@ -230,24 +233,13 @@ def handle_event(event, send_messages=False, ignore_test=True, log=None, time=No
         return False
     log.info('Processing {} Event {}'.format(event.type, event.name))
 
-    # 2) Send the initial Slack message
-    #    We send this first so if downloading the skymap fails we already have some sort of record
-    if send_messages:
-        log.debug('Sending initial Slack report')
-        if event.role == 'observation':
-            msg = f'*Processing new {event.source} {event.type} event: {event.id}*'
-        else:
-            msg = f'*Processing new {event.source} {event.type} {event.role} event: {event.id}*'
-        send_slack_msg(msg)
-        log.debug('Slack report sent')
-
-    # 3) Fetch the event skymap
+    # 2) Fetch the event skymap
     #    We do this here so that we don't bother downloading for events we rejected already
     log.info('Fetching event skymap')
     event.get_skymap()
     log.debug('Skymap created')
 
-    # 4) Add to the alert database
+    # 3) Add to the alert database
     #    We have to do this after we've downloaded the skymap
     #    TODO: What about the survey ID?
     log.info('Adding event to the alert database')
@@ -255,10 +247,13 @@ def handle_event(event, send_messages=False, ignore_test=True, log=None, time=No
         event.add_to_database()
         log.debug('Event added to the database')
     except Exception as err:
+        if 'duplicate key value violates unique constraint' in str(err):
+            msg = f'Event with IVORN "{event.ivorn}" already exists in the alert database'
+            raise ValueError(msg) from err
         log.error('Error adding event to the database')
         log.debug(err.__class__.__name__, exc_info=True)
 
-    # 5) Send the event & strategy reports to Slack
+    # 4) Send the event & strategy reports to Slack
     #    Retractions have no strategy, so we only send one report for them
     if send_messages:
         log.debug('Sending Slack event report')
@@ -272,7 +267,7 @@ def handle_event(event, send_messages=False, ignore_test=True, log=None, time=No
             log.error('Error sending Slack report')
             log.debug(err.__class__.__name__, exc_info=True)
 
-    # 6) Get the grid tiles covering the skymap (if there is one)
+    # 5) Get the grid tiles covering the skymap (if there is one)
     if event.skymap is not None:
         log.debug('Selecting grid tiles')
         try:
@@ -303,11 +298,11 @@ def handle_event(event, send_messages=False, ignore_test=True, log=None, time=No
         log.debug('No skymap, so no grid tiles selected')
         selected_tiles = None
 
-    # 7) Create targets and add them into the observation database
+    # 6) Create targets and add them into the observation database
     #    (after removing previous targets for the same event (which is all we do for retractions))
     log.info('Updating the observation database')
     try:
-        add_event_to_obsdb(event, selected_tiles, time, log)
+        survey_id = add_event_to_obsdb(event, selected_tiles, time, log)
         log.info('Database updated')
         if send_messages:
             log.debug('Sending Slack database report')
@@ -316,11 +311,24 @@ def handle_event(event, send_messages=False, ignore_test=True, log=None, time=No
     except Exception as err:
         log.error('Error updating the observation database')
         log.debug(err.__class__.__name__, exc_info=True)
+        survey_id = None
         if send_messages:
             log.debug('Sending Slack error report')
             msg = '*ERROR*: Failed to insert event {} into database'.format(event.name)
             send_slack_msg(msg)
             log.debug('Slack report sent')
+
+    # 7) Update the survey ID in the alert database to map to the observation database
+    if survey_id is not None:
+        log.info('Updating survey ID in the alert database')
+        try:
+            with alert_db.open_session() as session:
+                db_voevent = session.query(alert_db.VOEvent).filter_by(ivorn=event.ivorn).one()
+                db_voevent.survey_id = survey_id
+            log.debug('Alert database updated')
+        except Exception as err:
+            log.error('Error updating alert database')
+            log.debug(err.__class__.__name__, exc_info=True)
 
     # Done
     log.info('Event {} processed'.format(event.name))
