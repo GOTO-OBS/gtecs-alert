@@ -10,39 +10,38 @@ from gtecs.obs import database as db
 from .slack import send_database_report, send_event_report, send_slack_msg, send_strategy_report
 
 
-def get_event_tiles(event, grid, selection_contour=None):
-    """Apply the Event skymap to the given grid and return a table of filtered tiles."""
-    # Apply the Event skymap to the grid
-    skymap = event.get_skymap()
+def get_tiles(skymap, grid, selection_contour=None, tile_limit=None, prob_limit=None):
+    """Apply the skymap to the observing grid and return a table of filtered tiles."""
+    # Apply the skymap to the grid and get the table of tile probabilities
     grid.apply_skymap(skymap)
-
-    # Sort and store the full table of tiles on the Event
     tiles = grid.get_table()
 
-    # If no selection or strategy then just return the full table
-    if event.strategy is None or selection_contour is None:
+    # If no selection then just return the full table
+    if selection_contour is None:
         return tiles
 
     # Limit tiles to add to the database
-    # First select only tiles covering the given contour level
+    # 1) Select only tiles covering the given contour level
     mask = grid.contours < selection_contour
 
-    # Then limit the number of tiles, if given
-    if (event.strategy_dict['tile_limit'] is not None and
-            sum(mask) > event.strategy_dict['tile_limit']):
+    # 2) Limit the number of tiles, if requested
+    if tile_limit is not None and sum(mask) > tile_limit:
         # Limit by probability above `tile_limit`th tile
-        min_tile_prob = sorted(grid.probs, reverse=True)[event.strategy_dict['tile_limit']]
+        min_tile_prob = sorted(grid.probs, reverse=True)[tile_limit]
         mask &= grid.probs > min_tile_prob
 
-    # Finally limit to tiles which contain more than a given probability
-    if event.strategy_dict['prob_limit'] is not None:
-        mask &= grid.probs > event.strategy_dict['prob_limit']
+    # 3) Limit to tiles which contain more than any given probability
+    if prob_limit is not None:
+        mask &= grid.probs > prob_limit
 
-    # Return the masked table
-    return tiles[mask]
+    # Return the masked table, sorted by probability
+    selected_tiles = tiles[mask]
+    selected_tiles.sort('prob')
+    selected_tiles.reverse()
+    return selected_tiles
 
 
-def add_event_to_obsdb(event, time=None, log=None):
+def add_event_to_obsdb(event, tiles, time=None, log=None):
     """Add the Event into the database."""
     if time is None:
         time = Time.now()
@@ -94,39 +93,23 @@ def add_event_to_obsdb(event, time=None, log=None):
         session.add(db_survey)  # Add now, even if we don't add any tiles below
         session.commit()
 
-        # Get the grid tiles from the skymap
-        db_grid = db.get_current_grid(session)
-        log.info('Applying to Grid {}'.format(db_grid.name))
-        grid = db_grid.skygrid
-
-        # Chose the contour level
-        # NOTE: The code below is rather preliminary, based of what's best for 4- or 8-UT systems.
-        # It needs simulating to find the optimal value.
-        if grid.tile_area < 20:
-            # GOTO-4
-            contour_level = 0.9
-        else:
-            # GOTO-8
-            contour_level = 0.95
-
-        # Get the masked tile table
-        selected_tiles = get_event_tiles(event, grid, contour_level)
-        selected_tiles.sort('prob')
-        selected_tiles.reverse()
-        log.debug('Masked tile table has {} entries'.format(len(selected_tiles)))
-        if len(selected_tiles) < 1:
-            log.warning('No tiles passed filtering, nothing to add to the database')
+        # It's possible no tiles passed the selection criteria (or it failed),
+        # if so then return now
+        if tiles is None or len(tiles) < 1:
+            log.warning('Nothing to add to the database')
             return
 
-        # Get the database User, or make it if it doesn't exist
+        # Get the database User, or make it if it doesn't exist, and the current Grid,
+        # so we can link them to the new Targets
         try:
             db_user = db.get_user(session, username='sentinel')
         except ValueError:
             db_user = db.User('sentinel', '', 'Sentinel Alert Listener')
+        db_grid = db.get_current_grid(session)
 
         # Create Targets for each tile
         db_targets = []
-        for tile_name, _, _, tile_weight in selected_tiles:
+        for tile_name, _, _, tile_weight in tiles:
             # Find the matching GridTile
             query = session.query(db.GridTile)
             query = query.filter(db.GridTile.grid == db_grid)
@@ -200,8 +183,6 @@ def add_event_to_obsdb(event, time=None, log=None):
             # Undo database changes before raising
             session.rollback()
             raise
-
-    return grid
 
 
 def handle_event(event, send_messages=False, ignore_test=True, log=None, time=None):
@@ -284,47 +265,62 @@ def handle_event(event, send_messages=False, ignore_test=True, log=None, time=No
         try:
             send_event_report(event)
             if event.strategy is not None:
+                log.info('Using strategy {}'.format(event.strategy))
                 send_strategy_report(event)
             log.debug('Slack reports sent')
         except Exception as err:
             log.error('Error sending Slack report')
             log.debug(err.__class__.__name__, exc_info=True)
 
-    # 6) Create targets and add them into the observation database
+    # 6) Get the grid tiles covering the skymap (if there is one)
+    if event.skymap is not None:
+        log.debug('Selecting grid tiles')
+        try:
+            # Get the current grid from the database
+            with db.open_session() as session:
+                db_grid = db.get_current_grid(session)
+                grid = db_grid.skygrid
+            # If the skymap is too big we regrade before applying it to the grid
+            # (note that we do only this after adding the original skymap to the alert database)
+            if (event.skymap is not None and event.skymap.is_moc is False and
+                    (event.skymap.nside > 128 or event.skymap.order == 'RING')):
+                event.skymap.regrade(nside=128, order='NESTED')
+            # Get the grid tiles covering the skymap
+            # TODO: The selection contour is currently fixed, but it should be based on simulations
+            #       and could change based on the type of event (part of strategy?)
+            contour_level = 0.95
+            selected_tiles = get_tiles(
+                event.skymap, grid, contour_level,
+                tile_limit=event.strategy_dict['tile_limit'],
+                prob_limit=event.strategy_dict['prob_limit'],
+            )
+            log.debug('Selected {}/{} tiles'.format(len(selected_tiles), grid.ntiles))
+        except Exception as err:
+            log.error('Error applying event skymap to the grid')
+            log.debug(err.__class__.__name__, exc_info=True)
+            selected_tiles = None
+    else:
+        log.debug('No skymap, so no grid tiles selected')
+        selected_tiles = None
+
+    # 7) Create targets and add them into the observation database
     #    (after removing previous targets for the same event (which is all we do for retractions))
-    #    TODO: Do the tiling in a separate step?
-    log.info('Adding targets to the observation database')
-    if event.strategy is not None:  # Retractions have no strategy
-        log.info('Using strategy {}'.format(event.strategy))
+    log.info('Updating the observation database')
     try:
-        # Need to regrade if the skymap is too big
-        # (note we do this after adding the origional to the alert database)
-        # TODO: This could be in the tiling step
-        if (event.skymap is not None and event.skymap.is_moc is False and
-                (event.skymap.nside > 128 or event.skymap.order == 'RING')):
-            event.skymap.regrade(nside=128, order='NESTED')
-        grid = add_event_to_obsdb(event, time, log)
-        log.info('Targets added to the database')
+        add_event_to_obsdb(event, selected_tiles, time, log)
+        log.info('Database updated')
+        if send_messages:
+            log.debug('Sending Slack database report')
+            send_database_report(event, grid, time=time)
+            log.debug('Slack report sent')
     except Exception as err:
-        log.error('Unable to insert event into database')
+        log.error('Error updating the observation database')
         log.debug(err.__class__.__name__, exc_info=True)
         if send_messages:
             log.debug('Sending Slack error report')
             msg = '*ERROR*: Failed to insert event {} into database'.format(event.name)
             send_slack_msg(msg)
             log.debug('Slack report sent')
-
-    # 7) Send the database report to Slack
-    if send_messages:
-        log.debug('Sending Slack database report')
-        try:
-            # TODO: If adding the event fails then the grid won't be defined
-            #       (see splitting off the tiling step above)
-            send_database_report(event, grid, time=time)
-            log.debug('Slack report sent')
-        except Exception as err:
-            log.error('Error sending Slack report')
-            log.debug(err.__class__.__name__, exc_info=True)
 
     # Done
     log.info('Event {} processed'.format(event.name))
