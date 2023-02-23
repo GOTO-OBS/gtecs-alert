@@ -184,6 +184,7 @@ def send_database_report(event, grid, slack_channel=None, time=None):
         # Send different alerts for retractions
         if event.strategy is None:
             # Check that all pointings for this event have been deleted
+            time += 1 * u.s  # Need to be after the insertion time
             pending = [p for p in db_event.pointings
                        if p.status_at_time(time) not in ['deleted', 'expired', 'completed']]
             s += f'Number of pending pointings found for this event: {len(pending)}\n'

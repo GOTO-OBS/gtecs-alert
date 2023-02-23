@@ -270,13 +270,14 @@ def handle_event(event, send_messages=False, ignore_test=True, log=None, time=No
             log.debug(err.__class__.__name__, exc_info=True)
 
     # 5) Get the grid tiles covering the skymap (if there is one)
-    if event.skymap is not None:
-        log.debug('Selecting grid tiles')
-        try:
-            # Get the current grid from the database
-            with db.open_session() as session:
-                db_grid = db.get_current_grid(session)
-                grid = db_grid.skygrid
+    log.debug('Selecting grid tiles')
+    try:
+        # Get the current grid from the database
+        with db.open_session() as session:
+            db_grid = db.get_current_grid(session)
+            grid = db_grid.skygrid
+
+        if event.skymap is not None:
             # If the skymap is too big we regrade before applying it to the grid
             # (note that we do only this after adding the original skymap to the alert database)
             if (event.skymap is not None and event.skymap.is_moc is False and
@@ -292,12 +293,12 @@ def handle_event(event, send_messages=False, ignore_test=True, log=None, time=No
                 prob_limit=event.strategy_dict['prob_limit'],
             )
             log.debug('Selected {}/{} tiles'.format(len(selected_tiles), grid.ntiles))
-        except Exception as err:
-            log.error('Error applying event skymap to the grid')
-            log.debug(err.__class__.__name__, exc_info=True)
+        else:
+            log.debug('No skymap, so no grid tiles selected')
             selected_tiles = None
-    else:
-        log.debug('No skymap, so no grid tiles selected')
+    except Exception as err:
+        log.error('Error applying event skymap to the grid')
+        log.debug(err.__class__.__name__, exc_info=True)
         selected_tiles = None
 
     # 6) Create targets and add them into the observation database
@@ -306,6 +307,8 @@ def handle_event(event, send_messages=False, ignore_test=True, log=None, time=No
     try:
         survey_id = add_event_to_obsdb(event, selected_tiles, time, log)
         log.info('Database updated')
+        # TODO: Should we have some checks that the database was updated correctly here,
+        #       instead of leaving it to the Slack report?
         if send_messages:
             log.debug('Sending Slack database report')
             send_database_report(event, grid, time=time)
