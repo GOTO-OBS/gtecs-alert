@@ -244,7 +244,9 @@ def handle_event(event, send_messages=False, ignore_test=True, log=None, time=No
     #    TODO: What about the survey ID?
     log.info('Adding event to the alert database')
     try:
-        event.add_to_database()
+        with alert_db.open_session() as s:
+            db_voevent = alert_db.VOEvent.from_event(event)
+            s.add(db_voevent)
         log.debug('Event added to the database')
     except Exception as err:
         if 'duplicate key value violates unique constraint' in str(err):

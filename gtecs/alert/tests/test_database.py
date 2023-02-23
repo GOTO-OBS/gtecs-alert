@@ -2,12 +2,6 @@
 """A simple test script for the GOTO-alert database."""
 
 import importlib.resources as pkg_resources
-from gzip import GzipFile
-from io import BytesIO
-
-from astropy.io import fits
-
-from gototile.skymap import SkyMap
 
 from gtecs.alert import database as db
 from gtecs.alert.events import Event
@@ -28,21 +22,13 @@ if __name__ == '__main__':
             print(f'Loading {f}')
             event = Event.from_file(f)
         event.get_skymap()
-        event.add_to_database()
+        with db.open_session() as s:
+            db_voevent = db.VOEvent.from_event(event)
+            s.add(db_voevent)
 
         print('Loading from database')
         with db.open_session() as s:
             db_voevent = s.query(db.VOEvent).filter(db.VOEvent.ivorn == event.ivorn).one()
 
-            event_new = Event.from_payload(db_voevent.payload)
-            assert event.packet_type == event_new.packet_type
-
-            if db_voevent.skymap is not None:
-                try:
-                    hdu = fits.open(BytesIO(db_voevent.skymap))
-                except OSError:
-                    # It might be compressed
-                    gzip = GzipFile(fileobj=BytesIO(db_voevent.skymap), mode='rb')
-                    hdu = fits.open(gzip)
-                skymap_new = SkyMap.from_fits(hdu)
-                assert event.skymap == skymap_new
+            assert event.packet_type == db_voevent.event.packet_type
+            assert event.skymap == db_voevent.event.skymap

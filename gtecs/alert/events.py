@@ -17,7 +17,6 @@ import voeventdb.remote.apiv1 as vdb
 
 import voeventparse as vp
 
-from . import database as db
 from .strategy import get_strategy_details
 
 
@@ -142,38 +141,6 @@ class Event:
         with open(out_path, 'wb') as f:
             f.write(self.payload)
         return out_path
-
-    def add_to_database(self):
-        """Add this event to the alert database."""
-        if self.skymap is None:
-            self.get_skymap()
-        if self.skymap is None:
-            # Can't raise an error, it could be a retraction
-            skymap_bytes = None
-        else:
-            if self.skymap_file is None:
-                # We created our own Skymap
-                # So we have to save it to a file and read it back in, which is awkward..
-                path = f'/tmp/skymap_{Time.now().isot}.fits'
-                self.skymap.save(path)
-            else:
-                # The skymap was downloaded to a temp file, so we need to check if it still exists
-                if not os.path.exists(self.skymap_file):
-                    # We'll need to redownload it
-                    self.get_skymap()
-                path = self.skymap_file
-            # Now open the file and read the bytes
-            with open(path, 'rb') as f:
-                skymap_bytes = f.read()
-
-        with db.open_session() as s:
-            db_voevent = db.VOEvent(
-                ivorn=self.ivorn,
-                received=self.creation_time,
-                payload=self.payload,
-                skymap=skymap_bytes,
-            )
-            s.add(db_voevent)
 
     def get_skymap(self, nside=128):
         """Return the Event skymap as a `gototile.skymap.SkyMap object."""

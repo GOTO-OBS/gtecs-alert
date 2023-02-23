@@ -1,9 +1,15 @@
 """Alert database archive functions and ORM."""
 
 import datetime
+import os
 from contextlib import contextmanager
+from gzip import GzipFile
+from io import BytesIO
 
+from astropy.io import fits
 from astropy.time import Time
+
+from gototile.skymap import SkyMap
 
 from gtecs.common.database import get_session
 from gtecs.obs.database.models import Base
@@ -139,3 +145,49 @@ class VOEvent(Base):
             # just hope the string works!
             value = str(field)
         return value
+
+    @classmethod
+    def from_event(cls, event):
+        """Create a VOEvent from an Event class."""
+        if event.skymap is None:
+            event.get_skymap()
+        if event.skymap is None:
+            # Can't raise an error, it could be a retraction
+            skymap_bytes = None
+        else:
+            if event.skymap_file is None:
+                # We created our own Skymap
+                # So we have to save it to a file and read it back in, which is awkward..
+                path = f'/tmp/skymap_{Time.now().isot}.fits'
+                event.skymap.save(path)
+            else:
+                # The skymap was downloaded to a temp file, so we need to check if it still exists
+                if not os.path.exists(event.skymap_file):
+                    # We'll need to redownload it
+                    event.get_skymap()
+                path = event.skymap_file
+            # Now open the file and read the bytes
+            with open(path, 'rb') as f:
+                skymap_bytes = f.read()
+
+        voevent = cls(
+            ivorn=event.ivorn,
+            received=event.creation_time,
+            payload=event.payload,
+            skymap=skymap_bytes,
+        )
+        return voevent
+
+    @property
+    def event(self):
+        """Get the Event class from the VOEvent payload."""
+        event = Event.from_payload(self.payload)
+        if self.skymap is not None:
+            try:
+                hdu = fits.open(BytesIO(self.skymap))
+            except OSError:
+                # It might be compressed
+                gzip = GzipFile(fileobj=BytesIO(self.skymap), mode='rb')
+                hdu = fits.open(gzip)
+            event.skymap = SkyMap.from_fits(hdu)
+        return event
