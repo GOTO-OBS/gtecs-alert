@@ -232,7 +232,7 @@ def add_to_database(notice, time=None, log=None):
     return grid
 
 
-def handle_notice(notice, send_messages=False, ignore_test=True, log=None, time=None):
+def handle_notice(notice, send_messages=False, log=None, time=None):
     """Handle a new GCN notice.
 
     Parameters
@@ -243,20 +243,12 @@ def handle_notice(notice, send_messages=False, ignore_test=True, log=None, time=
     send_messages : bool, optional
         If True, send Slack messages.
         Default is False.
-    ignore_test : bool, optional
-        If True, ignore notices with the 'test' role.
-        Default is True.
     log : logging.Logger, optional
         If given, direct log messages to this logger.
         If None, a new logger is created.
     time : astropy.time.Time, optional
         If given, insert entries at the given time (useful for testing).
         If None, use the current time.
-
-    Returns
-    -------
-    processed : bool
-        Will return True if the notice was processed.
 
     """
     if log is None:
@@ -265,21 +257,10 @@ def handle_notice(notice, send_messages=False, ignore_test=True, log=None, time=
         log.setLevel(level=logging.DEBUG)
     if time is None:
         time = Time.now()
-    ignore_roles = ['utility']  # We never want to process utility notices
-    if ignore_test:
-        ignore_roles.append('test')
 
-    log.info('Handling GCN notice {}'.format(notice.ivorn))
-
-    # 0) Check if it's an notice we want to process, otherwise return here
-    #    TODO: should this be within the sentinel?
-    if notice.role in ignore_roles or notice.event_type == 'unknown':
-        log.warning(f'Ignoring {notice.event_type} {notice.role} notice')
-        return False
-    log.info('Processing {} notice {}'.format(notice.event_type, notice.ivorn))
+    log.info('Handling notice {}'.format(notice.ivorn))
 
     # 1) Fetch the skymap
-    #    We do this here so that we don't bother downloading for notices we have already rejected
     log.info('Fetching skymap')
     notice.get_skymap()
     log.debug('Skymap created')
@@ -300,7 +281,7 @@ def handle_notice(notice, send_messages=False, ignore_test=True, log=None, time=
 
     # 3) Add the entries to the database
     log.info('Adding notice to the alert database')
-    grid = add_to_database(notice, time=time)
+    grid = add_to_database(notice, time=time, log=log)
 
     # 4) Send the database report to Slack
     # TODO: Should we have some checks that the database was updated correctly here,
@@ -315,5 +296,5 @@ def handle_notice(notice, send_messages=False, ignore_test=True, log=None, time=
             log.debug(err.__class__.__name__, exc_info=True)
 
     # Done
-    log.info('Notice {} processed'.format(notice.ivorn))
-    return True
+    log.info('Notice {} successfully processed'.format(notice.ivorn))
+    return
