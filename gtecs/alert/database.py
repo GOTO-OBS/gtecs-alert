@@ -19,7 +19,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import backref, relationship, validates
 
 from . import params
-from .gcn import Event as GCNEvent
+from .gcn import GCNNotice
 
 
 @contextmanager
@@ -258,41 +258,41 @@ class Notice(Base):
         return value
 
     @classmethod
-    def from_gcn(cls, event):
+    def from_gcn(cls, notice):
         """Create a database-linked Notice entry from a GCN notice."""
-        if event.skymap is None:
-            event.get_skymap()
-        if event.skymap is None:
+        if notice.skymap is None:
+            notice.get_skymap()
+        if notice.skymap is None:
             # Can't raise an error, it could be a retraction
             skymap_bytes = None
         else:
-            if event.skymap_file is None:
+            if notice.skymap_file is None:
                 # We created our own Skymap
                 # So we have to save it to a file and read it back in, which is awkward..
                 path = f'/tmp/skymap_{Time.now().isot}.fits'
-                event.skymap.save(path)
+                notice.skymap.save(path)
             else:
                 # The skymap was downloaded to a temp file, so we need to check if it still exists
-                if not os.path.exists(event.skymap_file):
+                if not os.path.exists(notice.skymap_file):
                     # We'll need to redownload it
-                    event.get_skymap()
-                path = event.skymap_file
+                    notice.get_skymap()
+                path = notice.skymap_file
             # Now open the file and read the bytes
             with open(path, 'rb') as f:
                 skymap_bytes = f.read()
 
         db_notice = cls(
-            ivorn=event.ivorn,
-            received=event.creation_time,
-            payload=event.payload,
+            ivorn=notice.ivorn,
+            received=notice.creation_time,
+            payload=notice.payload,
             skymap=skymap_bytes,
         )
         return db_notice
 
     @property
-    def gcn_event(self):
-        """Create a GCN event class (or subclass) from this Notice."""
-        event = GCNEvent.from_payload(self.payload)
+    def gcn(self):
+        """Create a GCNNotice class (or subclass) from this Notice."""
+        notice = GCNNotice.from_payload(self.payload)
         if self.skymap is not None:
             try:
                 hdu = fits.open(BytesIO(self.skymap))
@@ -300,5 +300,5 @@ class Notice(Base):
                 # It might be compressed
                 gzip = GzipFile(fileobj=BytesIO(self.skymap), mode='rb')
                 hdu = fits.open(gzip)
-            event.skymap = SkyMap.from_fits(hdu)
-        return event
+            notice.skymap = SkyMap.from_fits(hdu)
+        return notice

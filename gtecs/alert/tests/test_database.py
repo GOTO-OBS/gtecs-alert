@@ -4,7 +4,7 @@
 import importlib.resources as pkg_resources
 
 from gtecs.alert import database as db
-from gtecs.alert.gcn import Event
+from gtecs.alert.gcn import GCNNotice
 
 
 if __name__ == '__main__':
@@ -20,15 +20,15 @@ if __name__ == '__main__':
         print('Adding to database')
         with pkg_resources.path('gtecs.alert.data.test_notices', test_file) as f:
             print(f'Loading {f}')
-            event = Event.from_file(f)
-        event.get_skymap()
+            notice = GCNNotice.from_file(f)
+        notice.get_skymap()
         with db.open_session() as s:
-            db_voevent = db.VOEvent.from_event(event)
-            s.add(db_voevent)
+            db_notice = db.Notice.from_gcn(notice)
+            s.add(db_notice)
 
         print('Loading from database')
         with db.open_session() as s:
-            db_voevent = s.query(db.VOEvent).filter(db.VOEvent.ivorn == event.ivorn).one()
+            db_notice = s.query(db.Notice).filter(db.Notice.ivorn == notice.ivorn).one()
 
-            assert event.packet_type == db_voevent.event.packet_type
-            assert event.skymap == db_voevent.event.skymap
+            assert notice.packet_type == db_notice.gcn.packet_type
+            assert notice.skymap == db_notice.gcn.skymap
