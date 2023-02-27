@@ -33,7 +33,8 @@ KAFKA_CLIENT_ID = config['KAFKA_CLIENT_ID']
 KAFKA_CLIENT_SECRET = config['KAFKA_CLIENT_SECRET']
 
 # Filter parameters
-PROCESS_TEST_EVENTS = config['PROCESS_TEST_EVENTS']
+# TODO: Couldn't this be a switchable flag within the sentinel?
+PROCESS_TEST_NOTICES = config['PROCESS_TEST_NOTICES']
 
 ############################################################
 # Database parameters

@@ -8,7 +8,7 @@ import astropy.units as u
 from astropy.time import Time
 
 from gtecs.common.slack import send_message
-from gtecs.obs import database as db
+from gtecs.obs import database as obs_db
 
 import ligo.skymap.plot  # noqa: F401  (for extra projections)
 
@@ -16,6 +16,7 @@ from matplotlib import pyplot as plt
 
 import numpy as np
 
+from . import database as alert_db
 from . import params
 
 
@@ -171,21 +172,26 @@ def send_database_report(event, grid, slack_channel=None, time=None):
     else:
         s = f'*Visibility for {event.role} event {event.name}*\n'
 
-    with db.open_session() as session:
+    # Get info from the alert database
+    with alert_db.open_session() as session:
         # Query Event table
-        db_event = session.query(db.Event).filter(db.Event.name == event.name).one_or_none()
+        query = session.query(alert_db.Event).filter(alert_db.Event.name == event.name)
+        db_event = query.one_or_none()
         if db_event is None:
             # Uh-oh, send a warning message
             s += '*ERROR: No matching entry found in database*\n'
             send_slack_msg(s, channel=slack_channel)
             return
+        s += f'Number of notices found for this event: {len(db_event.notices)}\n'
         s += f'Number of surveys found for this event: {len(db_event.surveys)}\n'
 
         # Send different alerts for retractions
         if event.strategy is None:
             # Check that all pointings for this event have been deleted
             time += 1 * u.s  # Need to be after the insertion time
-            pending = [p for p in db_event.pointings
+            pending = [p
+                       for survey in db_event.surveys
+                       for p in survey.pointings
                        if p.status_at_time(time) not in ['deleted', 'expired', 'completed']]
             s += f'Number of pending pointings found for this event: {len(pending)}\n'
             if len(pending) == 0:
@@ -220,7 +226,10 @@ def send_database_report(event, grid, slack_channel=None, time=None):
         # Get info from the database here, so we can close the connection
         survey_name = db_survey.name
         event_tiles = np.array([target.grid_tile.name for target in db_survey.targets])
-        db_sites = session.query(db.Site).all()
+
+    # Get site info from the obsdb
+    with obs_db.open_session() as session:
+        db_sites = session.query(obs_db.Site).all()
         sites = [site.location for site in db_sites]
         site_names = [site.name for site in db_sites]
 
@@ -264,7 +273,7 @@ def send_database_report(event, grid, slack_channel=None, time=None):
         grid_tiles_vis = set(grid_tiles[visible_mask])
 
         # Now find which event tiles are visible
-        event_tiles_vis = set([t for t in event_tiles if t in grid_tiles_vis])
+        event_tiles_vis = {t for t in event_tiles if t in grid_tiles_vis}
         s += '- Tiles visible during valid period:'
         s += f' {len(event_tiles_vis)}/{len(event_tiles)}\n'
 

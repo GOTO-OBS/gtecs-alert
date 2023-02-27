@@ -1,127 +1,171 @@
-"""Functions for handling VOEvents."""
+"""Functions for handling notices."""
 
 import logging
 
 from astropy import units as u
 from astropy.time import Time
 
-from gtecs.obs import database as db
+from gtecs.obs import database as obs_db
 
 from . import database as alert_db
-from .slack import send_database_report, send_event_report, send_slack_msg, send_strategy_report
+from .slack import send_database_report, send_event_report, send_strategy_report
 
 
-def get_tiles(skymap, grid, selection_contour=None, tile_limit=None, prob_limit=None):
-    """Apply the skymap to the observing grid and return a table of filtered tiles."""
-    # Apply the skymap to the grid and get the table of tile probabilities
-    grid.apply_skymap(skymap)
-    tiles = grid.get_table()
-
-    # If no selection then just return the full table
-    if selection_contour is None:
-        return tiles
-
-    # Limit tiles to add to the database
-    # 1) Select only tiles covering the given contour level
-    mask = grid.contours < selection_contour
-
-    # 2) Limit the number of tiles, if requested
-    if tile_limit is not None and sum(mask) > tile_limit:
-        # Limit by probability above `tile_limit`th tile
-        min_tile_prob = sorted(grid.probs, reverse=True)[tile_limit]
-        mask &= grid.probs > min_tile_prob
-
-    # 3) Limit to tiles which contain more than any given probability
-    if prob_limit is not None:
-        mask &= grid.probs > prob_limit
-
-    # Return the masked table, sorted by probability
-    selected_tiles = tiles[mask]
-    selected_tiles.sort('prob')
-    selected_tiles.reverse()
-    return selected_tiles
-
-
-def add_event_to_obsdb(event, tiles, time=None, log=None):
-    """Add the Event into the database."""
+def add_to_database(event, time=None, log=None):
+    """Add entries for this event into the database(s)."""
     if time is None:
         time = Time.now()
     if log is None:
         log = logging.getLogger('database')
         log.setLevel(level=logging.DEBUG)
 
-    with db.open_session() as session:
-        # Get the database Event (or make one if it's new)
-        db_event = session.query(db.Event).filter(db.Event.name == event.name).one_or_none()
+    # First make sure we have the event skymap
+    if event.skymap is None:
+        event.get_skymap()  # May still be None if it's a retraction
+
+    # Add to the alert database
+    with alert_db.open_session() as session:
+        # Get any matching Event from the database, or make one if it's new
+        query = session.query(alert_db.Event)
+        query = query.filter(alert_db.Event.name == event.name)
+        db_event = query.one_or_none()
         if db_event is None:
-            db_event = db.Event(
+            db_event = alert_db.Event(
                 name=event.name,
-                source=event.source,
                 type=event.type,
+                origin=event.source,
                 time=event.time,
             )
-        session.add(db_event)  # Need to add now, so it has an ID for the query below
-        session.commit()
 
-        # Go through any previous Surveys for this Event and "delete" any incomplete Targets
-        # Using target.mark_deleted() will also delete any pending Pointings for each Target,
-        # but won't interrupt one if it's currently running.
-        log.debug('Event {} has {} previous Surveys in the database'.format(event.name,
-                                                                            len(db_event.surveys)))
-        for db_survey in db_event.surveys:
-            # TODO: This could be a lot smarter.
-            #       We don't want to delete Pointings if the skymap hasn't changed?
-            #       But we might still want to adjust the strategy...
-            #       For now we always reset the database on every update.
-            num_deleted = 0
-            for db_target in db_survey.targets:
-                if db_target.status_at_time(time) not in ['deleted', 'expired', 'completed']:
-                    db_target.mark_deleted(time=time)
-                    num_deleted += 1
-            if num_deleted > 0:
-                log.debug('Deleted {} Targets for Survey {}'.format(num_deleted, db_survey.name))
-            session.commit()
+        # Now add the Notice (we'll update the survey ID later)
+        db_notice = alert_db.Notice.from_gcn(event)
+        db_notice.event = db_event
+        session.add(db_notice)
 
-        # If it's a retraction event that's all we need to do
-        if event.strategy is None:
-            return None
+        # Find how many previous surveys there have been for this event
+        event_surveys = [survey.db_id for survey in db_event.surveys]
+        log.debug(f'Found {len(event_surveys)} previous surveys for this event')
 
-        # Create the new Survey
-        db_survey = db.Survey(name=f'{event.name}_{len(db_event.surveys) + 1}',
-                              )
-        db_survey.event = db_event
+        if len(event_surveys) > 0:
+            # We want to see if the skymap or strategy has changed from the previous notice.
+            # If it has, we'll want to create a new survey.
+            # If there are previous surveys for this event, there should be previous notices.
+            last_notice = db_event.notices[-2]  # (-1 would be the one we just created)
+            log.debug(f'Previous notice {last_notice.ivorn} was received at {last_notice.received}')
+            last_event = last_notice.gcn_event
+            requires_update = False
+            if last_event.skymap != event.skymap:
+                log.info('Event skymap has been updated')
+                requires_update = True
+            else:
+                log.info('Event skymap has not changed')
+            if last_event.strategy != event.strategy:
+                msg = f'Event strategy has changed from {last_event.strategy} to {event.strategy}'
+                log.info(msg)
+                requires_update = True
+            else:
+                log.info(f'Event strategy remains as {event.strategy}')
+
+            if requires_update:
+                # Go through previous Surveys for this Event and "delete" any incomplete Targets.
+                # Using target.mark_deleted() will also delete any pending Pointings,
+                # but won't interrupt one if it's currently running.
+                # If there are multiple previous Surveys then all but the latest should have already
+                # been deleted, but we might as well go through and check to be sure.
+                for db_survey in db_event.surveys:
+                    num_deleted = 0
+                    for db_target in db_survey.targets:
+                        statuses = ['deleted', 'expired', 'completed']
+                        if db_target.status_at_time(time) not in statuses:
+                            db_target.mark_deleted(time=time)
+                            num_deleted += 1
+                    if num_deleted > 0:
+                        log.debug(f'Deleted {num_deleted} Targets for Survey {db_survey.name}')
+                    session.commit()
+        else:
+            # If there are no previous surveys, we'll want to create one.
+            requires_update = True
+
+    if requires_update is False:
+        log.info('No changes to the event, so no update to the database required')
+        return
+    if event.strategy is None:
+        # It's a retraction event
+        log.info('Retraction event processed')
+        return
+    elif event.skymap is None:
+        # We have a strategy but no skymap, so we can't do anything?
+        raise ValueError('No skymap for event {}'.format(event.name))
+
+    # We know this notice has a new skymap (or strategy) so we want to create a new Survey.
+    with obs_db.open_session() as session:
+        db_survey = obs_db.Survey(
+            name=f'{event.name}_{len(event_surveys) + 1}',
+        )
         log.debug('Adding Survey {} to database'.format(db_survey.name))
-        session.add(db_survey)  # Add now, even if we don't add any tiles below
+        session.add(db_survey)
         session.commit()
+        survey_id = db_survey.db_id
 
-        # It's possible no tiles passed the selection criteria (or it failed),
-        # if so then there's nothing to do (but we still add the "empty" survey above)
-        if tiles is None or len(tiles) < 1:
-            log.warning('Nothing to add to the database')
-            return db_survey.db_id
+    # Update the Survey ID in the alert database, so we can map between the objects
+    with alert_db.open_session() as session:
+        db_notice = session.query(alert_db.Notice).filter_by(ivorn=event.ivorn).one()
+        db_notice.survey_id = survey_id
 
-        # Get the database User, or make it if it doesn't exist, and the current Grid,
+    # Now select the grid tiles covering the skymap
+    log.debug('Selecting grid tiles')
+    with obs_db.open_session() as session:
+        db_grid = obs_db.get_current_grid(session)
+        grid = db_grid.skygrid
+    # If the skymap is too big we regrade before applying it to the grid
+    # (note that we do only this after adding the original skymap to the alert database)
+    if (event.skymap is not None and event.skymap.is_moc is False and
+            (event.skymap.nside > 128 or event.skymap.order == 'RING')):
+        event.skymap.regrade(nside=128, order='NESTED')
+    # Apply the skymap to the grid
+    grid.apply_skymap(event.skymap)
+    # Get the grid tiles covering the skymap for a given contour level
+    # TODO: The selection contour is currently fixed, but it should be based on simulations
+    #       and could change based on the type of event (part of strategy?)
+    contour_level = 0.95
+    selected_tiles = grid.select_tiles(
+        contour=contour_level,
+        max_tiles=event.strategy_dict['tile_limit'],
+        min_tile_prob=event.strategy_dict['prob_limit'],
+    )
+    selected_tiles.sort('prob')
+    selected_tiles.reverse()
+    log.debug('Selected {}/{} tiles'.format(len(selected_tiles), grid.ntiles))
+    # It's possible no tiles passed the selection criteria,
+    # if so then there's nothing else to do (but we still add the "empty" survey above)
+    if len(selected_tiles) < 1:
+        log.warning('Nothing to add to the database')
+        return
+
+    # Create and add new Targets (and related entries) into the observation database
+    with obs_db.open_session() as session:
+        # Get the database User (make it if it doesn't exist) and the current Grid,
         # so we can link them to the new Targets
         try:
-            db_user = db.get_user(session, username='sentinel')
+            db_user = obs_db.get_user(session, username='sentinel')
         except ValueError:
-            db_user = db.User('sentinel', '', 'Sentinel Alert Listener')
-        db_grid = db.get_current_grid(session)
+            db_user = obs_db.User('sentinel', '', 'Sentinel alert Listener')
+        db_grid = obs_db.get_current_grid(session)
 
         # Create Targets for each tile
         db_targets = []
-        for tile_name, _, _, tile_weight in tiles:
+        for tile_name, _, _, tile_weight in selected_tiles:
             # Find the matching GridTile
-            query = session.query(db.GridTile)
-            query = query.filter(db.GridTile.grid == db_grid)
-            query = query.filter(db.GridTile.name == str(tile_name))
+            query = session.query(obs_db.GridTile)
+            query = query.filter(obs_db.GridTile.grid == db_grid)
+            query = query.filter(obs_db.GridTile.name == str(tile_name))
             db_grid_tile = query.one_or_none()
 
             # Create ExposureSets
             db_exposure_sets = []
             for exposure_sets_dict in event.strategy_dict['exposure_sets_dict']:
                 db_exposure_sets.append(
-                    db.ExposureSet(
+                    obs_db.ExposureSet(
                         num_exp=exposure_sets_dict['num_exp'],
                         exptime=exposure_sets_dict['exptime'],
                         filt=exposure_sets_dict['filt'],
@@ -137,7 +181,7 @@ def add_event_to_obsdb(event, tiles, time=None, log=None):
             db_strategies = []
             for cadence_dict in cadence_dicts:
                 db_strategies.append(
-                    db.Strategy(
+                    obs_db.Strategy(
                         num_todo=cadence_dict['num_todo'],
                         stop_time=cadence_dict['stop_time'],
                         wait_time=cadence_dict['wait_hours'] * u.hour,
@@ -152,10 +196,10 @@ def add_event_to_obsdb(event, tiles, time=None, log=None):
                     )
                 )
 
-            # Create Target (this will automatically create Pointings)
+            # Create Targets (this will automatically create Pointings)
             # NB we take the earliest start time and latest stop time from all cadences
             db_targets.append(
-                db.Target(
+                obs_db.Target(
                     name=f'{event.name}_{tile_name}',
                     ra=None,  # RA/Dec are inherited from the grid tile
                     dec=None,
@@ -168,14 +212,13 @@ def add_event_to_obsdb(event, tiles, time=None, log=None):
                     grid_tile=db_grid_tile,
                     exposure_sets=db_exposure_sets,
                     strategies=db_strategies,
-                    survey=db_survey,
-                    event=db_event,
+                    survey_id=survey_id,
                 )
             )
 
         # Add everything to the database
         log.debug('Adding {} Targets to the database'.format(len(db_targets)))
-        db.insert_items(session, db_targets)
+        obs_db.insert_items(session, db_targets)
 
         # Commit changes
         try:
@@ -185,7 +228,8 @@ def add_event_to_obsdb(event, tiles, time=None, log=None):
             session.rollback()
             raise
 
-        return db_survey.db_id
+    # Return the grid that has had the skymap applied for the Slack message
+    return grid
 
 
 def handle_event(event, send_messages=False, ignore_test=True, log=None, time=None):
@@ -227,35 +271,20 @@ def handle_event(event, send_messages=False, ignore_test=True, log=None, time=No
 
     log.info('Handling Event {}'.format(event.ivorn))
 
-    # 1) Check if it's an event we want to process, otherwise return here
+    # 0) Check if it's an event we want to process, otherwise return here
+    #    TODO: should this be within the sentinel?
     if event.type == 'unknown' or event.role in ignore_roles:
         log.warning(f'Ignoring {event.type} {event.role} event')
         return False
     log.info('Processing {} Event {}'.format(event.type, event.name))
 
-    # 2) Fetch the event skymap
+    # 1) Fetch the event skymap
     #    We do this here so that we don't bother downloading for events we rejected already
     log.info('Fetching event skymap')
     event.get_skymap()
     log.debug('Skymap created')
 
-    # 3) Add to the alert database
-    #    We have to do this after we've downloaded the skymap
-    #    TODO: What about the survey ID?
-    log.info('Adding event to the alert database')
-    try:
-        with alert_db.open_session() as s:
-            db_voevent = alert_db.VOEvent.from_event(event)
-            s.add(db_voevent)
-        log.debug('Event added to the database')
-    except Exception as err:
-        if 'duplicate key value violates unique constraint' in str(err):
-            msg = f'Event with IVORN "{event.ivorn}" already exists in the alert database'
-            raise ValueError(msg) from err
-        log.error('Error adding event to the database')
-        log.debug(err.__class__.__name__, exc_info=True)
-
-    # 4) Send the event & strategy reports to Slack
+    # 2) Send the event & strategy reports to Slack
     #    Retractions have no strategy, so we only send one report for them
     if send_messages:
         log.debug('Sending Slack event report')
@@ -269,70 +298,20 @@ def handle_event(event, send_messages=False, ignore_test=True, log=None, time=No
             log.error('Error sending Slack report')
             log.debug(err.__class__.__name__, exc_info=True)
 
-    # 5) Get the grid tiles covering the skymap (if there is one)
-    log.debug('Selecting grid tiles')
-    try:
-        # Get the current grid from the database
-        with db.open_session() as session:
-            db_grid = db.get_current_grid(session)
-            grid = db_grid.skygrid
+    # 3) Add the entries to the database
+    log.info('Adding notice to the alert database')
+    grid = add_to_database(event, time=time)
 
-        if event.skymap is not None:
-            # If the skymap is too big we regrade before applying it to the grid
-            # (note that we do only this after adding the original skymap to the alert database)
-            if (event.skymap is not None and event.skymap.is_moc is False and
-                    (event.skymap.nside > 128 or event.skymap.order == 'RING')):
-                event.skymap.regrade(nside=128, order='NESTED')
-            # Get the grid tiles covering the skymap
-            # TODO: The selection contour is currently fixed, but it should be based on simulations
-            #       and could change based on the type of event (part of strategy?)
-            contour_level = 0.95
-            selected_tiles = get_tiles(
-                event.skymap, grid, contour_level,
-                tile_limit=event.strategy_dict['tile_limit'],
-                prob_limit=event.strategy_dict['prob_limit'],
-            )
-            log.debug('Selected {}/{} tiles'.format(len(selected_tiles), grid.ntiles))
-        else:
-            log.debug('No skymap, so no grid tiles selected')
-            selected_tiles = None
-    except Exception as err:
-        log.error('Error applying event skymap to the grid')
-        log.debug(err.__class__.__name__, exc_info=True)
-        selected_tiles = None
-
-    # 6) Create targets and add them into the observation database
-    #    (after removing previous targets for the same event (which is all we do for retractions))
-    log.info('Updating the observation database')
-    try:
-        survey_id = add_event_to_obsdb(event, selected_tiles, time, log)
-        log.info('Database updated')
-        # TODO: Should we have some checks that the database was updated correctly here,
-        #       instead of leaving it to the Slack report?
-        if send_messages:
-            log.debug('Sending Slack database report')
+    # 4) Send the database report to Slack
+    # TODO: Should we have some checks that the database was updated correctly here,
+    #       instead of just leaving it to the Slack report?
+    if send_messages:
+        log.debug('Sending Slack database report')
+        try:
             send_database_report(event, grid, time=time)
             log.debug('Slack report sent')
-    except Exception as err:
-        log.error('Error updating the observation database')
-        log.debug(err.__class__.__name__, exc_info=True)
-        survey_id = None
-        if send_messages:
-            log.debug('Sending Slack error report')
-            msg = '*ERROR*: Failed to insert event {} into database'.format(event.name)
-            send_slack_msg(msg)
-            log.debug('Slack report sent')
-
-    # 7) Update the survey ID in the alert database to map to the observation database
-    if survey_id is not None:
-        log.info('Updating survey ID in the alert database')
-        try:
-            with alert_db.open_session() as session:
-                db_voevent = session.query(alert_db.VOEvent).filter_by(ivorn=event.ivorn).one()
-                db_voevent.survey_id = survey_id
-            log.debug('Alert database updated')
         except Exception as err:
-            log.error('Error updating alert database')
+            log.error('Error sending Slack report')
             log.debug(err.__class__.__name__, exc_info=True)
 
     # Done

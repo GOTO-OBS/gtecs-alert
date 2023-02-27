@@ -19,6 +19,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import backref, relationship, validates
 
 from . import params
+from .events import Event as GCNEvent
 
 
 @contextmanager
@@ -44,20 +45,120 @@ def open_session():
         session.close()
 
 
-class VOEvent(Base):
-    """A VOEvent message.
+class Event(Base):
+    """A class to represent a transient astrophysical Event.
+
+    Events can be linked to Notices, with a specific event (e.g. GW170817)
+    potentially producing multiple Notices as the skymap is updated.
+
+    Parameters
+    ----------
+    name : string
+        a unique, human-readable identifier for the event
+    type : string
+        the type of event, e.g. GW, GRB
+    origin : string
+        the group that produced the event, e.g. LVC, Fermi, GAIA
+
+    time : string, `astropy.time.Time` or datetime.datetime, optional
+        time the event occurred (or at least was first detected)
+
+    When created the instance can be linked to the following other tables as parameters,
+    otherwise they are populated when it is added to the database:
+
+    Primary relationships
+    ---------------------
+    notices : list of `Notice`, optional
+        the Notices relating to this Event, if any
+
+    Attributes
+    ----------
+    db_id : int
+        primary database key
+        only populated when the instance is added to the database
+
+    Secondary relationships
+    -----------------------
+    surveys : list of `gtecs.obs.database.Survey`
+        the Surveys relating to this Event, if any
+
+    """
+
+    # Set corresponding SQL table name
+    __tablename__ = 'events'
+    __table_args__ = {'schema': 'alert'}
+
+    # Primary key
+    db_id = Column('id', Integer, primary_key=True)
+
+    # Columns
+    name = Column(String(255), nullable=False, unique=True, index=True)
+    type = Column(String(255), nullable=False, index=True)  # noqa: A003
+    origin = Column(String(255), nullable=False)
+    time = Column(DateTime, nullable=True, default=None)
+
+    # Foreign relationships
+    notices = relationship(
+        'Notice',
+        order_by='Notice.db_id',
+        back_populates='event',
+    )
+
+    # Secondary relationships
+    surveys = relationship(
+        'Survey',
+        order_by='Survey.db_id',
+        secondary='alert.notices',
+        primaryjoin='Notice.event_id == Event.db_id',
+        secondaryjoin='Survey.db_id == Notice.survey_id',
+        backref=backref(  # NB Use legacy backref to add corresponding relationship to Surveys
+            'event',
+            uselist=False,
+        ),
+        viewonly=True,
+    )
+
+    def __repr__(self):
+        strings = ['db_id={}'.format(self.db_id),
+                   'name={}'.format(self.name),
+                   'type={}'.format(self.type),
+                   'origin={}'.format(self.origin),
+                   'time={}'.format(self.time),
+                   ]
+        return 'Event({})'.format(', '.join(strings))
+
+    @validates('time')
+    def validate_times(self, key, field):
+        """Use validators to allow various types of input for times."""
+        if field is None:
+            # time is nullable
+            return None
+
+        if isinstance(field, datetime.datetime):
+            value = field.strftime('%Y-%m-%d %H:%M:%S')
+        elif isinstance(field, Time):
+            field.precision = 0  # no D.P on seconds
+            value = field.iso
+        else:
+            # just hope the string works!
+            value = str(field)
+        return value
+
+
+class Notice(Base):
+    """An alert Notice relating to an astrophysical Event.
 
     Parameters
     ----------
     ivorn : string
-        The VOEvent IVORN (IVOA Resource Name).
+        The Notice IVORN (IVOA Resource Name).
     received : datetime.datetime
-        The time the VOEvent was received.
+        The time the Notice was received.
     payload : bytes
         The VOEvent XML payload, stored as binary data.
 
     skymap : `gototile.skymap.Skymap`, optional
-        The skymap associated with this VOEvent, if any.
+        The skymap associated with this Notice, if any.
         The skymap is stored in the database as binary data.
 
     When created the instance can be linked to the following other tables as parameters,
@@ -65,8 +166,11 @@ class VOEvent(Base):
 
     Primary relationships
     ---------------------
+    event : `Event`, optional
+        the Event this Notice is related to, if any
+        can also be added with the event_id parameter
     survey : `gtecs.obs.database.Survey`, optional
-        the Survey created from this VOEvent, if any
+        the Survey created from this Notice, if any
         can also be added with the survey_id parameter
 
     Attributes
@@ -77,13 +181,13 @@ class VOEvent(Base):
 
     Secondary relationships
     -----------------------
-    event : `gtecs.obs.database.Event`
-        the Event this VOEvent is part of, if any
+    targets : list of `gtecs.obs.database.Target`
+        the Targets created from this Notice, if any
 
     """
 
     # Set corresponding SQL table name
-    __tablename__ = 'voevents'
+    __tablename__ = 'notices'
     __table_args__ = {'schema': 'alert'}
 
     # Primary key
@@ -96,28 +200,34 @@ class VOEvent(Base):
     skymap = Column(LargeBinary, nullable=True)
 
     # Foreign keys
+    event_id = Column(Integer, ForeignKey('alert.events.id'), nullable=True)
     survey_id = Column(Integer, ForeignKey('obs.surveys.id'), nullable=True)
 
     # Foreign relationships
+    event = relationship(
+        'Event',
+        uselist=False,
+        back_populates='notices',
+    )
     survey = relationship(
         'Survey',
         uselist=False,
         backref=backref(  # NB Use legacy backref to add corresponding relationship to Surveys
-            'voevent',
+            'notice',
             uselist=False,
         ),
     )
 
     # Secondary relationships
-    event = relationship(
-        'Event',
-        uselist=False,
+    targets = relationship(
+        'Target',
+        order_by='Target.db_id',
         secondary='obs.surveys',
-        primaryjoin='Survey.db_id == VOEvent.survey_id',
-        secondaryjoin='Survey.event_id == Event.db_id',
-        backref=backref(  # NB Use legacy backref to add corresponding relationship to Events
-            'voevents',
-            order_by='VOEvent.db_id',
+        primaryjoin='Survey.db_id == Notice.survey_id',
+        secondaryjoin='Survey.db_id == Target.survey_id',
+        backref=backref(  # NB Use legacy backref to add corresponding relationship to Targets
+            'notice',
+            uselist=False,
         ),
         viewonly=True,
     )
@@ -125,9 +235,10 @@ class VOEvent(Base):
     def __repr__(self):
         strings = ['ivorn={}'.format(self.ivorn),
                    'received={}'.format(self.received),
+                   'event_id={}'.format(self.event_id),
                    'survey_id={}'.format(self.survey_id),
                    ]
-        return 'VOEvent({})'.format(', '.join(strings))
+        return 'Notice({})'.format(', '.join(strings))
 
     @validates('received')
     def validate_times(self, key, field):
@@ -147,8 +258,8 @@ class VOEvent(Base):
         return value
 
     @classmethod
-    def from_event(cls, event):
-        """Create a VOEvent from an Event class."""
+    def from_gcn(cls, event):
+        """Create a database-linked Notice entry from a GCN notice."""
         if event.skymap is None:
             event.get_skymap()
         if event.skymap is None:
@@ -170,18 +281,18 @@ class VOEvent(Base):
             with open(path, 'rb') as f:
                 skymap_bytes = f.read()
 
-        voevent = cls(
+        db_notice = cls(
             ivorn=event.ivorn,
             received=event.creation_time,
             payload=event.payload,
             skymap=skymap_bytes,
         )
-        return voevent
+        return db_notice
 
     @property
-    def event(self):
-        """Get the Event class from the VOEvent payload."""
-        event = Event.from_payload(self.payload)
+    def gcn_event(self):
+        """Create a GCN event class (or subclass) from this Notice."""
+        event = GCNEvent.from_payload(self.payload)
         if self.skymap is not None:
             try:
                 hdu = fits.open(BytesIO(self.skymap))
