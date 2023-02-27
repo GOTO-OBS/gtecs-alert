@@ -25,7 +25,7 @@ class GCNNotice:
 
     Some notices are better represented as one of the more specialised subclasses.
 
-    Use one of the following classmethods to to create an appropriate notice:
+    Use one of the following classmethods to to create the appropriate class:
         - GCNNotice.from_file()
         - GCNNotice.from_url()
         - GCNNotice.from_ivorn()
@@ -53,24 +53,31 @@ class GCNNotice:
         self.publisher = self.resourceKey
         self.title = self.local_ID
 
-        # Key attributes (unknowns will be overwritten by subclasses)
-        self.packet_type = self._get_packet_type(payload)
+        # Key attributes
+        self.source = 'GCN'
+        top_params = vp.get_toplevel_params(self.voevent)
+        self.packet_id = int(top_params['Packet_Type']['value'])
+        self.packet_type = 'unknown'  # Matched to ID in subclasses
         self.role = self.voevent.attrib['role']
-        try:
-            self.time = Time(vp.convenience.get_event_time_as_utc(self.voevent, index=0))
-        except Exception:
-            # Some test notices don't have times
-            self.time = None
-        self.notice = 'unknown'  # TODO: rename attributes
-        self.notice_time = Time(str(self.voevent.Who.Date))
+        self.time = Time(str(self.voevent.Who.Date))
         self.author = str(self.voevent.Who.Author.contactName)
         try:
             self.contact = str(self.voevent.Who.Author.contactEmail)
         except AttributeError:
             self.contact = None
-        self.type = 'unknown'
-        self.source = 'unknown'
-        self.coord = None
+
+        # Event properties (will mostly be filled by subclasses)
+        self.event_name = None
+        self.event_id = None
+        try:
+            self.event_time = Time(vp.convenience.get_event_time_as_utc(self.voevent, index=0))
+        except Exception:
+            # Some test events don't have times
+            self.event_time = None
+        self.event_type = 'unknown'
+        self.event_source = 'unknown'
+        self.position = None
+        self.position_error = None
         self.skymap = None
         self.skymap_url = None
         self.skymap_file = None
@@ -79,20 +86,8 @@ class GCNNotice:
         return '{}(ivorn={})'.format(self.__class__.__name__, self.ivorn)
 
     @staticmethod
-    def _get_packet_type(payload):
-        """Get the packet type from a VOEvent payload."""
-        voevent = vp.loads(payload)
-        top_params = vp.get_toplevel_params(voevent)
-        try:
-            packet_type = int(top_params['Packet_Type']['value'])
-        except KeyError:
-            # If it's a VOEvent but not a GCN it won't have a packet type (e.g. Gaia alerts)
-            packet_type = None
-        return packet_type
-
-    @staticmethod
     def _get_class(payload):
-        """Get the correct class by trying each subclass."""
+        """Get the correct class of notice by trying each subclass."""
         subclasses = [GWNotice, GWRetractionNotice, GRBNotice, NUNotice]
         for subclass in subclasses:
             try:
@@ -162,11 +157,12 @@ class GCNNotice:
                 pass
 
         # If the notice includes coordinates then create a Gaussian skymap
-        if self.skymap is None and self.coord is not None:
+        # This can also be used as a fallback if the skymap download fails
+        if self.skymap is None and self.position is not None:
             self.skymap = SkyMap.from_position(
-                self.coord.ra.deg,
-                self.coord.dec.deg,
-                self.total_error.deg,
+                self.position.ra.deg,
+                self.position.dec.deg,
+                self.position_error.deg,
                 nside=nside,
             )
             self.skymap_file = None
@@ -187,10 +183,10 @@ class GCNNotice:
         """Get details for Slack messages."""
         details = [
             f'IVORN: {self.ivorn}',
-            f'Event time: {self.time.iso}'  # TODO: rename attributes
+            f'Event time: {self.event_time.iso}'
+            f' _({(Time.now() - self.event_time).to(u.hour).value:.1f}h ago)_',
+            f'Notice time: {self.time.iso}'
             f' _({(Time.now() - self.time).to(u.hour).value:.1f}h ago)_',
-            f'Notice time: {self.notice_time.iso}'
-            f' _({(Time.now() - self.notice_time).to(u.hour).value:.1f}h ago)_',
         ]
         return details
 
@@ -207,23 +203,21 @@ class GWNotice(GCNNotice):
 
     def __init__(self, payload):
         super().__init__(payload)
-        if self.packet_type not in self.VALID_PACKET_TYPES:
-            raise ValueError(f'GCN packet type {self.packet_type} not valid for this class')
-        self.notice = self.VALID_PACKET_TYPES[self.packet_type]
+        if self.packet_id not in self.VALID_PACKET_TYPES:
+            raise ValueError(f'GCN packet type {self.packet_id} not valid for this class')
+        self.packet_type = self.VALID_PACKET_TYPES[self.packet_id]
+        self.event_type = 'GW'
+        self.event_source = 'LVC'
 
         # Get XML param dicts
         # NB: you can't store these on the class because they're unpickleable.
         top_params = vp.get_toplevel_params(self.voevent)
         group_params = vp.get_grouped_params(self.voevent)
 
-        # Basic attributes
-        self.type = 'GW'
-        self.source = 'LVC'
-        self.id = top_params['GraceID']['value']  # e.g. S190510g
-        self.name = '{}_{}'.format(self.source, self.id)  # e.g. LVC_S190510g
-
         # Get info from the VOEvent
         # See https://emfollow.docs.ligo.org/userguide/content.html#notice-contents
+        self.event_id = top_params['GraceID']['value']  # e.g. S190510g
+        self.event_name = '{}_{}'.format(self.event_source, self.event_id)  # e.g. LVC_S190510g
         self.far = float(top_params['FAR']['value'])
         self.gracedb_url = top_params['EventPage']['value']
         self.instruments = top_params['Instruments']['value']
@@ -291,17 +285,17 @@ class GWNotice(GCNNotice):
         """Get details for Slack messages."""
         details = [
             f'IVORN: {self.ivorn}',
-            f'Event time: {self.time.iso}'
+            f'Event time: {self.event_time.iso}'
+            f' _({(Time.now() - self.event_time).to(u.hour).value:.1f}h ago)_',
+            f'Notice time: {self.time.iso}'
             f' _({(Time.now() - self.time).to(u.hour).value:.1f}h ago)_',
-            f'Notice time: {self.notice_time.iso}'
-            f' _({(Time.now() - self.notice_time).to(u.hour).value:.1f}h ago)_',
         ]
-        # Add event properties
+        # Event properties
         details += [
             f'Group: {self.group}',
             f'FAR: ~1 per {1 / self.far / 3.154e+7:.1f} yrs',
         ]
-        # Add skymap info only if we have downloaded the skymap
+        # Skymap info (only if we have downloaded the skymap)
         if self.skymap is not None:
             distance = self.skymap.header['distmean']
             distance_error = self.skymap.header['diststd']
@@ -314,7 +308,7 @@ class GWNotice(GCNNotice):
             details += [
                 'Distance: UNKNOWN',
             ]
-        # Add classification info for CBC detections
+        # Classification info (for CBC detections)
         if self.group == 'CBC':
             sorted_class = sorted(
                 self.classification.keys(),
@@ -330,6 +324,7 @@ class GWNotice(GCNNotice):
                 f'Classification: {", ".join(class_list)}',
                 f'HasNS (if real): {self.properties["HasNS"]:.0%}',
             ]
+        # GraceDB link
         details += [
             f'GraceDB page: {self.gracedb_url}',
         ]
@@ -346,22 +341,19 @@ class GWRetractionNotice(GCNNotice):
 
     def __init__(self, payload):
         super().__init__(payload)
-        if self.packet_type not in self.VALID_PACKET_TYPES:
-            raise ValueError(f'GCN packet type {self.packet_type} not valid for this class')
-        self.notice = self.VALID_PACKET_TYPES[self.packet_type]
+        if self.packet_id not in self.VALID_PACKET_TYPES:
+            raise ValueError(f'GCN packet type {self.packet_id} not valid for this class')
+        self.packet_type = self.VALID_PACKET_TYPES[self.packet_id]
+        self.event_type = 'GW_RETRACTION'
+        self.event_source = 'LVC'
 
         # Get XML param dicts
         # NB: you can't store these on the class because they're unpickleable.
         top_params = vp.get_toplevel_params(self.voevent)
 
-        # Basic attributes
-        self.type = 'GW_RETRACTION'
-        self.source = 'LVC'
-        self.id = top_params['GraceID']['value']  # e.g. S190510g
-        self.name = '{}_{}'.format(self.source, self.id)  # e.g. LVC_S190510g
-
         # Get info from the VOEvent
-        # Retractions have far fewer params
+        self.event_id = top_params['GraceID']['value']  # e.g. S190510g
+        self.event_name = '{}_{}'.format(self.event_source, self.event_id)  # e.g. LVC_S190510g
         self.gracedb_url = top_params['EventPage']['value']
 
     @property
@@ -373,15 +365,15 @@ class GWRetractionNotice(GCNNotice):
         """Get details for Slack messages."""
         details = [
             f'IVORN: {self.ivorn}',
-            f'Event time: {self.time.iso}'
+            f'Event time: {self.event_time.iso}'
+            f' _({(Time.now() - self.event_time).to(u.hour).value:.1f}h ago)_',
+            f'Notice time: {self.time.iso}'
             f' _({(Time.now() - self.time).to(u.hour).value:.1f}h ago)_',
-            f'Notice time: {self.notice_time.iso}'
-            f' _({(Time.now() - self.notice_time).to(u.hour).value:.1f}h ago)_',
         ]
         # Nothing much to add, just note clearly it's a retraction
         details += [
             f'GraceDB page: {self.gracedb_url}',
-            f'*THIS IS A RETRACTION OF EVENT {self.id}*',
+            f'*THIS IS A RETRACTION OF EVENT {self.event_name}*',
         ]
 
         return details
@@ -397,23 +389,21 @@ class GRBNotice(GCNNotice):
 
     def __init__(self, payload):
         super().__init__(payload)
-        if self.packet_type not in self.VALID_PACKET_TYPES:
-            raise ValueError(f'GCN packet type {self.packet_type} not valid for this class')
-        self.notice = self.VALID_PACKET_TYPES[self.packet_type]
+        if self.packet_id not in self.VALID_PACKET_TYPES:
+            raise ValueError(f'GCN packet type {self.packet_id} not valid for this class')
+        self.packet_type = self.VALID_PACKET_TYPES[self.packet_id]
+        self.event_type = 'GRB'
+        self.event_source = self.packet_type.split('_')[0].capitalize()
 
         # Get XML param dicts
         # NB: you can't store these on the class because they're unpickleable.
         top_params = vp.get_toplevel_params(self.voevent)
         group_params = vp.get_grouped_params(self.voevent)
 
-        # Basic attributes
-        self.type = 'GRB'
-        self.source = self.notice.split('_')[0].capitalize()
-        self.id = top_params['TrigID']['value']  # e.g. 579943502
-        self.name = '{}_{}'.format(self.source, self.id)  # e.g. Fermi_579943502
-
-        # Get properties from the VOEvent
-        if self.source == 'Fermi':
+        # Get info from the VOEvent
+        self.event_id = top_params['TrigID']['value']  # e.g. 579943502
+        self.event_name = '{}_{}'.format(self.event_source, self.event_id)  # e.g. Fermi_579943502
+        if self.event_source == 'Fermi':
             self.properties = {key: group_params['Trigger_ID'][key]['value']
                                for key in group_params['Trigger_ID']
                                if key != 'Long_short'}
@@ -422,9 +412,11 @@ class GRBNotice(GCNNotice):
             except KeyError:
                 # Some don't have the duration
                 self.duration = 'unknown'
-        elif self.source == 'Swift':
+        elif self.event_source == 'Swift':
             self.properties = {key: group_params['Solution_Status'][key]['value']
                                for key in group_params['Solution_Status']}
+        else:
+            raise ValueError(f'Unknown GRB source {self.event_source}')
         for key in self.properties:
             if self.properties[key] == 'true':
                 self.properties[key] = True
@@ -433,19 +425,12 @@ class GRBNotice(GCNNotice):
 
         # Position coordinates & error
         position = vp.get_event_position(self.voevent)
-        self.coord = SkyCoord(ra=position.ra, dec=position.dec, unit=position.units)
-        self.coord_error = Angle(position.err, unit=position.units)
-        if self.source == 'Fermi':
-            self.systematic_error = Angle(5.6, unit='deg')
-        else:
-            self.systematic_error = Angle(0, unit='deg')
-        self.total_error = Angle(np.sqrt(self.coord_error ** 2 + self.systematic_error ** 2),
-                                 unit='deg')
-
-        # Galactic coordinates
-        self.gal_lat = self.coord.galactic.b.value
-        galactic_center = SkyCoord(l=0, b=0, unit='deg,deg', frame='galactic')
-        self.gal_dist = self.coord.galactic.separation(galactic_center).value
+        self.position = SkyCoord(ra=position.ra, dec=position.dec, unit=position.units)
+        self.position_error = Angle(position.err, unit=position.units)
+        if self.event_source == 'Fermi':
+            systematic_error = Angle(5.6, unit='deg')
+            self.position_error = Angle(np.sqrt(self.position_error ** 2 + systematic_error ** 2),
+                                        unit='deg')
 
         # Try creating the Fermi skymap url
         # Fermi haven't actually updated their alerts to include the URL to the HEALPix skymap,
@@ -461,35 +446,35 @@ class GRBNotice(GCNNotice):
     @property
     def strategy(self):
         """Get the observing strategy key."""
-        if self.source == 'Swift':
+        if self.event_source == 'Swift':
             return 'GRB_SWIFT'
-        elif self.source == 'Fermi':
+        elif self.event_source == 'Fermi':
             if self.duration.lower() == 'short':
                 return 'GRB_FERMI_SHORT'
             else:
                 return 'GRB_FERMI'
         else:
-            raise ValueError(f'Cannot determine observing strategy for source "{self.source}"')
+            raise ValueError(f'Unknown GRB source: "{self.event_source}"')
 
     def get_details(self):
         """Get details for Slack messages."""
         details = [
             f'IVORN: {self.ivorn}',
-            f'Event time: {self.time.iso}'
+            f'Event time: {self.event_time.iso}'
+            f' _({(Time.now() - self.event_time).to(u.hour).value:.1f}h ago)_',
+            f'Notice time: {self.time.iso}'
             f' _({(Time.now() - self.time).to(u.hour).value:.1f}h ago)_',
-            f'Notice time: {self.notice_time.iso}'
-            f' _({(Time.now() - self.notice_time).to(u.hour).value:.1f}h ago)_',
         ]
-        # Add event location
-        details += [
-            f'Position: {self.coord.to_string("hmsdms")} ({self.coord.to_string()})',
-            f'Position error: {self.total_error:.3f}',
-        ]
-        if self.source == 'Fermi':
-            # Add duration (long/short) for Fermi detections
+        # Event properties
+        if self.event_source == 'Fermi':
             details += [
                 f'Duration: {self.duration.capitalize()}',
             ]
+        # Event position
+        details += [
+            f'Position: {self.position.to_string("hmsdms")} ({self.position.to_string()})',
+            f'Position error: {self.position_error:.3f}',
+        ]
 
         return details
 
@@ -505,37 +490,31 @@ class NUNotice(GCNNotice):
 
     def __init__(self, payload):
         super().__init__(payload)
-        if self.packet_type not in self.VALID_PACKET_TYPES:
-            raise ValueError(f'GCN packet type {self.packet_type} not valid for this class')
-        self.notice = self.VALID_PACKET_TYPES[self.packet_type]
+        if self.packet_id not in self.VALID_PACKET_TYPES:
+            raise ValueError(f'GCN packet type {self.packet_id} not valid for this class')
+        self.packet_type = self.VALID_PACKET_TYPES[self.packet_id]
+        self.event_type = 'NU'
+        self.event_source = 'IceCube'
 
         # Get XML param dicts
         # NB: you can't store these on the class because they're unpickleable.
         top_params = vp.get_toplevel_params(self.voevent)
-        # group_params = vp.get_grouped_params(self.voevent)
-
-        # Default params
-        self.type = 'NU'
-        self.source = 'IceCube'
-        self.id = top_params['AMON_ID']['value']  # e.g. 13311922683750
-        self.name = '{}_{}'.format(self.source, self.id)  # e.g. IceCube_13311922683750
 
         # Get info from the VOEvent
-        # signalness: the probability this is an astrophysical signal relative to backgrounds
+        self.event_id = top_params['AMON_ID']['value']  # e.g. 13311922683750
+        self.event_name = '{}_{}'.format(self.event_source, self.event_id)  # e.g. IceCube_133...
         self.signalness = float(top_params['signalness']['value'])
         self.far = float(top_params['FAR']['value'])
 
         # Position coordinates & error
         position = vp.get_event_position(self.voevent)
-        self.coord = SkyCoord(ra=position.ra, dec=position.dec, unit=position.units)
-        self.coord_error = Angle(position.err, unit=position.units)
-        if self.notice == 'ICECUBE_CASCADE':
-            # Systematic error for cascade detection is given, so = 0
-            self.systematic_error = Angle(0, unit='deg')
-        else:
-            self.systematic_error = Angle(.2, unit='deg')
-        self.total_error = Angle(np.sqrt(self.coord_error ** 2 + self.systematic_error ** 2),
-                                 unit='deg')
+        self.position = SkyCoord(ra=position.ra, dec=position.dec, unit=position.units)
+        self.position_error = Angle(position.err, unit=position.units)
+        if self.packet_type != 'ICECUBE_CASCADE':
+            # Systematic error for cascade events is 0
+            systematic_error = Angle(0.2, unit='deg')
+            self.position_error = Angle(np.sqrt(self.position_error ** 2 + systematic_error ** 2),
+                                        unit='deg')
 
         # Get skymap URL
         if 'skymap_fits' in top_params:
@@ -546,33 +525,33 @@ class NUNotice(GCNNotice):
     @property
     def strategy(self):
         """Get the observing strategy key."""
-        if self.notice == 'ICECUBE_ASTROTRACK_GOLD':
+        if self.packet_type == 'ICECUBE_ASTROTRACK_GOLD':
             return 'NU_ICECUBE_GOLD'
-        elif self.notice == 'ICECUBE_ASTROTRACK_BRONZE':
+        elif self.packet_type == 'ICECUBE_ASTROTRACK_BRONZE':
             return 'NU_ICECUBE_BRONZE'
-        elif self.notice == 'ICECUBE_CASCADE':
+        elif self.packet_type == 'ICECUBE_CASCADE':
             return 'NU_ICECUBE_CASCADE'
         else:
-            raise ValueError(f'Cannot determine observing strategy for notice "{self.notice}"')
+            raise ValueError(f'Cannot determine observing strategy for "{self.packet_type}" notice')
 
     def get_details(self):
         """Get details for Slack messages."""
         details = [
             f'IVORN: {self.ivorn}',
-            f'Event time: {self.time.iso}'
+            f'Event time: {self.event_time.iso}'
+            f' _({(Time.now() - self.event_time).to(u.hour).value:.1f}h ago)_',
+            f'Notice time: {self.time.iso}'
             f' _({(Time.now() - self.time).to(u.hour).value:.1f}h ago)_',
-            f'Notice time: {self.notice_time.iso}'
-            f' _({(Time.now() - self.notice_time).to(u.hour).value:.1f}h ago)_',
         ]
-        # Add event properties
+        # Event properties
         details += [
             f'Signalness: {self.signalness:.0%} probability to be astrophysical in origin',
             f'FAR: ~1 per {1 / self.far:.1f} yrs',
         ]
-        # Add event location
+        # Event position
         details += [
-            f'Position: {self.coord.to_string("hmsdms")} ({self.coord.to_string()})',
-            f'Position error: {self.total_error:.3f}',
+            f'Position: {self.position.to_string("hmsdms")} ({self.position.to_string()})',
+            f'Position error: {self.position_error:.3f}',
         ]
 
         return details

@@ -248,11 +248,11 @@ class Sentinel:
                         send_slack_msg('Exception in handler for notice {notice.ivorn}')
 
                     if processed:
-                        self.log.info('Notice {} processed'.format(notice.name))
+                        self.log.info('Notice {} processed'.format(notice.event_name))
                         self.processed_notices += 1
 
                         # Start a followup thread to wait for the skymap of Fermi notices
-                        if notice.source == 'Fermi':
+                        if notice.event_source == 'Fermi':
                             try:
                                 # Might as well try once
                                 urlopen(notice.skymap_url)
@@ -269,7 +269,7 @@ class Sentinel:
                     self.received_notices += 1
 
                 except Exception:
-                    self.log.exception('Error handling notice {}'.format(notice.name))
+                    self.log.exception('Error handling notice {}'.format(notice.event_name))
 
             time.sleep(0.1)
 
@@ -278,7 +278,7 @@ class Sentinel:
 
     def _fermi_skymap_thread(self, notice):
         """Listen for the official skymap for Fermi notices."""
-        self.log.info('{} skymap listening thread started'.format(notice.name))
+        self.log.info('{} skymap listening thread started'.format(notice.event_name))
 
         found_skymap = False
         while self.running and not found_skymap:
@@ -296,13 +296,13 @@ class Sentinel:
                 # Call the handler for the new notice
                 # TODO: could just add to the queue?
                 handle_notice(notice, send_messages=params.ENABLE_SLACK, log=self.log)
-                send_slack_msg('Latest skymap used for {}'.format(notice.name))
+                send_slack_msg('Latest skymap used for {}'.format(notice.event_name))
             except Exception:
                 self.log.exception('Exception in handler')
-            self.log.info('{} skymap listening thread finished'.format(notice.name))
+            self.log.info('{} skymap listening thread finished'.format(notice.event_name))
         else:
             # Thread was shutdown before we found the skymap
-            self.log.info('{} skymap listening thread aborted'.format(notice.name))
+            self.log.info('{} skymap listening thread aborted'.format(notice.event_name))
             return
 
     # Functions

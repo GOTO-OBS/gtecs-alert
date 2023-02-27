@@ -47,9 +47,9 @@ def send_slack_msg(text, channel=None, *args, **kwargs):
 def send_notice_report(notice, slack_channel=None):
     """Send a message to Slack with the notice details and skymap."""
     if notice.role == 'observation':
-        s = f'*Details for event {notice.name}*\n'  # TODO: update attributes
+        s = f'*Details for event {notice.event_name}*\n'
     else:
-        s = f'*Details for {notice.role} event {notice.name}*\n'
+        s = f'*Details for {notice.role} event {notice.event_name}*\n'
 
     # Get list of details based on the notice class
     details = notice.get_details()
@@ -73,16 +73,16 @@ def send_notice_report(notice, slack_channel=None):
                                     )
 
         # For small areas, add a marker
-        if notice.coord and notice.skymap.get_contour_area(0.9) < 10:
+        if notice.position and notice.skymap.get_contour_area(0.9) < 10:
             axes.scatter(
-                notice.coord.ra.value, notice.coord.dec.value,
+                notice.position.ra.value, notice.position.dec.value,
                 transform=axes.get_transform('world'),
                 s=99, c='tab:blue', marker='*',
                 zorder=9,
             )
             axes.text(
-                notice.coord.ra.value, notice.coord.dec.value,
-                notice.coord.to_string('hmsdms').replace(' ', '\n') + '\n',
+                notice.position.ra.value, notice.position.dec.value,
+                notice.position.to_string('hmsdms').replace(' ', '\n') + '\n',
                 transform=axes.get_transform('world'),
                 ha='center', va='bottom',
                 size='x-small',
@@ -90,9 +90,9 @@ def send_notice_report(notice, slack_channel=None):
             )
 
         # Add text
-        axes.set_title(f'Skymap for {notice.type} event {notice.name}', y=1.06)
+        axes.set_title(f'Skymap for {notice.event_type} event {notice.event_name}', y=1.06)
         axes.text(0.5, 1.03, f'{notice.ivorn}', fontsize=8, ha='center', transform=axes.transAxes)
-        axes.text(-0.03, -0.1, f'Detection time: {notice.time.strftime("%Y-%m-%d %H:%M:%S")}',
+        axes.text(-0.03, -0.1, f'Detection time: {notice.event_time.strftime("%Y-%m-%d %H:%M:%S")}',
                   ha='left', va='bottom', transform=axes.transAxes)
         if notice.skymap.get_contour_area(0.9) < 10:
             text = f'50% area: {notice.skymap.get_contour_area(0.5):.2f} deg²\n'
@@ -106,7 +106,7 @@ def send_notice_report(notice, slack_channel=None):
         direc = os.path.join(params.FILE_PATH, 'plots')
         if not os.path.exists(direc):
             os.makedirs(direc)
-        filepath = os.path.join(direc, notice.name + '_skymap.png')
+        filepath = os.path.join(direc, notice.event_name + '_skymap.png')
         plt.savefig(filepath)
         plt.close(plt.gcf())
 
@@ -117,9 +117,9 @@ def send_notice_report(notice, slack_channel=None):
 def send_strategy_report(notice, slack_channel=None):
     """Send a message to Slack with the observation strategy details."""
     if notice.role == 'observation':
-        s = f'*Strategy for event {notice.name}*\n'
+        s = f'*Strategy for event {notice.event_name}*\n'
     else:
-        s = f'*Strategy for {notice.role} event {notice.name}*\n'
+        s = f'*Strategy for {notice.role} event {notice.event_name}*\n'
 
     if notice.strategy is None:
         # This is a retraction
@@ -168,14 +168,14 @@ def send_database_report(notice, grid, slack_channel=None, time=None):
         time = Time.now()
 
     if notice.role == 'observation':
-        s = f'*Visibility for event {notice.name}*\n'
+        s = f'*Visibility for event {notice.event_name}*\n'
     else:
-        s = f'*Visibility for {notice.role} event {notice.name}*\n'
+        s = f'*Visibility for {notice.role} event {notice.event_name}*\n'
 
     # Get info from the alert database
     with alert_db.open_session() as session:
         # Query Event table
-        query = session.query(alert_db.Event).filter(alert_db.Event.name == notice.name)
+        query = session.query(alert_db.Event).filter(alert_db.Event.name == notice.event_name)
         db_event = query.one_or_none()
         if db_event is None:
             # Uh-oh, send a warning message
@@ -334,7 +334,7 @@ def send_database_report(notice, grid, slack_channel=None, time=None):
     direc = os.path.join(params.FILE_PATH, 'plots')
     if not os.path.exists(direc):
         os.makedirs(direc)
-    filepath = os.path.join(direc, notice.name + '_tiles.png')
+    filepath = os.path.join(direc, notice.event_name + '_tiles.png')
     plt.savefig(filepath)
     plt.close(plt.gcf())
 

@@ -27,14 +27,14 @@ def add_to_database(notice, time=None, log=None):
     with alert_db.open_session() as session:
         # Get any matching Event from the database, or make one if it's new
         query = session.query(alert_db.Event)
-        query = query.filter(alert_db.Event.name == notice.name)  # TODO: change attributes
+        query = query.filter(alert_db.Event.name == notice.event_name)
         db_event = query.one_or_none()
         if db_event is None:
             db_event = alert_db.Event(
-                name=notice.name,
-                type=notice.type,
-                origin=notice.source,
-                time=notice.time,
+                name=notice.event_name,
+                type=notice.event_type,
+                origin=notice.event_source,
+                time=notice.event_time,
             )
 
         # Now add the Notice (we'll update the survey ID later)
@@ -52,7 +52,7 @@ def add_to_database(notice, time=None, log=None):
             # If there are previous surveys for this event, there should be previous notices.
             last_dbnotice = db_event.notices[-2]  # (-1 would be the one we just created)
             last_notice = last_dbnotice.gcn
-            log.debug(f'Previous notice {last_notice.ivorn} was received at {last_notice.notice_time}')
+            log.debug(f'Previous notice {last_notice.ivorn} was received at {last_notice.time}')
             requires_update = False
             if last_notice.skymap != notice.skymap:
                 log.info('Event skymap has been updated')
@@ -100,7 +100,7 @@ def add_to_database(notice, time=None, log=None):
     # We know this notice has a new skymap (or strategy) so we want to create a new Survey.
     with obs_db.open_session() as session:
         db_survey = obs_db.Survey(
-            name=f'{notice.name}_{len(event_surveys) + 1}',
+            name=f'{notice.event_name}_{len(event_surveys) + 1}',
         )
         log.debug('Adding Survey {} to database'.format(db_survey.name))
         session.add(db_survey)
@@ -200,7 +200,7 @@ def add_to_database(notice, time=None, log=None):
             # NB we take the earliest start time and latest stop time from all cadences
             db_targets.append(
                 obs_db.Target(
-                    name=f'{notice.name}_{tile_name}',
+                    name=f'{notice.event_name}_{tile_name}',
                     ra=None,  # RA/Dec are inherited from the grid tile
                     dec=None,
                     rank=notice.strategy_dict['rank'],
@@ -273,10 +273,10 @@ def handle_notice(notice, send_messages=False, ignore_test=True, log=None, time=
 
     # 0) Check if it's an notice we want to process, otherwise return here
     #    TODO: should this be within the sentinel?
-    if notice.type == 'unknown' or notice.role in ignore_roles:
-        log.warning(f'Ignoring {notice.type} {notice.role} notice')
+    if notice.role in ignore_roles or notice.event_type == 'unknown':
+        log.warning(f'Ignoring {notice.event_type} {notice.role} notice')
         return False
-    log.info('Processing {} notice {}'.format(notice.type, notice.ivorn))
+    log.info('Processing {} notice {}'.format(notice.event_type, notice.ivorn))
 
     # 1) Fetch the skymap
     #    We do this here so that we don't bother downloading for notices we have already rejected

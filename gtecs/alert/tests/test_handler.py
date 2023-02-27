@@ -23,4 +23,4 @@ if __name__ == '__main__':
         with pkg_resources.path('gtecs.alert.data.test_notices', test_file) as f:
             print(f'Loading {f}')
             notice = GCNNotice.from_file(f)
-        handle_notice(notice, send_messages=params.ENABLE_SLACK, time=notice.notice_time + 60 * u.s)
+        handle_notice(notice, send_messages=params.ENABLE_SLACK, time=notice.time + 60 * u.s)
