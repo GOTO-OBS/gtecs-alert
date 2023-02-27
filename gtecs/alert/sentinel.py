@@ -202,7 +202,7 @@ class Sentinel:
                     else:
                         # Add to the queue
                         payload = msg.value()
-                        notice = GCNNotice().from_payload(payload)
+                        notice = GCNNotice.from_payload(payload)
                         self.notice_queue.append(notice)
             except KeyboardInterrupt:
                 pass
