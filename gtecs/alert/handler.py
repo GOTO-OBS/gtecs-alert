@@ -237,14 +237,14 @@ def handle_event(event, send_messages=False, ignore_test=True, log=None, time=No
 
     Parameters
     ----------
-    event : `gototile.events.Event`
+    event : `gototile.gcn.Event`
         The Event to handle
 
     send_messages : bool, optional
         If True, send Slack messages.
         Default is False.
     ignore_test : bool, optional
-        If True, ignore events with the 'test' role.
+        If True, ignore notices with the 'test' role.
         Default is True.
     log : logging.Logger, optional
         If given, direct log messages to this logger.
@@ -265,7 +265,7 @@ def handle_event(event, send_messages=False, ignore_test=True, log=None, time=No
         log.setLevel(level=logging.DEBUG)
     if time is None:
         time = Time.now()
-    ignore_roles = ['utility']  # We never want to process utility events
+    ignore_roles = ['utility']  # We never want to process utility notices
     if ignore_test:
         ignore_roles.append('test')
 
@@ -279,7 +279,7 @@ def handle_event(event, send_messages=False, ignore_test=True, log=None, time=No
     log.info('Processing {} Event {}'.format(event.type, event.name))
 
     # 1) Fetch the event skymap
-    #    We do this here so that we don't bother downloading for events we rejected already
+    #    We do this here so that we don't bother downloading for notices we have already rejected
     log.info('Fetching event skymap')
     event.get_skymap()
     log.debug('Skymap created')

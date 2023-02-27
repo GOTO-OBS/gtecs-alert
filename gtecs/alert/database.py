@@ -19,7 +19,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import backref, relationship, validates
 
 from . import params
-from .events import Event as GCNEvent
+from .gcn import Event as GCNEvent
 
 
 @contextmanager

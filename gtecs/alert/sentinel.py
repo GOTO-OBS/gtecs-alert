@@ -1,4 +1,4 @@
-"""Class for listening for VOEvents."""
+"""Class for listening for GCN alert notices."""
 
 import itertools
 import socket
@@ -16,7 +16,7 @@ from gcn_kafka import Consumer
 from gtecs.common import logging
 
 from . import params
-from .events import Event
+from .gcn import Event
 from .handler import handle_event
 from .slack import send_slack_msg
 
