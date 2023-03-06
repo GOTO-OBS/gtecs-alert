@@ -344,7 +344,7 @@ class GWRetractionNotice(GCNNotice):
         if self.packet_id not in self.VALID_PACKET_TYPES:
             raise ValueError(f'GCN packet type {self.packet_id} not valid for this class')
         self.packet_type = self.VALID_PACKET_TYPES[self.packet_id]
-        self.event_type = 'GW_RETRACTION'
+        self.event_type = 'GW'
         self.event_source = 'LVC'
 
         # Get XML param dicts
