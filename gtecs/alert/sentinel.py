@@ -206,6 +206,7 @@ class Sentinel:
                         # Add to the queue
                         payload = msg.value()
                         notice = GCNNotice.from_payload(payload)
+                        self.log.debug(f'Received GCN notice: {notice.ivorn}')
                         self.notice_queue.append(notice)
             except KeyboardInterrupt:
                 pass
@@ -230,30 +231,26 @@ class Sentinel:
         self.log.info('Alert handler thread started')
 
         while self.running:
-            # Check the notice queue, take off the first entry
             if len(self.notice_queue) > 0:
-                # There's at least one new notice!
+                # We have received a new notice
                 self.received_notices += 1
                 notice = self.notice_queue.pop(0)
                 self.latest_notice = notice
-
                 self.log.debug('Processing new notice: {}'.format(notice.ivorn))
 
-                # Check if it's one we want to handle
-                if notice.event_type == 'unknown':  # i.e. it's not one of the subclasses
-                    self.log.debug('Ignoring unrecognised event class')
-                    continue
-                elif notice.role in self.ignored_roles:
-                    self.log.debug(f'Ignoring {notice.role} notice')
-                    continue
-
                 try:
-                    send_slack_msg(f'Sentinel: Processing new notice {notice.ivorn}')
-                    # Call the handler
-                    handle_notice(notice, send_messages=params.ENABLE_SLACK, log=self.log)
+                    # Check if we want to process or ignore it
+                    if notice.event_type == 'unknown':  # i.e. it's not one of the subclasses
+                        self.log.debug('Ignoring unrecognised event class')
+                        continue
+                    elif notice.role in self.ignored_roles:
+                        self.log.debug(f'Ignoring {notice.role} notice')
+                        continue
 
-                    # If we got here it worked
+                    send_slack_msg(f'Sentinel processing new notice ({notice.ivorn})')
+                    handle_notice(notice, send_messages=params.ENABLE_SLACK, log=self.log)
                     self.processed_notices += 1
+                    send_slack_msg('Sentinel successfully processed notice')
 
                     # Start a followup thread to wait for the skymap of Fermi notices
                     if notice.event_source == 'Fermi':
@@ -269,10 +266,11 @@ class Sentinel:
                             except Exception:
                                 self.log.exception('Error in Fermi followup thread')
 
-                    send_slack_msg(f'Sentinel: Successfully processed notice {notice.ivorn}')
-                except Exception:
-                    self.log.exception('Error handling notice {}'.format(notice.ivorn))
-                    send_slack_msg(f'Sentinel: ERROR handling notice {notice.ivorn}')
+                except Exception as err:
+                    self.log.exception('Error handling notice')
+                    msg = 'Sentinel reports ERROR handling notice'
+                    msg += f' ("{err.__class__.__name__}: {err}")'
+                    send_slack_msg(msg)
 
             time.sleep(0.1)
 

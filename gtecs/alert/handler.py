@@ -40,7 +40,14 @@ def add_to_database(notice, time=None, log=None):
         # Now add the Notice (we'll update the survey ID later)
         db_notice = alert_db.Notice.from_gcn(notice)
         db_notice.event = db_event
-        session.add(db_notice)
+        try:
+            session.add(db_notice)
+            session.commit()
+        except Exception as err:
+            if 'duplicate key value violates unique constraint "notices_ivorn_key"' in str(err):
+                raise ValueError('Notice already exists in alert database') from err
+            else:
+                raise
 
         # Find how many previous surveys there have been for this event
         event_surveys = [survey.db_id for survey in db_event.surveys]
