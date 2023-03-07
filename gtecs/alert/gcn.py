@@ -177,7 +177,7 @@ class GCNNotice:
     @property
     def strategy_dict(self):
         """Get the observing strategy details."""
-        return get_strategy_details(self.strategy)
+        return get_strategy_details(self.strategy, time=self.event_time)
 
     def get_details(self):
         """Get details for Slack messages."""
