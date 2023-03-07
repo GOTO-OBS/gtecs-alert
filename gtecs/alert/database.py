@@ -213,8 +213,8 @@ class Notice(Base):
         'Survey',
         uselist=False,
         backref=backref(  # NB Use legacy backref to add corresponding relationship to Surveys
-            'notice',
-            uselist=False,
+            'notices',
+            order_by='Notice.db_id',
         ),
     )
 

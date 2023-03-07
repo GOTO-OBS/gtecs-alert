@@ -93,31 +93,41 @@ def add_to_database(notice, time=None, log=None):
             # If there are no previous surveys, we'll want to create one.
             requires_update = True
 
-    if requires_update is False:
-        log.info('No changes to the skymap or strategy, so no update to the database required')
-        return
     if notice.strategy is None:
-        # It's a retraction notice
+        # It's a retraction notice.
+        # Now we've deleted the previous Targets there's nothing else to do.
         log.info('Retraction notice processed')
         return
     elif notice.skymap is None:
         # We have a strategy but no skymap, so we can't do anything?
-        raise ValueError('No skymap for notice {}'.format(notice.ivorn))
+        raise ValueError('Notice has a strategy but no skymap')
 
-    # We know this notice has a new skymap (or strategy) so we want to create a new Survey.
-    with obs_db.open_session() as session:
-        db_survey = obs_db.Survey(
-            name=f'{notice.event_name}_{len(event_surveys) + 1}',
-        )
-        log.debug('Adding Survey {} to database'.format(db_survey.name))
-        session.add(db_survey)
-        session.commit()
-        survey_id = db_survey.db_id
+    if requires_update is True:
+        # We know this notice has a new skymap (or strategy) so we want to create a new Survey.
+        with obs_db.open_session() as session:
+            db_survey = obs_db.Survey(
+                name=f'{notice.event_name}_{len(event_surveys) + 1}',
+            )
+            log.debug('Adding Survey {} to database'.format(db_survey.name))
+            session.add(db_survey)
+            session.commit()
+            survey_id = db_survey.db_id
+    else:
+        # The existing Survey is fine, just get the ID.
+        with obs_db.open_session() as session:
+            query = session.query(obs_db.Survey)
+            query = query.filter_by(name=f'{notice.event_name}_{len(event_surveys)}')
+            db_survey = query.one()
+            survey_id = db_survey.db_id
 
     # Update the Survey ID in the alert database, so we can map between the objects
     with alert_db.open_session() as session:
         db_notice = session.query(alert_db.Notice).filter_by(ivorn=notice.ivorn).one()
         db_notice.survey_id = survey_id
+
+    if requires_update is False:
+        log.info('No changes to the skymap or strategy, so no update to the database required')
+        return
 
     # Now select the grid tiles covering the skymap
     log.debug('Selecting grid tiles')
