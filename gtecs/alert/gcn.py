@@ -153,8 +153,11 @@ class GCNNotice:
                 self.skymap = SkyMap.from_fits(self.skymap_file)
             except Exception:
                 # Some error meant we can't download the skymap
-                # So instead we'll try and create our own
-                pass
+                # If we have a position we can try and create our own
+                if self.position is not None:
+                    pass
+                else:
+                    raise
 
         # If the notice includes coordinates then create a Gaussian skymap
         # This can also be used as a fallback if the skymap download fails
