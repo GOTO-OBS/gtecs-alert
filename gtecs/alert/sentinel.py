@@ -2,6 +2,7 @@
 
 import itertools
 import socket
+import sys
 import threading
 import time
 import traceback
@@ -349,3 +350,4 @@ def run():
         time.sleep(1)  # wait to stop threads
         send_slack_msg('Sentinel shutdown')
         print('Sentinel done')
+        sys.exit(0)
