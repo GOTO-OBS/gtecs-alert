@@ -8,7 +8,7 @@ from astropy.time import Time
 from gtecs.obs import database as obs_db
 
 from . import database as alert_db
-from .slack import send_database_report, send_notice_report, send_strategy_report
+from .slack import send_notice_report, send_observing_report
 
 
 def add_to_database(notice, time=None, log=None):
@@ -245,9 +245,6 @@ def add_to_database(notice, time=None, log=None):
             session.rollback()
             raise
 
-    # Return the grid that has had the skymap applied for the Slack message
-    return grid
-
 
 def handle_notice(notice, send_messages=False, log=None, time=None):
     """Handle a new GCN notice.
@@ -277,41 +274,24 @@ def handle_notice(notice, send_messages=False, log=None, time=None):
 
     log.info('Handling notice {}'.format(notice.ivorn))
 
-    # 1) Fetch the skymap
     log.info('Fetching skymap')
     notice.get_skymap()
-    log.debug('Skymap created')
-
-    # 2) Send the notice & strategy reports to Slack
-    #    Retractions have no strategy, so we only send one report for them
     if send_messages:
         log.debug('Sending Slack notice report')
         try:
-            send_notice_report(notice)
-            if notice.strategy is not None:
-                log.info('Using strategy {}'.format(notice.strategy))
-                send_strategy_report(notice)
-            log.debug('Slack reports sent')
-        except Exception as err:
-            log.error('Error sending Slack report')
-            log.debug(err.__class__.__name__, exc_info=True)
+            send_notice_report(notice, time=time)
+        except Exception:
+            log.exception('Error sending Slack report')
 
-    # 3) Add the entries to the database
     log.info('Adding notice to the alert database')
-    grid = add_to_database(notice, time=time, log=log)
+    add_to_database(notice, time=time, log=log)
 
-    # 4) Send the database report to Slack
-    # TODO: Should we have some checks that the database was updated correctly here,
-    #       instead of just leaving it to the Slack report?
     if send_messages:
-        log.debug('Sending Slack database report')
+        log.debug('Sending Slack observing report')
         try:
-            send_database_report(notice, grid, time=time)
-            log.debug('Slack report sent')
-        except Exception as err:
-            log.error('Error sending Slack report')
-            log.debug(err.__class__.__name__, exc_info=True)
+            send_observing_report(notice, time=time)
+        except Exception:
+            log.exception('Error sending Slack report')
 
-    # Done
     log.info('Notice {} successfully processed'.format(notice.ivorn))
     return

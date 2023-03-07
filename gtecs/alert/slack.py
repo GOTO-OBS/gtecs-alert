@@ -44,23 +44,46 @@ def send_slack_msg(text, channel=None, *args, **kwargs):
         print('Slack Message:', text)
 
 
-def send_notice_report(notice, slack_channel=None):
+def send_notice_report(notice, slack_channel=None, time=None):
     """Send a message to Slack with the notice details and skymap."""
-    if notice.role == 'observation':
-        s = f'*Details for event {notice.event_name}*\n'
-    else:
-        s = f'*Details for {notice.role} event {notice.event_name}*\n'
+    if time is None:
+        time = Time.now()
 
-    # Get list of details based on the notice class
-    details = notice.get_details()
-    s += '\n'.join(details)
+    msg = f'*{notice.source} notice:* {notice.ivorn}\n'
+
+    # Add basic notice details
+    msg += f'Notice type: {notice.packet_type}\n'
+    msg += f'Notice time: {notice.time.iso}'
+    msg += f' _({(time - notice.time).to(u.hour).value:.1f}h ago)_\n'
 
     if notice.role != 'observation':
-        s += f'\n*NOTE: THIS IS A {notice.role.upper()} EVENT*'
+        msg += f'*NOTE: THIS IS A {notice.role.upper()} EVENT*\n'
 
+    # Make sure we have the skymap downloaded
+    notice.get_skymap()
+
+    # Get event-specific details from the notice class
+    msg += '\n'
+    msg += notice.slack_details
+
+    # Get strategy details (a short version compared to the full notice)
+    msg += '\n'
+    if notice.strategy is not None:
+        msg += f'Observing strategy: `{notice.strategy}`\n'
+        cadences = ','.join(f'`{cadence}`' for cadence in notice.strategy_dict['cadence'])
+        msg += f'Cadence{"s" if cadences.count(",") > 0 else ""}: {cadences}\n'
+        msg += f'Constraints: `{notice.strategy_dict["constraints"]}`\n'
+        msg += f'Exposure sets: `{notice.strategy_dict["exposure_sets"]}`\n'
+        stop_time = max(d['stop_time'] for d in notice.strategy_dict['cadence_dict'])
+        msg += f'Valid until: {stop_time.iso}'
+        if stop_time < time:
+            msg += f' _(expired {(time - stop_time).to("day").value:.1f} days ago)_\n'
+        else:
+            msg += '\n'
+
+    # Create a skymap plot to attach to the message (if there is one)
     filepath = None
     if notice.skymap is not None:
-        # Create skymap plot
         plt.figure(figsize=(8, 4), dpi=120, facecolor='white', tight_layout=True)
         axes = plt.axes(projection='astro hours mollweide')
         axes.grid()
@@ -110,8 +133,8 @@ def send_notice_report(notice, slack_channel=None):
         plt.savefig(filepath)
         plt.close(plt.gcf())
 
-    # Send the message, with the skymap file attached (if it has one)
-    send_slack_msg(s, filepath=filepath, channel=slack_channel)
+    # Send the message
+    send_slack_msg(msg, filepath=filepath, channel=slack_channel)
 
 
 def send_strategy_report(notice, slack_channel=None):
@@ -162,76 +185,105 @@ def send_strategy_report(notice, slack_channel=None):
     send_slack_msg(s, channel=slack_channel)
 
 
-def send_database_report(notice, grid, slack_channel=None, time=None):
-    """Send a message to Slack with details of the database pointings and visibility."""
+def send_observing_report(notice, slack_channel=None, time=None):
+    """Send a message to Slack with details of the observing details and visibility."""
     if time is None:
         time = Time.now()
 
-    if notice.role == 'observation':
-        s = f'*Visibility for event {notice.event_name}*\n'
-    else:
-        s = f'*Visibility for {notice.role} event {notice.event_name}*\n'
+    msg = f'*{notice.source} notice:* {notice.ivorn}\n'
 
     # Get info from the alert database
     with alert_db.open_session() as session:
-        # Query Event table
-        query = session.query(alert_db.Event).filter(alert_db.Event.name == notice.event_name)
-        db_event = query.one_or_none()
+        # Query the Notice table for the matching entry
+        query = session.query(alert_db.Notice).filter(alert_db.Notice.ivorn == notice.ivorn)
+        db_notice = query.one_or_none()
+        if db_notice is None:
+            msg += '*ERROR: No matching entry found in database*\n'
+            send_slack_msg(msg, channel=slack_channel)
+            return
+        msg += f'Notice added to database (ID={db_notice.db_id})\n'
+
+        # Look at the Event this Notice is for
+        db_event = db_notice.event
         if db_event is None:
-            # Uh-oh, send a warning message
-            s += '*ERROR: No matching entry found in database*\n'
-            send_slack_msg(s, channel=slack_channel)
+            msg += '*ERROR: No matching event found in database*\n'
+            send_slack_msg(msg, channel=slack_channel)
             return
-        s += f'Number of notices found for this event: {len(db_event.notices)}\n'
-        s += f'Number of surveys found for this event: {len(db_event.surveys)}\n'
+        msg += f'Notice linked to Event `{db_event.name}` (ID={db_event.db_id})\n'
+        msg += f'- Event is linked to {len(db_event.notices)} notices'
+        msg += f' and {len(db_event.surveys)} surveys\n'
+        pending = [p
+                   for survey in db_event.surveys
+                   for p in survey.pointings
+                   if p.status_at_time(time + 1 * u.s) not in ['deleted', 'expired', 'completed']]
+        msg += f'- Event has {len(pending)} pending pointings\n'
 
-        # Send different alerts for retractions
-        if notice.strategy is None:
-            # Check that all pointings for this event have been deleted
-            time += 1 * u.s  # Need to be after the insertion time
-            pending = [p
-                       for survey in db_event.surveys
-                       for p in survey.pointings
-                       if p.status_at_time(time) not in ['deleted', 'expired', 'completed']]
-            s += f'Number of pending pointings found for this Event: {len(pending)}\n'
-            if len(pending) == 0:
-                s += '- Previous targets removed successfully\n'
-            else:
-                s += '- *ERROR: Retraction failed to remove previous targets*\n'
-            # That's it for retractions
-            send_slack_msg(s, channel=slack_channel)
-            return
+        # Look at the Survey this Notice is linked to (if any)
+        db_survey = db_notice.survey
 
-        # We are considering only the latest survey
-        db_survey = db_event.surveys[-1]
-        s += f'Latest survey: {db_survey.name}\n'
-        s += f'Number of targets for this survey: {len(db_survey.targets)}\n'
-
-        # Check non-retractions with no targets
-        if len(db_survey.targets) == 0:
-            # This might be because no tiles passed the filter
-            all_tiles = grid.get_table()
-            if (notice.strategy_dict['prob_limit'] > 0 and
-                    max(all_tiles['prob']) < notice.strategy_dict['prob_limit']):
-                s += '- No tiles passed the probability limit '
-                s += f'({notice.strategy_dict["prob_limit"]:.1%}, '
-                s += f'highest had {max(all_tiles["prob"]):.1%})\n'
+        if db_survey is None:
+            # It could be a retraction
+            if notice.strategy is None:
+                if len(pending) == 0:
+                    msg += 'Event has been successfully retracted\n'
+                else:
+                    msg += '*ERROR: Retraction failed to remove pending pointings*\n'
+                send_slack_msg(msg, channel=slack_channel)
+                return
             else:
                 # Uh-oh, something went wrong when inserting?
-                s += '- *ERROR: No targets found in database*\n'
-            send_slack_msg(s, channel=slack_channel)
+                msg += '*ERROR: No survey found in database*\n'
+                send_slack_msg(msg, channel=slack_channel)
+                return
+
+        # We have a Survey in the database, but it might be an old one
+        if len(db_survey.notices) > 1 and db_survey.notices[0] != db_notice:
+            # This is an old Survey created for a previous Notice
+            msg += f'Notice linked to existing Survey `{db_survey.name}` (ID={db_survey.db_id})\n'
+            msg += f'- Survey created from notice {db_survey.notices[0].ivorn}\n'
+            msg += '- Event skymap and strategy are unchanged\n'
+            send_slack_msg(msg, channel=slack_channel)
             return
 
-        # We have at least 1 target, so we can consider the grid visibility
-        # Get info from the database here, so we can close the connection
-        survey_name = db_survey.name
-        skymap_tiles = np.array([target.grid_tile.name for target in db_survey.targets])
+        msg += f'Notice linked to new Survey `{db_survey.name}` (ID={db_survey.db_id})\n'
+        msg += f'- Survey contains {len(db_survey.targets)} targets\n'
 
-    # Get site info from the obsdb
+        # Save info from the database here, so we can close the connection
+        survey_name = db_survey.name
+        survey_tiles = np.array([target.grid_tile.name for target in db_survey.targets])
+
+    # Get grid and site info from the obsdb
     with obs_db.open_session() as session:
+        db_grid = obs_db.get_current_grid(session)
+        grid = db_grid.skygrid
+
         db_sites = session.query(obs_db.Site).all()
         sites = [site.location for site in db_sites]
         site_names = [site.name for site in db_sites]
+
+    # Now we want to calculate the current visibility of the survey at each site
+    # We're going to have to re-apply the skymap to the grid to get the tile probabilities
+    grid.apply_skymap(notice.skymap)
+
+    if len(survey_tiles) == 0:
+        # This might be because no tiles passed the filter
+        all_tiles = grid.get_table()
+        if (notice.strategy_dict['prob_limit'] > 0 and
+                max(all_tiles['prob']) < notice.strategy_dict['prob_limit']):
+            msg += '- No tiles passed the probability limit '
+            msg += f'({notice.strategy_dict["prob_limit"]:.1%}, '
+            msg += f'highest had {max(all_tiles["prob"]):.1%})\n'
+        else:
+            # Uh-oh, something went wrong when inserting?
+            msg += '- *ERROR: No targets found in database*\n'
+        send_slack_msg(msg, channel=slack_channel)
+        return
+
+    total_prob = grid.get_probability(survey_tiles)
+    msg += f'Total probability in survey tiles: {total_prob:.1%}\n'
+
+    # Create visibility plot
+    fig = plt.figure(figsize=(9, 4 * len(sites)), dpi=120, facecolor='white', tight_layout=True)
 
     # Find visibility constraints
     min_alt = float(notice.strategy_dict['constraints_dict']['min_alt']) * u.deg
@@ -241,21 +293,6 @@ def send_database_report(notice, grid, slack_channel=None, time=None):
     constraints = [alt_constraint, night_constraint]
     start_time = min(d['start_time'] for d in notice.strategy_dict['cadence_dict'])
     stop_time = max(d['stop_time'] for d in notice.strategy_dict['cadence_dict'])
-    s += 'Valid dates:'
-    s += f' {start_time.datetime.strftime("%Y-%m-%d")} to'
-    s += f' {stop_time.datetime.strftime("%Y-%m-%d")}'
-    if stop_time < Time.now():
-        # The pointings will have expired
-        delta = Time.now() - stop_time
-        s += f' _(expired {delta.to("day").value:.1f} days ago)_\n'
-    else:
-        s += '\n'
-
-    total_prob = grid.get_probability(skymap_tiles)
-    s += f'Total probability in all tiles: {total_prob:.1%}\n'
-
-    # Create visibility plot
-    fig = plt.figure(figsize=(9, 4 * len(sites)), dpi=120, facecolor='white', tight_layout=True)
 
     for i, site in enumerate(sites):
         observer = Observer(site)
@@ -264,22 +301,21 @@ def send_database_report(notice, grid, slack_channel=None, time=None):
             site_name = 'La Palma'
         elif site_name == 'Siding Spring Observatory':
             site_name = 'Siding Spring'
-        s += f'Predicted visibility from {site_name}:\n'
+        msg += f'Predicted visibility from {site_name}:\n'
 
         # Find which grid tiles are visible from this site
         visible_mask = is_observable(constraints, observer, grid.coords,
                                      time_range=[start_time, stop_time])
-        grid_tiles = np.array(grid.tilenames)
-        grid_tiles_vis = set(grid_tiles[visible_mask])
+        visible_tiles = set(np.array(grid.tilenames)[visible_mask])
 
         # Now find which skymap tiles are visible
-        skymap_tiles_vis = {t for t in skymap_tiles if t in grid_tiles_vis}
-        s += '- Tiles visible during valid period:'
-        s += f' {len(skymap_tiles_vis)}/{len(skymap_tiles)}\n'
+        visible_survey_tiles = {t for t in survey_tiles if t in visible_tiles}
+        msg += '- Tiles visible during valid period:'
+        msg += f' {len(visible_survey_tiles)}/{len(survey_tiles)}\n'
 
         # Find the probability for all tiles and those visible
-        visible_prob = grid.get_probability(skymap_tiles_vis)
-        s += f'- Probability in visible tiles: {visible_prob:.1%}\n'
+        visible_prob = grid.get_probability(visible_survey_tiles)
+        msg += f'- Probability in visible tiles: {visible_prob:.1%}\n'
 
         # Add to plot
         axes = plt.subplot(11 + len(sites) * 100 + i, projection='astro hours mollweide')
@@ -308,14 +344,14 @@ def send_database_report(notice, grid, slack_channel=None, time=None):
         )
 
         # Overcast non-visible tiles
-        alphas = [0 if t in grid_tiles_vis else 0.3 for t in grid_tiles]
+        alphas = [0 if t in visible_tiles else 0.3 for t in grid.tilenames]
         grid.plot_tiles(axes, fc='0.5', ec='none', alpha=alphas, zorder=1.1)
 
         # Add the tile outlines coloured by visibility
-        ec = ['tab:blue' if tilename in skymap_tiles_vis
-              else 'tab:red' if tilename in skymap_tiles
+        ec = ['tab:blue' if tilename in visible_survey_tiles
+              else 'tab:red' if tilename in survey_tiles
               else 'none'
-              for tilename in grid_tiles]
+              for tilename in grid.tilenames]
         grid.plot_tiles(axes, fc='none', ec=ec, lw=1, zorder=1.21)
 
         # Add text
@@ -326,7 +362,7 @@ def send_database_report(notice, grid, slack_channel=None, time=None):
             axes.text(0.5, 1.03, text, fontsize=8, ha='center', transform=axes.transAxes)
         axes.text(-0.03, -0.06, f'Site: {site_name}',
                   ha='left', va='bottom', transform=axes.transAxes)
-        text = f'Visible tiles: {len(skymap_tiles_vis)}/{len(skymap_tiles)}\n'
+        text = f'Visible tiles: {len(visible_survey_tiles)}/{len(survey_tiles)}\n'
         text += f'Visible probability: {visible_prob:.1%}'
         axes.text(0.78, -0.06, text, ha='left', va='bottom', transform=axes.transAxes)
 
@@ -339,4 +375,4 @@ def send_database_report(notice, grid, slack_channel=None, time=None):
     plt.close(plt.gcf())
 
     # Send the message with the plot attached
-    send_slack_msg(s, filepath=filepath, channel=slack_channel)
+    send_slack_msg(msg, filepath=filepath, channel=slack_channel)

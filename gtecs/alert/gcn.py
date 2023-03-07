@@ -4,7 +4,6 @@ import os
 from urllib.parse import quote_plus
 from urllib.request import urlopen
 
-import astropy.units as u
 from astropy.coordinates import Angle, SkyCoord
 from astropy.time import Time
 from astropy.utils.data import download_file
@@ -182,16 +181,12 @@ class GCNNotice:
         """Get the observing strategy details."""
         return get_strategy_details(self.strategy, time=self.event_time)
 
-    def get_details(self):
+    @property
+    def slack_details(self):
         """Get details for Slack messages."""
-        details = [
-            f'IVORN: {self.ivorn}',
-            f'Event time: {self.event_time.iso}'
-            f' _({(Time.now() - self.event_time).to(u.hour).value:.1f}h ago)_',
-            f'Notice time: {self.time.iso}'
-            f' _({(Time.now() - self.time).to(u.hour).value:.1f}h ago)_',
-        ]
-        return details
+        text = f'Event: {self.event_name}\n'
+        text += f'Detection time: {self.event_time.iso}\n'
+        return text
 
 
 class GWNotice(GCNNotice):
@@ -284,55 +279,41 @@ class GWNotice(GCNNotice):
         else:
             raise ValueError(f'Cannot determine observing strategy for group "{self.group}"')
 
-    def get_details(self):
+    @property
+    def slack_details(self):
         """Get details for Slack messages."""
-        details = [
-            f'IVORN: {self.ivorn}',
-            f'Event time: {self.event_time.iso}'
-            f' _({(Time.now() - self.event_time).to(u.hour).value:.1f}h ago)_',
-            f'Notice time: {self.time.iso}'
-            f' _({(Time.now() - self.time).to(u.hour).value:.1f}h ago)_',
-        ]
-        # Event properties
-        details += [
-            f'Group: {self.group}',
-            f'FAR: ~1 per {1 / self.far / 3.154e+7:.1f} yrs',
-        ]
-        # Skymap info (only if we have downloaded the skymap)
-        if self.skymap is not None:
-            distance = self.skymap.header['distmean']
-            distance_error = self.skymap.header['diststd']
-            area = self.skymap.get_contour_area(0.9)
-            details += [
-                f'Distance: {distance:.0f}+/-{distance_error:.0f} Mpc',
-                f'90% probability area: {area:.0f} sq deg'
-            ]
-        else:
-            details += [
-                'Distance: UNKNOWN',
-            ]
-        # Classification info (for CBC detections)
+        text = f'Event: {self.event_name}\n'
+        text += f'Detection time: {self.event_time.iso}\n'
+        text += f'GraceDB page: {self.gracedb_url}\n'
+
+        # Classification info
+        text += f'FAR: ~1 per {1 / self.far / 3.154e+7:.1f} yrs\n'
+        text += f'Group: {self.group}\n'
         if self.group == 'CBC':
-            sorted_class = sorted(
+            sorted_classification = sorted(
                 self.classification.keys(),
                 key=lambda key: self.classification[key],
                 reverse=True,
             )
             class_list = [
                 f'{key}:{self.classification[key]:.1%}'
-                for key in sorted_class
+                for key in sorted_classification
                 if self.classification[key] > 0.0005
             ]
-            details += [
-                f'Classification: {", ".join(class_list)}',
-                f'HasNS (if real): {self.properties["HasNS"]:.0%}',
-            ]
-        # GraceDB link
-        details += [
-            f'GraceDB page: {self.gracedb_url}',
-        ]
+            text += f'Classification: {", ".join(class_list)}\n'
+            text += f'HasNS (if real): {self.properties["HasNS"]:.0%}\n'
 
-        return details
+        # Skymap info (only if we have downloaded the skymap)
+        if self.skymap is not None:
+            distance = self.skymap.header['distmean']
+            distance_error = self.skymap.header['diststd']
+            area = self.skymap.get_contour_area(0.9)
+            text += f'Distance: {distance:.0f}+/-{distance_error:.0f} Mpc\n'
+            text += f'90% probability area: {area:.0f} sq deg\n'
+        else:
+            text += 'Distance: *UNKNOWN*\n'
+
+        return text
 
 
 class GWRetractionNotice(GCNNotice):
@@ -364,22 +345,16 @@ class GWRetractionNotice(GCNNotice):
         """Get the observing strategy key."""
         return None  # Retractions don't have an observing strategy
 
-    def get_details(self):
+    @property
+    def slack_details(self):
         """Get details for Slack messages."""
-        details = [
-            f'IVORN: {self.ivorn}',
-            f'Event time: {self.event_time.iso}'
-            f' _({(Time.now() - self.event_time).to(u.hour).value:.1f}h ago)_',
-            f'Notice time: {self.time.iso}'
-            f' _({(Time.now() - self.time).to(u.hour).value:.1f}h ago)_',
-        ]
-        # Nothing much to add, just note clearly it's a retraction
-        details += [
-            f'GraceDB page: {self.gracedb_url}',
-            f'*THIS IS A RETRACTION OF EVENT {self.event_name}*',
-        ]
+        text = f'Event: {self.event_name}\n'
+        text += f'Detection time: {self.event_time.iso}\n'
+        text += f'GraceDB page: {self.gracedb_url}\n'
 
-        return details
+        text += f'*THIS IS A RETRACTION OF EVENT {self.event_name}*\n'
+
+        return text
 
 
 class GRBNotice(GCNNotice):
@@ -459,27 +434,21 @@ class GRBNotice(GCNNotice):
         else:
             raise ValueError(f'Unknown GRB source: "{self.event_source}"')
 
-    def get_details(self):
+    @property
+    def slack_details(self):
         """Get details for Slack messages."""
-        details = [
-            f'IVORN: {self.ivorn}',
-            f'Event time: {self.event_time.iso}'
-            f' _({(Time.now() - self.event_time).to(u.hour).value:.1f}h ago)_',
-            f'Notice time: {self.time.iso}'
-            f' _({(Time.now() - self.time).to(u.hour).value:.1f}h ago)_',
-        ]
-        # Event properties
-        if self.event_source == 'Fermi':
-            details += [
-                f'Duration: {self.duration.capitalize()}',
-            ]
-        # Event position
-        details += [
-            f'Position: {self.position.to_string("hmsdms")} ({self.position.to_string()})',
-            f'Position error: {self.position_error:.3f}',
-        ]
+        text = f'Event: {self.event_name}\n'
+        text += f'Detection time: {self.event_time.iso}\n'
 
-        return details
+        # Classification info
+        if self.event_source == 'Fermi':
+            text += f'Duration: {self.duration.capitalize()}\n'
+
+        # Position info
+        text += f'Position: {self.position.to_string("hmsdms")} ({self.position.to_string()})\n'
+        text += f'Position error: {self.position_error:.3f}\n'
+
+        return text
 
 
 class NUNotice(GCNNotice):
@@ -537,24 +506,18 @@ class NUNotice(GCNNotice):
         else:
             raise ValueError(f'Cannot determine observing strategy for "{self.packet_type}" notice')
 
-    def get_details(self):
+    @property
+    def slack_details(self):
         """Get details for Slack messages."""
-        details = [
-            f'IVORN: {self.ivorn}',
-            f'Event time: {self.event_time.iso}'
-            f' _({(Time.now() - self.event_time).to(u.hour).value:.1f}h ago)_',
-            f'Notice time: {self.time.iso}'
-            f' _({(Time.now() - self.time).to(u.hour).value:.1f}h ago)_',
-        ]
-        # Event properties
-        details += [
-            f'Signalness: {self.signalness:.0%} probability to be astrophysical in origin',
-            f'FAR: ~1 per {1 / self.far:.1f} yrs',
-        ]
-        # Event position
-        details += [
-            f'Position: {self.position.to_string("hmsdms")} ({self.position.to_string()})',
-            f'Position error: {self.position_error:.3f}',
-        ]
+        text = f'Event: {self.event_name}\n'
+        text += f'Detection time: {self.event_time.iso}\n'
 
-        return details
+        # Classification info
+        text += f'Signalness: {self.signalness:.0%} probability to be astrophysical in origin\n'
+        text += f'FAR: ~1 per {1 / self.far:.1f} yrs\n'
+
+        # Position info
+        text += f'Position: {self.position.to_string("hmsdms")} ({self.position.to_string()})\n'
+        text += f'Position error: {self.position_error:.3f}\n'
+
+        return text
