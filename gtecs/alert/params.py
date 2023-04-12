@@ -4,6 +4,7 @@ import os
 
 from gtecs.common import config as pkg_config
 from gtecs.common.package import get_package_version, load_config
+from gtecs.common.system import get_local_ip
 
 
 ############################################################
@@ -14,6 +15,9 @@ config, CONFIG_SPEC, CONFIG_FILE = load_config('alert', '.alert.conf')
 # Module parameters
 VERSION = get_package_version('alert')
 
+# General parameters
+LOCAL_HOST = get_local_ip()
+
 # Directory paths
 FILE_PATH = pkg_config.CONFIG_PATH / 'alert'
 HTML_PATH = config['HTML_PATH']
@@ -23,6 +27,8 @@ if config['HTML_PATH'] in ['path_not_set', '/path/goes/here/']:
 ############################################################
 # Sentinel parameters
 PYRO_HOST = config['PYRO_HOST']
+if PYRO_HOST == 'localhost':
+    PYRO_HOST = LOCAL_HOST
 PYRO_PORT = config['PYRO_PORT']
 PYRO_URI = 'PYRO:sentinel@{}:{}'.format(PYRO_HOST, PYRO_PORT)
 PYRO_TIMEOUT = config['PYRO_TIMEOUT']
