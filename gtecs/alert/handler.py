@@ -142,11 +142,8 @@ def add_to_database(notice, time=None, log=None):
     # Apply the skymap to the grid
     grid.apply_skymap(notice.skymap)
     # Get the grid tiles covering the skymap for a given contour level
-    # TODO: The selection contour is currently fixed, but it should be based on simulations
-    #       and could change based on the type of notice (part of strategy?)
-    contour_level = 0.95
     selected_tiles = grid.select_tiles(
-        contour=contour_level,
+        contour=notice.strategy_dict['skymap_contour'],
         max_tiles=notice.strategy_dict['tile_limit'],
         min_tile_prob=notice.strategy_dict['prob_limit'],
     )
