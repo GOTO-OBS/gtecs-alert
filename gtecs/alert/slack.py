@@ -193,7 +193,7 @@ def send_observing_report(notice, slack_channel=None, time=None):
     msg = f'*{notice.source} notice:* {notice.ivorn}\n'
 
     # Get info from the alert database
-    with alert_db.open_session() as session:
+    with alert_db.session_manager() as session:
         # Query the Notice table for the matching entry
         query = session.query(alert_db.Notice).filter(alert_db.Notice.ivorn == notice.ivorn)
         db_notice = query.one_or_none()
@@ -253,7 +253,7 @@ def send_observing_report(notice, slack_channel=None, time=None):
         survey_tiles = np.array([target.grid_tile.name for target in db_survey.targets])
 
     # Get grid and site info from the obsdb
-    with obs_db.open_session() as session:
+    with obs_db.session_manager() as session:
         db_grid = obs_db.get_current_grid(session)
         grid = db_grid.skygrid
 

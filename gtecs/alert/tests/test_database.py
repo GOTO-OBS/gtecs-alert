@@ -22,13 +22,13 @@ if __name__ == '__main__':
             print(f'Loading {f}')
             notice = GCNNotice.from_file(f)
         notice.get_skymap()
-        with db.open_session() as s:
+        with db.session_manager() as session:
             db_notice = db.Notice.from_gcn(notice)
-            s.add(db_notice)
+            session.add(db_notice)
 
         print('Loading from database')
-        with db.open_session() as s:
-            db_notice = s.query(db.Notice).filter(db.Notice.ivorn == notice.ivorn).one()
+        with db.session_manager() as session:
+            db_notice = session.query(db.Notice).filter(db.Notice.ivorn == notice.ivorn).one()
 
             assert notice.packet_type == db_notice.gcn.packet_type
             assert notice.skymap == db_notice.gcn.skymap

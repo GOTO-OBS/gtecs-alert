@@ -11,7 +11,7 @@ from astropy.time import Time
 
 from gototile.skymap import SkyMap
 
-from gtecs.common.database import get_session
+from gtecs.common.database import get_session as get_session_common
 from gtecs.obs.database.models import Base
 
 from sqlalchemy import Column, DateTime, ForeignKey, Integer, LargeBinary, String
@@ -22,19 +22,40 @@ from . import params
 from .gcn import GCNNotice
 
 
-@contextmanager
-def open_session():
-    """Create a session context manager connection to the database.
+def get_session(user=None, password=None, host=None, echo=None, pool_pre_ping=None):
+    """Create a database connection session.
 
-    All arguments passed to `get_session()` are taken from `gtecs.alert.params`.
+    All arguments are passed to `gtecs.common.database.get_session()`,
+    with the defaults taken from the module parameters.
+
+    Note it is generally better to use the session_manager() context manager,
+    which will automatically commit or rollback changes when done.
     """
-    session = get_session(
-        user=params.DATABASE_USER,
-        password=params.DATABASE_PASSWORD,
-        host=params.DATABASE_HOST,
-        echo=params.DATABASE_ECHO,
-        pool_pre_ping=params.DATABASE_PRE_PING,
+    # This means the user doesn't need to worry about the params, but can overwrite if needed.
+    if user is None:
+        user = params.DATABASE_USER
+    if password is None:
+        password = params.DATABASE_PASSWORD
+    if host is None:
+        host = params.DATABASE_HOST
+    if echo is None:
+        echo = params.DATABASE_ECHO
+    if pool_pre_ping is None:
+        pool_pre_ping = params.DATABASE_PRE_PING
+    session = get_session_common(
+        user=user,
+        password=password,
+        host=host,
+        echo=echo,
+        pool_pre_ping=pool_pre_ping,
     )
+    return session
+
+
+@contextmanager
+def session_manager(**kwargs):
+    """Create a session context manager connection to the database."""
+    session = get_session(**kwargs)
     try:
         yield session
         session.commit()

@@ -24,7 +24,7 @@ def add_to_database(notice, time=None, log=None):
         notice.get_skymap()  # May still be None if it's a retraction
 
     # Add to the alert database
-    with alert_db.open_session() as session:
+    with alert_db.session_manager() as session:
         # Get any matching Event from the database, or make one if it's new
         query = session.query(alert_db.Event)
         query = query.filter(alert_db.Event.name == notice.event_name)
@@ -104,7 +104,7 @@ def add_to_database(notice, time=None, log=None):
 
     if requires_update is True:
         # We know this notice has a new skymap (or strategy) so we want to create a new Survey.
-        with obs_db.open_session() as session:
+        with obs_db.session_manager() as session:
             db_survey = obs_db.Survey(
                 name=f'{notice.event_name}_{len(event_surveys) + 1}',
             )
@@ -114,14 +114,14 @@ def add_to_database(notice, time=None, log=None):
             survey_id = db_survey.db_id
     else:
         # The existing Survey is fine, just get the ID.
-        with obs_db.open_session() as session:
+        with obs_db.session_manager() as session:
             query = session.query(obs_db.Survey)
             query = query.filter_by(name=f'{notice.event_name}_{len(event_surveys)}')
             db_survey = query.one()
             survey_id = db_survey.db_id
 
     # Update the Survey ID in the alert database, so we can map between the objects
-    with alert_db.open_session() as session:
+    with alert_db.session_manager() as session:
         db_notice = session.query(alert_db.Notice).filter_by(ivorn=notice.ivorn).one()
         db_notice.survey_id = survey_id
 
@@ -131,7 +131,7 @@ def add_to_database(notice, time=None, log=None):
 
     # Now select the grid tiles covering the skymap
     log.debug('Selecting grid tiles')
-    with obs_db.open_session() as session:
+    with obs_db.session_manager() as session:
         db_grid = obs_db.get_current_grid(session)
         grid = db_grid.skygrid
     # If the skymap is too big we regrade before applying it to the grid
@@ -157,7 +157,7 @@ def add_to_database(notice, time=None, log=None):
         return
 
     # Create and add new Targets (and related entries) into the observation database
-    with obs_db.open_session() as session:
+    with obs_db.session_manager() as session:
         # Get the database User (make it if it doesn't exist) and the current Grid,
         # so we can link them to the new Targets
         try:
