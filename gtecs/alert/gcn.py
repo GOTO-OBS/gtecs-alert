@@ -136,7 +136,7 @@ class GCNNotice:
             f.write(self.payload)
         return out_path
 
-    def get_skymap(self, nside=128):
+    def get_skymap(self, nside=128, timeout=60):
         """Return the skymap as a `gototile.skymap.SkyMap object."""
         if self.skymap is not None:
             # Don't do anything if the skymap has already been downloaded/created
@@ -148,7 +148,7 @@ class GCNNotice:
                 # The file gets stored in /tmp/
                 # Don't cache, force redownload every time
                 # https://github.com/GOTO-OBS/goto-alert/issues/36
-                self.skymap_file = download_file(self.skymap_url, cache=False)
+                self.skymap_file = download_file(self.skymap_url, cache=False, timeout=timeout)
                 self.skymap = SkyMap.from_fits(self.skymap_file)
             except Exception:
                 # Some error meant we can't download the skymap
