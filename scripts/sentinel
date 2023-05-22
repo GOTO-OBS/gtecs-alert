@@ -68,6 +68,12 @@ def query(command, args):
             with Pyro4.Proxy(params.PYRO_URI) as proxy:
                 print(proxy.ingest_from_file(args[0]))
 
+    elif command == 'topics':
+        with Pyro4.Proxy(params.PYRO_URI) as proxy:
+            topics = proxy.get_kafka_topics()
+        for topic in topics:
+            print(topic)
+
     else:
         print('ERROR: Unrecognized command "{}"'.format(command))
         print_instructions()
@@ -83,6 +89,7 @@ def print_instructions():
           '   ping                   check if the sentinel is running',
           '   shutdown               shut down the sentinel',
           '   ingest [path|ivorn]    add the given notice to the queue',
+          '   topics                 print all subscribed Kafka topics',
           '   log [tail args]        print sentinel log (alias for tail)',
           '   help                   print these instructions',
           sep='\n')

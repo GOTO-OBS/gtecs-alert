@@ -191,8 +191,9 @@ class Sentinel:
             # Subscribe to any notices we want
             # TODO: Also params? Or we could get from the subclasses?
             #       For now just subscribe to everything...
-            all_topics = [t for t in consumer.list_topics().topics.keys() if 'voevent' in t]
-            consumer.subscribe(all_topics)
+            self.kafka_topics = [t for t in sorted(consumer.list_topics().topics.keys())
+                                 if 'voevent' in t]
+            consumer.subscribe(self.kafka_topics)
 
             # This second loop will monitor the connection
             try:
@@ -328,6 +329,11 @@ class Sentinel:
         notice = GCNNotice.from_ivorn(ivorn)
         self.notice_queue.append(notice)
         return 'VOEvent notice added to queue'
+
+    def get_kafka_topics(self):
+        """Return a list of subscribed topics."""
+        if hasattr(self, 'kafka_topics'):
+            return self.kafka_topics
 
 
 def run():
