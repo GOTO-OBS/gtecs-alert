@@ -93,10 +93,10 @@ def add_to_database(notice, time=None, log=None):
             # If there are no previous surveys, we'll want to create one.
             requires_update = True
 
-    if notice.strategy is None:
-        # It's a retraction notice.
-        # Now we've deleted the previous Targets there's nothing else to do.
-        log.info('Retraction notice processed')
+    if notice.strategy in ['IGNORE', ' RETRACTION'] or notice.strategy_dict is None:
+        # Either it's an event we don't care about, or it's an explicit retraction notice.
+        # We've added it to the AlertDB and deleted the previous Targets, nothing else to do.
+        log.info(f'{notice.strategy} notice processed')
         return
     elif notice.skymap is None:
         # We have a strategy but no skymap, so we can't do anything?

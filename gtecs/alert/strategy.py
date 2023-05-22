@@ -21,8 +21,13 @@ def _load_strategy_files():
 
 def get_strategy_details(name='DEFAULT', time=None):
     """Get details of the requested strategy."""
+    name = name.upper()
     if time is None:
         time = Time.now()
+
+    if name in ['IGNORE', 'RETRACTION']:
+        # Special cases
+        return None
 
     # Load the strategy files
     strategies, cadences, constraints, exposures = _load_strategy_files()

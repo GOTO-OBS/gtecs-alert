@@ -68,8 +68,8 @@ def send_notice_report(notice, slack_channel=None, time=None):
 
     # Get strategy details (a short version compared to the full notice)
     msg += '\n'
-    if notice.strategy is not None:
-        msg += f'Observing strategy: `{notice.strategy}`\n'
+    msg += f'Observing strategy: `{notice.strategy}`\n'
+    if notice.strategy_dict is not None:
         cadences = ','.join(f'`{cadence}`' for cadence in notice.strategy_dict['cadence'])
         msg += f'Cadence{"s" if cadences.count(",") > 0 else ""}: {cadences}\n'
         msg += f'Constraints: `{notice.strategy_dict["constraints"]}`\n'
@@ -144,14 +144,13 @@ def send_strategy_report(notice, slack_channel=None):
     else:
         s = f'*Strategy for {notice.role} event {notice.event_name}*\n'
 
-    if notice.strategy is None:
-        # This is a retraction
-        s += '*ERROR: No strategy defined*\n'
+    msg += f'Observing strategy: `{notice.strategy}`\n'
+    if notice.strategy_dict is None:
+        s += 'ERROR: No strategy details given\n'
         send_slack_msg(s, channel=slack_channel)
         return
 
     # Basic strategy
-    s += f'Strategy: `{notice.strategy_dict["strategy"]}`\n'
     s += f'Rank: {notice.strategy_dict["rank"]}\n'
 
     # Cadence
@@ -190,6 +189,11 @@ def send_observing_report(notice, slack_channel=None, time=None):
     if time is None:
         time = Time.now()
 
+    if notice.strategy == 'IGNORE':
+        # No reason to send a message
+        # (NB Retractions still check the database that the pointings have been removed)
+        return
+
     msg = f'*{notice.source} notice:* {notice.ivorn}\n'
 
     # Get info from the alert database
@@ -223,7 +227,7 @@ def send_observing_report(notice, slack_channel=None, time=None):
 
         if db_survey is None:
             # It could be a retraction
-            if notice.strategy is None:
+            if notice.strategy == 'RETRACTION':
                 if len(pending) == 0:
                     msg += 'Event has been successfully retracted\n'
                 else:

@@ -348,7 +348,7 @@ class GWRetractionNotice(GCNNotice):
     @property
     def strategy(self):
         """Get the observing strategy key."""
-        return None  # Retractions don't have an observing strategy
+        return 'RETRACTION'
 
     @property
     def slack_details(self):
