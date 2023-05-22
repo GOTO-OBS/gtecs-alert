@@ -19,24 +19,24 @@ import voeventparse as vp
 
 def get_skymap(log):
     """Try and get the LVC sky map."""
-    # 1) Check the archive for the latest event
-    log.info('Checking for LVC GCNs in the 4pisky database...')
+    # 1) Check the archive for the latest notice
+    log.info('Checking for LVC GCN notices in the 4pisky database...')
     try:
-        event_list = vdb.list_ivorn(
+        notice_list = vdb.list_ivorn(
             filters={vdb.FilterKeys.role: 'observation',
                      vdb.FilterKeys.ivorn_contains: 'LVC',
                      },
             order=vdb.OrderValues.author_datetime_desc,
             n_max=1,
         )
-        log.info('VOEventDB returned: {}'.format(event_list))
+        log.info('VOEventDB returned: {}'.format(notice_list))
     except Exception:
         log.error('Failed to check VOEventDB', exc_info=True)
 
     # 2) Get the payload, extract the skymap url
     try:
-        ivorn = event_list[0]
-        log.info('Found the latest LVC VOEvent: {}'.format(ivorn))
+        ivorn = notice_list[0]
+        log.info('Found the latest LVC notice: {}'.format(ivorn))
         payload = vdb.packet_xml(ivorn)
         voevent = vp.loads(payload)
         group_params = vp.get_grouped_params(voevent)
@@ -89,7 +89,7 @@ def get_skymap(log):
 
 def get_tile_table(skymap, log):
     """Apply the skymap to a grid and get the masked table back."""
-    with db.open_session() as session:
+    with db.session_manager() as session:
         # Get the current grid
         db_grid = db.get_current_grid(session)
         log.info('Found database grid {}'.format(db_grid))
@@ -127,7 +127,7 @@ def get_tile_table(skymap, log):
 def add_to_db(grid, tile_table, log):
     """Add the skymap tiles to the database."""
     now = Time.now()
-    with db.open_session() as session:
+    with db.session_manager() as session:
         # Get the User, or make it if it doesn't exist
         try:
             db_user = db.get_user(session, username='GW_fallback')
@@ -135,6 +135,7 @@ def add_to_db(grid, tile_table, log):
             db_user = db.User('GW_fallback', '', 'GW fallback script')
 
         # Create a placeholder Event and add it to the database
+        # TODO: This all needs to be updated for the new database...
         event_name = f'LVC_manual_{now.isot}'
         db_event = db.Event(name=event_name,
                             source='LVC',

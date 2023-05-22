@@ -4,9 +4,11 @@ import csv
 import os
 from collections import OrderedDict
 
+from astroplan import FixedTarget
 from astroplan.plots import dark_style_sheet, plot_airmass, plot_finder_image
 
 import astropy.units as u
+from astropy.coordinates import SkyCoord
 
 import matplotlib.pyplot as plt
 
@@ -56,15 +58,16 @@ def write_table(file_path, csv_file, ntrigs=20):
     format_template(df, file_path)
 
 
-def write_csv(filename, event, obs_data):
+def write_csv(filename, notice, obs_data):
     """Write the CSV file."""
     data = OrderedDict()
-    data['trigger'] = event.name
-    data['date'] = event.time
-    data['ra'] = event.coord.ra.deg
-    data['dec'] = event.coord.dec.deg
-    data['Galactic Distance'] = event.gal_dist
-    data['Galactic Lat'] = event.gal_lat
+    data['trigger'] = notice.event_name
+    data['date'] = notice.event_time
+    data['ra'] = notice.position.ra.deg
+    data['dec'] = notice.position.dec.deg
+    galactic_center = SkyCoord(l=0, b=0, unit='deg,deg', frame='galactic')
+    data['Galactic Distance'] = notice.position.galactic.separation(galactic_center).value
+    data['Galactic Lat'] = notice.position.galactic.b.value
 
     for site_name in obs_data:
         site_data = obs_data[site_name]
@@ -84,59 +87,60 @@ def write_csv(filename, event, obs_data):
             writer.writerow(data)
 
 
-def create_graphs(file_path, event, site_data, fov=30):
+def create_graphs(file_path, notice, site_data, fov=30):
     """Create airmass and finder plots."""
     # Plot airmass during the night
     delta_t = site_data['sun_rise'] - site_data['sun_set']
     time_range = site_data['sun_set'] + delta_t * np.linspace(0, 1, 75)
-    plot_airmass(event.coord, site_data['observer'], time_range, altitude_yaxis=True,
+    plot_airmass(notice.position, site_data['observer'], time_range, altitude_yaxis=True,
                  style_sheet=dark_style_sheet)
 
     plots_path = os.path.join(file_path, 'airmass_plots')
     if not os.path.exists(plots_path):
         os.mkdir(plots_path)
-    plt.savefig(os.path.join(plots_path, '{}_AIRMASS.png'.format(event.name)))
+    plt.savefig(os.path.join(plots_path, '{}_AIRMASS.png'.format(notice.event_name)))
     plt.clf()
 
     # Plot finder chart
     import warnings
     with warnings.catch_warnings():
         warnings.simplefilter('ignore')
-        plot_finder_image(event.target, fov_radius=fov * u.arcmin, grid=False, reticle=True)
+        target = FixedTarget(coord=notice.position)
+        plot_finder_image(target, fov_radius=fov * u.arcmin, grid=False, reticle=True)
 
     finder_path = os.path.join(file_path, 'finder_charts')
     if not os.path.exists(finder_path):
         os.mkdir(finder_path)
-    plt.savefig(os.path.join(finder_path, '{}_FINDER.png'.format(event.name)))
+    plt.savefig(os.path.join(finder_path, '{}_FINDER.png'.format(notice.event_name)))
     plt.clf()
 
 
-def write_html(file_path, event, site_data):
+def write_html(file_path, notice, site_data):
     """Write the HTML page."""
     site_name = site_data['observer'].name
 
-    html_file = '{}.html'.format(event.name)
+    html_file = '{}.html'.format(notice.event_name)
     html_path = os.path.join(file_path, html_file)
     with open(html_path, 'w') as f:
 
-        title = "New transient for {} from {} notice".format(site_name, event.notice)
+        title = "New transient for {} from {} notice".format(site_name, notice.packet_type)
         f.write('<!DOCTYPE html><html lang="en"><head>{}</head><body>'.format(title))
 
-        page = '{}.{}'.format(event.id, event.source.lower())
+        page = '{}.{}'.format(notice.event_id, notice.event_source.lower())
         f.write('<p>https://gcn.gsfc.nasa.gov/other/{}</p>'.format(page))
-        f.write('<p>Event ID:  {}</p>'.format(event.id))
+        f.write('<p>Event ID:  {}</p>'.format(notice.event_id))
 
         # Write event time
-        event_time = event.time
+        event_time = notice.event_time
         f.write('<p>Time of event (UTC): {}</p>'.format(event_time))
 
         # Write event coords
-        f.write('<p>RA:  {:.3f} degrees</p>'.format(event.coord.ra.deg))
-        f.write('<p>DEC: {:.3f} degrees</p>'.format(event.coord.dec.deg))
-        f.write('<p>RA, DEC Error:   {:.3f}</p>'.format(event.coord_error.deg))
+        f.write('<p>RA:  {:.3f} degrees</p>'.format(notice.position.ra.deg))
+        f.write('<p>DEC: {:.3f} degrees</p>'.format(notice.position.dec.deg))
+        f.write('<p>RA, DEC Error:   {:.3f}</p>'.format(notice.position_error.deg))
 
         # Write event contact
-        f.write('<p>Contact: {}</p>'.format(event.contact))
+        f.write('<p>Contact: {}</p>'.format(notice.contact))
 
         # Write obs details
         f.write('<p>Observation Details: Time in UTC</p>')
@@ -156,16 +160,19 @@ def write_html(file_path, event, site_data):
         f.write('<p>Observations End:  {}</p>'.format(observation_end))
 
         # Write galactic details
-        f.write('<p>Galactic Distance:   {:.3f} degrees</p>'.format(event.gal_dist))
-        f.write('<p>Galactic Lat:    {:.3f} degrees</p>'.format(event.gal_lat))
+        galactic_center = SkyCoord(l=0, b=0, unit='deg,deg', frame='galactic')
+        gal_dist = notice.position.galactic.separation(galactic_center).value
+        gal_lat = notice.position.galactic.b.value
+        f.write('<p>Galactic Distance:   {:.3f} degrees</p>'.format(gal_dist))
+        f.write('<p>Galactic Lat:    {:.3f} degrees</p>'.format(gal_lat))
 
         # Write obs check
         near_moon = not site_data["moon_observable"]
         f.write('<p>Target within 5 degrees of the moon? {}</p>'.format(near_moon))
 
         # Write links to plots
-        f.write('<img src=finder_charts/{}_FINDER.png>'.format(event.name))
-        f.write('<img src=airmass_plots/{}_AIRMASS.png>'.format(event.name))
+        f.write('<img src=finder_charts/{}_FINDER.png>'.format(notice.event_name))
+        f.write('<img src=airmass_plots/{}_AIRMASS.png>'.format(notice.event_name))
         f.write('</body></html>')
 
 
@@ -183,12 +190,12 @@ def write_topten(csv_path, topten_path):
         f.write('<p>{}</p>'.format(html_table))
 
 
-def create_webpages(event, obs_data, site_name, web_path):
+def create_webpages(notice, obs_data, site_name, web_path):
     """Create the output webpages for the given telescope."""
     site_data = obs_data[site_name]
 
     # write master csv file
-    write_csv(os.path.join(web_path, 'master.csv'), event, obs_data)
+    write_csv(os.path.join(web_path, 'master.csv'), notice, obs_data)
 
     # Find file paths
     web_directory = '{}_transients'.format(site_name)
@@ -197,14 +204,14 @@ def create_webpages(event, obs_data, site_name, web_path):
         os.mkdir(file_path)
 
     # Create graphs
-    create_graphs(file_path, event, site_data)
+    create_graphs(file_path, notice, site_data)
 
     # Write HTML
-    write_html(file_path, event, site_data)
+    write_html(file_path, notice, site_data)
 
     # Write CSV
     csv_file = site_name + ".csv"
-    write_csv(os.path.join(file_path, csv_file), event, obs_data)
+    write_csv(os.path.join(file_path, csv_file), notice, obs_data)
 
     # Write latest 10 page
     topten_file = "recent_ten.html"

@@ -8,7 +8,7 @@ import astropy.units as u
 from astropy.time import Time
 
 from gtecs.common.slack import send_message
-from gtecs.obs import database as db
+from gtecs.obs import database as obs_db
 
 import ligo.skymap.plot  # noqa: F401  (for extra projections)
 
@@ -16,6 +16,7 @@ from matplotlib import pyplot as plt
 
 import numpy as np
 
+from . import database as alert_db
 from . import params
 
 
@@ -43,42 +44,68 @@ def send_slack_msg(text, channel=None, *args, **kwargs):
         print('Slack Message:', text)
 
 
-def send_event_report(event, slack_channel=None):
-    """Send a message to Slack with the event details and skymap."""
-    s = f'*Details for event {event.name}*\n'
+def send_notice_report(notice, slack_channel=None, time=None):
+    """Send a message to Slack with the notice details and skymap."""
+    if time is None:
+        time = Time.now()
 
-    # Get list of details based on the event class
-    details = event.get_details()
-    s += '\n'.join(details)
+    msg = f'*{notice.source} notice:* {notice.ivorn}\n'
 
+    # Add basic notice details
+    msg += f'Notice type: {notice.packet_type}\n'
+    msg += f'Notice time: {notice.time.iso}'
+    msg += f' _({(time - notice.time).to(u.hour).value:.1f}h ago)_\n'
+
+    if notice.role != 'observation':
+        msg += f'*NOTE: THIS IS A {notice.role.upper()} EVENT*\n'
+
+    # Make sure we have the skymap downloaded
+    notice.get_skymap()
+
+    # Get event-specific details from the notice class
+    msg += '\n'
+    msg += notice.slack_details
+
+    # Get strategy details (a short version compared to the full notice)
+    msg += '\n'
+    if notice.strategy is not None:
+        msg += f'Observing strategy: `{notice.strategy}`\n'
+        cadences = ','.join(f'`{cadence}`' for cadence in notice.strategy_dict['cadence'])
+        msg += f'Cadence{"s" if cadences.count(",") > 0 else ""}: {cadences}\n'
+        msg += f'Constraints: `{notice.strategy_dict["constraints"]}`\n'
+        msg += f'Exposure sets: `{notice.strategy_dict["exposure_sets"]}`\n'
+        stop_time = max(d['stop_time'] for d in notice.strategy_dict['cadence_dict'])
+        msg += f'Valid until: {stop_time.iso}'
+        if stop_time < time:
+            msg += f' _(expired {(time - stop_time).to("day").value:.1f} days ago)_\n'
+        else:
+            msg += '\n'
+
+    # Create a skymap plot to attach to the message (if there is one)
     filepath = None
-    if event.skymap is not None:
-        # Create skymap plot
+    if notice.skymap is not None:
         plt.figure(figsize=(8, 4), dpi=120, facecolor='white', tight_layout=True)
         axes = plt.axes(projection='astro hours mollweide')
         axes.grid()
 
         # Plot the skymap data and contours
-        event.skymap.healpix.plot(axes, rasterize=False, cmap='cylon', cbar=False)
-        axes.contour_hpx(
-            event.skymap.contours / max(event.skymap.contours),
-            nested=event.skymap.is_nested,
-            levels=[0.5, 0.9],
-            colors='black', linewidths=0.5, linestyles=['dashed', 'solid'],
-            zorder=1.2,
-        )
+        notice.skymap.plot_data(axes, rasterize=False, cmap='cylon', cbar=False)
+        notice.skymap.plot_contours(axes, levels=[0.5, 0.9],
+                                    colors='black', linewidths=0.5, linestyles=['dashed', 'solid'],
+                                    zorder=1.2,
+                                    )
 
         # For small areas, add a marker
-        if event.coord and event.skymap.get_contour_area(0.9) < 10:
+        if notice.position and notice.skymap.get_contour_area(0.9) < 10:
             axes.scatter(
-                event.coord.ra.value, event.coord.dec.value,
+                notice.position.ra.value, notice.position.dec.value,
                 transform=axes.get_transform('world'),
                 s=99, c='tab:blue', marker='*',
                 zorder=9,
             )
             axes.text(
-                event.coord.ra.value, event.coord.dec.value,
-                event.coord.to_string('hmsdms').replace(' ', '\n') + '\n',
+                notice.position.ra.value, notice.position.dec.value,
+                notice.position.to_string('hmsdms').replace(' ', '\n') + '\n',
                 transform=axes.get_transform('world'),
                 ha='center', va='bottom',
                 size='x-small',
@@ -86,48 +113,50 @@ def send_event_report(event, slack_channel=None):
             )
 
         # Add text
-        axes.set_title(f'Skymap for {event.type} event {event.name}', y=1.06)
-        axes.text(0.5, 1.03, f'{event.ivorn}', fontsize=8, ha='center', transform=axes.transAxes)
-        axes.text(-0.03, -0.1, f'Detection time: {event.time.strftime("%Y-%m-%d %H:%M:%S")}',
+        axes.set_title(f'Skymap for {notice.event_type} event {notice.event_name}', y=1.06)
+        axes.text(0.5, 1.03, f'{notice.ivorn}', fontsize=8, ha='center', transform=axes.transAxes)
+        axes.text(-0.03, -0.1, f'Detection time: {notice.event_time.strftime("%Y-%m-%d %H:%M:%S")}',
                   ha='left', va='bottom', transform=axes.transAxes)
-        if event.skymap.get_contour_area(0.9) < 10:
-            text = f'50% area: {event.skymap.get_contour_area(0.5):.2f} deg²\n'
-            text += f'90% area: {event.skymap.get_contour_area(0.9):.2f} deg²'
+        if notice.skymap.get_contour_area(0.9) < 10:
+            text = f'50% area: {notice.skymap.get_contour_area(0.5):.2f} deg²\n'
+            text += f'90% area: {notice.skymap.get_contour_area(0.9):.2f} deg²'
         else:
-            text = f'50% area: {event.skymap.get_contour_area(0.5):.0f} deg²\n'
-            text += f'90% area: {event.skymap.get_contour_area(0.9):.0f} deg²'
+            text = f'50% area: {notice.skymap.get_contour_area(0.5):.0f} deg²\n'
+            text += f'90% area: {notice.skymap.get_contour_area(0.9):.0f} deg²'
         axes.text(0.8, -0.1, text, ha='left', va='bottom', transform=axes.transAxes)
 
         # Save
         direc = os.path.join(params.FILE_PATH, 'plots')
         if not os.path.exists(direc):
             os.makedirs(direc)
-        filepath = os.path.join(direc, event.name + '_skymap.png')
+        filepath = os.path.join(direc, notice.event_name + '_skymap.png')
         plt.savefig(filepath)
         plt.close(plt.gcf())
 
-    # Send the message, with the skymap file attached (if it has one)
-    send_slack_msg(s, filepath=filepath, channel=slack_channel)
+    # Send the message
+    send_slack_msg(msg, filepath=filepath, channel=slack_channel)
 
 
-def send_strategy_report(event, slack_channel=None):
-    """Send a message to Slack with the event strategy details."""
-    s = f'*Strategy for event {event.name}*\n'
+def send_strategy_report(notice, slack_channel=None):
+    """Send a message to Slack with the observation strategy details."""
+    if notice.role == 'observation':
+        s = f'*Strategy for event {notice.event_name}*\n'
+    else:
+        s = f'*Strategy for {notice.role} event {notice.event_name}*\n'
 
-    if event.strategy is None:
-        # Something is being run out-of-order
+    if notice.strategy is None:
+        # This is a retraction
         s += '*ERROR: No strategy defined*\n'
         send_slack_msg(s, channel=slack_channel)
         return
 
     # Basic strategy
-    strategy = event.get_strategy()
-    s += f'Strategy: `{strategy["strategy"]}`\n'
-    s += f'Rank: {strategy["rank"]}\n'
+    s += f'Strategy: `{notice.strategy_dict["strategy"]}`\n'
+    s += f'Rank: {notice.strategy_dict["rank"]}\n'
 
     # Cadence
-    for i, cadence in enumerate(strategy['cadence']):
-        cadence_dict = strategy['cadence_dict'][i]
+    for i, cadence in enumerate(notice.strategy_dict['cadence']):
+        cadence_dict = notice.strategy_dict['cadence_dict'][i]
         s += f'Cadence {i + 1}: `{cadence}`\n'
         s += f'- Number of visits: {cadence_dict["num_todo"]}\n'
         s += f'- Time between visits (hours): {cadence_dict["wait_hours"]}\n'
@@ -135,107 +164,135 @@ def send_strategy_report(event, slack_channel=None):
         s += f'- Stop time: {cadence_dict["stop_time"].iso}\n'
 
     # Constraints
-    s += f'Constraints: `{strategy["constraints"]}`\n'
-    s += f'- Min Alt: {strategy["constraints_dict"]["min_alt"]}\n'
-    s += f'- Max Sun Alt: {strategy["constraints_dict"]["max_sunalt"]}\n'
-    s += f'- Min Moon Sep: {strategy["constraints_dict"]["min_moonsep"]}\n'
-    s += f'- Max Moon Phase: {strategy["constraints_dict"]["max_moon"]}\n'
+    s += f'Constraints: `{notice.strategy_dict["constraints"]}`\n'
+    s += f'- Min Alt: {notice.strategy_dict["constraints_dict"]["min_alt"]}\n'
+    s += f'- Max Sun Alt: {notice.strategy_dict["constraints_dict"]["max_sunalt"]}\n'
+    s += f'- Min Moon Sep: {notice.strategy_dict["constraints_dict"]["min_moonsep"]}\n'
+    s += f'- Max Moon Phase: {notice.strategy_dict["constraints_dict"]["max_moon"]}\n'
 
     # Exposure Sets
-    s += f'ExposureSets: `{strategy["exposure_sets"]}`\n'
-    for expset in strategy['exposure_sets_dict']:
+    s += f'ExposureSets: `{notice.strategy_dict["exposure_sets"]}`\n'
+    for expset in notice.strategy_dict['exposure_sets_dict']:
         s += f'- NumExp: {expset["num_exp"]:.0f}'
         s += f'  Filter: {expset["filt"]}'
         s += f'  ExpTime: {expset["exptime"]:.1f}s\n'
 
     # Tiling
-    s += f'Tile number limit: {strategy["tile_limit"]}\n'
-    s += f'Tile probability limit: {strategy["prob_limit"]:.1%}\n'
+    s += f'Tile number limit: {notice.strategy_dict["tile_limit"]}\n'
+    s += f'Tile probability limit: {notice.strategy_dict["prob_limit"]:.1%}\n'
 
     # Send the message
     send_slack_msg(s, channel=slack_channel)
 
 
-def send_database_report(event, slack_channel=None, time=None):
-    """Send a message to Slack with details of the database pointings and visibility."""
+def send_observing_report(notice, slack_channel=None, time=None):
+    """Send a message to Slack with details of the observing details and visibility."""
     if time is None:
         time = Time.now()
 
-    s = f'*Visibility for event {event.name}*\n'
-    with db.open_session() as session:
-        # Query Event table
-        db_event = session.query(db.Event).filter(db.Event.name == event.name).one_or_none()
+    msg = f'*{notice.source} notice:* {notice.ivorn}\n'
+
+    # Get info from the alert database
+    with alert_db.session_manager() as session:
+        # Query the Notice table for the matching entry
+        query = session.query(alert_db.Notice).filter(alert_db.Notice.ivorn == notice.ivorn)
+        db_notice = query.one_or_none()
+        if db_notice is None:
+            msg += '*ERROR: No matching entry found in database*\n'
+            send_slack_msg(msg, channel=slack_channel)
+            return
+        msg += f'Notice added to database (ID={db_notice.db_id})\n'
+
+        # Look at the Event this Notice is for
+        db_event = db_notice.event
         if db_event is None:
-            # Uh-oh, send a warning message
-            s += '*ERROR: No matching entry found in database*\n'
-            send_slack_msg(s, channel=slack_channel)
+            msg += '*ERROR: No matching event found in database*\n'
+            send_slack_msg(msg, channel=slack_channel)
             return
-        s += f'Number of surveys found for this event: {len(db_event.surveys)}\n'
+        msg += f'Notice linked to Event `{db_event.name}` (ID={db_event.db_id})\n'
+        msg += f'- Event is linked to {len(db_event.notices)} notices'
+        msg += f' and {len(db_event.surveys)} surveys\n'
+        pending = [p
+                   for survey in db_event.surveys
+                   for p in survey.pointings
+                   if p.status_at_time(time + 1 * u.s) not in ['deleted', 'expired', 'completed']]
+        msg += f'- Event has {len(pending)} pending pointings\n'
 
-        # Send different alerts for retractions
-        if event.strategy is None:
-            # Check that all pointings for this event have been deleted
-            pending = [p for p in db_event.pointings
-                       if p.status_at_time(time) not in ['deleted', 'expired', 'completed']]
-            s += f'Number of pending pointings found for this event: {len(pending)}\n'
-            if len(pending) == 0:
-                s += '- Previous targets removed successfully\n'
-            else:
-                s += '- *ERROR: Retraction failed to remove previous targets*\n'
-            # That's it for retractions
-            send_slack_msg(s, channel=slack_channel)
-            return
+        # Look at the Survey this Notice is linked to (if any)
+        db_survey = db_notice.survey
 
-        # We are considering only the latest survey
-        db_survey = db_event.surveys[-1]
-        s += f'Latest survey: {db_survey.name}\n'
-        s += f'Number of targets for this survey: {len(db_survey.targets)}\n'
-
-        # Check non-retractions with no targets
-        if len(db_survey.targets) == 0:
-            # This might be because no tiles passed the filter
-            if (event.strategy['prob_limit'] > 0 and
-                    max(event.tiles['prob']) < event.strategy['prob_limit']):
-                s += '- No tiles passed the probability limit '
-                s += f'({event.strategy["prob_limit"]:.1%}, '
-                s += f'highest had {max(event.tiles["prob"]):.1%})\n'
+        if db_survey is None:
+            # It could be a retraction
+            if notice.strategy is None:
+                if len(pending) == 0:
+                    msg += 'Event has been successfully retracted\n'
+                else:
+                    msg += '*ERROR: Retraction failed to remove pending pointings*\n'
+                send_slack_msg(msg, channel=slack_channel)
+                return
             else:
                 # Uh-oh, something went wrong when inserting?
-                s += '- *ERROR: No targets found in database*\n'
-            send_slack_msg(s, channel=slack_channel)
+                msg += '*ERROR: No survey found in database*\n'
+                send_slack_msg(msg, channel=slack_channel)
+                return
+
+        # We have a Survey in the database, but it might be an old one
+        if len(db_survey.notices) > 1 and db_survey.notices[0] != db_notice:
+            # This is an old Survey created for a previous Notice
+            msg += f'Notice linked to existing Survey `{db_survey.name}` (ID={db_survey.db_id})\n'
+            msg += f'- Survey created from notice {db_survey.notices[0].ivorn}\n'
+            msg += '- Event skymap and strategy are unchanged\n'
+            send_slack_msg(msg, channel=slack_channel)
             return
 
-        # We have at least 1 target, so we can consider the grid visibility
-        # Get info from the database here, so we can close the connection
+        msg += f'Notice linked to new Survey `{db_survey.name}` (ID={db_survey.db_id})\n'
+        msg += f'- Survey contains {len(db_survey.targets)} targets\n'
+
+        # Save info from the database here, so we can close the connection
         survey_name = db_survey.name
-        event_tiles = np.array([target.grid_tile.name for target in db_survey.targets])
-        db_sites = session.query(db.Site).all()
+        survey_tiles = np.array([target.grid_tile.name for target in db_survey.targets])
+
+    # Get grid and site info from the obsdb
+    with obs_db.session_manager() as session:
+        db_grid = obs_db.get_current_grid(session)
+        grid = db_grid.skygrid
+
+        db_sites = session.query(obs_db.Site).all()
         sites = [site.location for site in db_sites]
         site_names = [site.name for site in db_sites]
 
-    # Find visibility constraints
-    min_alt = float(event.strategy['constraints_dict']['min_alt']) * u.deg
-    max_sunalt = float(event.strategy['constraints_dict']['max_sunalt']) * u.deg
-    alt_constraint = AltitudeConstraint(min=min_alt)
-    night_constraint = AtNightConstraint(max_solar_altitude=max_sunalt)
-    constraints = [alt_constraint, night_constraint]
-    start_time = min(d['start_time'] for d in event.strategy['cadence_dict'])
-    stop_time = max(d['stop_time'] for d in event.strategy['cadence_dict'])
-    s += 'Valid dates:'
-    s += f' {start_time.datetime.strftime("%Y-%m-%d")} to'
-    s += f' {stop_time.datetime.strftime("%Y-%m-%d")}'
-    if stop_time < Time.now():
-        # The pointings will have expired
-        delta = Time.now() - stop_time
-        s += f' _(expired {delta.to("day").value:.1f} days ago)_\n'
-    else:
-        s += '\n'
+    # Now we want to calculate the current visibility of the survey at each site
+    # We're going to have to re-apply the skymap to the grid to get the tile probabilities
+    grid.apply_skymap(notice.skymap)
 
-    total_prob = event.grid.get_probability(event_tiles)
-    s += f'Total probability in all tiles: {total_prob:.1%}\n'
+    if len(survey_tiles) == 0:
+        # This might be because no tiles passed the filter
+        all_tiles = grid.get_table()
+        if (notice.strategy_dict['prob_limit'] > 0 and
+                max(all_tiles['prob']) < notice.strategy_dict['prob_limit']):
+            msg += '- No tiles passed the probability limit '
+            msg += f'({notice.strategy_dict["prob_limit"]:.1%}, '
+            msg += f'highest had {max(all_tiles["prob"]):.1%})\n'
+        else:
+            # Uh-oh, something went wrong when inserting?
+            msg += '- *ERROR: No targets found in database*\n'
+        send_slack_msg(msg, channel=slack_channel)
+        return
+
+    total_prob = grid.get_probability(survey_tiles)
+    msg += f'Total probability in survey tiles: {total_prob:.1%}\n'
 
     # Create visibility plot
     fig = plt.figure(figsize=(9, 4 * len(sites)), dpi=120, facecolor='white', tight_layout=True)
+
+    # Find visibility constraints
+    min_alt = float(notice.strategy_dict['constraints_dict']['min_alt']) * u.deg
+    max_sunalt = float(notice.strategy_dict['constraints_dict']['max_sunalt']) * u.deg
+    alt_constraint = AltitudeConstraint(min=min_alt)
+    night_constraint = AtNightConstraint(max_solar_altitude=max_sunalt)
+    constraints = [alt_constraint, night_constraint]
+    start_time = min(d['start_time'] for d in notice.strategy_dict['cadence_dict'])
+    stop_time = max(d['stop_time'] for d in notice.strategy_dict['cadence_dict'])
 
     for i, site in enumerate(sites):
         observer = Observer(site)
@@ -244,61 +301,58 @@ def send_database_report(event, slack_channel=None, time=None):
             site_name = 'La Palma'
         elif site_name == 'Siding Spring Observatory':
             site_name = 'Siding Spring'
-        s += f'Predicted visibility from {site_name}:\n'
+        msg += f'Predicted visibility from {site_name}:\n'
 
         # Find which grid tiles are visible from this site
-        visible_mask = is_observable(constraints, observer, event.grid.coords,
+        visible_mask = is_observable(constraints, observer, grid.coords,
                                      time_range=[start_time, stop_time])
-        grid_tiles = np.array(event.grid.tilenames)
-        grid_tiles_vis = set(grid_tiles[visible_mask])
+        visible_tiles = set(np.array(grid.tilenames)[visible_mask])
 
-        # Now find which event tiles are visible
-        event_tiles_vis = set([t for t in event_tiles if t in grid_tiles_vis])
-        s += '- Tiles visible during valid period:'
-        s += f' {len(event_tiles_vis)}/{len(event_tiles)}\n'
+        # Now find which skymap tiles are visible
+        visible_survey_tiles = {t for t in survey_tiles if t in visible_tiles}
+        msg += '- Tiles visible during valid period:'
+        msg += f' {len(visible_survey_tiles)}/{len(survey_tiles)}\n'
 
         # Find the probability for all tiles and those visible
-        visible_prob = event.grid.get_probability(event_tiles_vis)
-        s += f'- Probability in visible tiles: {visible_prob:.1%}\n'
+        visible_prob = grid.get_probability(visible_survey_tiles)
+        msg += f'- Probability in visible tiles: {visible_prob:.1%}\n'
 
         # Add to plot
         axes = plt.subplot(11 + len(sites) * 100 + i, projection='astro hours mollweide')
 
         # Plot the tiles coloured by probability
-        t = event.grid.plot_tiles(
-            axes, array=event.grid.probs,
+        t = grid.plot_tiles(
+            axes, array=grid.probs,
             ec='none', alpha=0.8, cmap='cylon',
             zorder=1,
         )
-        t.set_clim(vmin=0, vmax=max(event.grid.probs))
-        event.grid.plot_tiles(axes, fc='none', ec='0.3', lw=0.1, zorder=1.2)
+        t.set_clim(vmin=0, vmax=max(grid.probs))
+        grid.plot_tiles(axes, fc='none', ec='0.3', lw=0.1, zorder=1.2)
 
         # Add the colorbar, formatting as a percentage
         fig.colorbar(
             t, ax=axes, fraction=0.02, pad=0.05,
             # label='Tile contained probability',
-            format=lambda x, _: f'{x:.1%}' if max(event.grid.probs) < 0.1 else f'{x:.0%}',
+            format=lambda x, _: f'{x:.1%}' if max(grid.probs) < 0.1 else f'{x:.0%}',
         )
 
         # Add contours
-        axes.contour_hpx(
-            event.skymap.contours / max(event.skymap.contours),
-            nested=event.skymap.is_nested,
-            levels=[0.5, 0.9],
+        notice.skymap.plot_contours(
+            axes, levels=[0.5, 0.9],
             colors='black', linewidths=0.5, linestyles=['dashed', 'solid'],
             zorder=1.15,
         )
 
         # Overcast non-visible tiles
-        alphas = [0 if t in grid_tiles_vis else 0.3 for t in grid_tiles]
-        event.grid.plot_tiles(axes, fc='0.5', ec='none', alpha=alphas, zorder=1.1)
+        alphas = [0 if t in visible_tiles else 0.3 for t in grid.tilenames]
+        grid.plot_tiles(axes, fc='0.5', ec='none', alpha=alphas, zorder=1.1)
 
         # Add the tile outlines coloured by visibility
-        ec = ['tab:blue' if tilename in event_tiles_vis
-              else 'tab:red' if tilename in event_tiles
+        ec = ['tab:blue' if tilename in visible_survey_tiles
+              else 'tab:red' if tilename in survey_tiles
               else 'none'
-              for tilename in grid_tiles]
-        event.grid.plot_tiles(axes, fc='none', ec=ec, lw=1, zorder=1.21)
+              for tilename in grid.tilenames]
+        grid.plot_tiles(axes, fc='none', ec=ec, lw=1, zorder=1.21)
 
         # Add text
         if i == 0:
@@ -308,7 +362,7 @@ def send_database_report(event, slack_channel=None, time=None):
             axes.text(0.5, 1.03, text, fontsize=8, ha='center', transform=axes.transAxes)
         axes.text(-0.03, -0.06, f'Site: {site_name}',
                   ha='left', va='bottom', transform=axes.transAxes)
-        text = f'Visible tiles: {len(event_tiles_vis)}/{len(event_tiles)}\n'
+        text = f'Visible tiles: {len(visible_survey_tiles)}/{len(survey_tiles)}\n'
         text += f'Visible probability: {visible_prob:.1%}'
         axes.text(0.78, -0.06, text, ha='left', va='bottom', transform=axes.transAxes)
 
@@ -316,9 +370,9 @@ def send_database_report(event, slack_channel=None, time=None):
     direc = os.path.join(params.FILE_PATH, 'plots')
     if not os.path.exists(direc):
         os.makedirs(direc)
-    filepath = os.path.join(direc, event.name + '_tiles.png')
+    filepath = os.path.join(direc, notice.event_name + '_tiles.png')
     plt.savefig(filepath)
     plt.close(plt.gcf())
 
     # Send the message with the plot attached
-    send_slack_msg(s, filepath=filepath, channel=slack_channel)
+    send_slack_msg(msg, filepath=filepath, channel=slack_channel)

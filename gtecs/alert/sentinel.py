@@ -1,8 +1,8 @@
-"""Class for listening for VOEvents."""
+"""Class for listening for GCN alert notices."""
 
 import itertools
-import os
 import socket
+import sys
 import threading
 import time
 import traceback
@@ -17,8 +17,8 @@ from gcn_kafka import Consumer
 from gtecs.common import logging
 
 from . import params
-from .events import Event
-from .handler import event_handler
+from .gcn import GCNNotice
+from .handler import handle_notice
 from .slack import send_slack_msg
 
 
@@ -33,10 +33,13 @@ class Sentinel:
 
         # sentinel variables
         self.running = False
-        self.events_queue = []
-        self.latest_event = None
-        self.received_events = 0
-        self.processed_events = 0
+        self.notice_queue = []
+        self.latest_notice = None
+        self.received_notices = 0
+        self.processed_notices = 0
+        self.ignored_roles = ['utility']
+        if not params.PROCESS_TEST_NOTICES:  # TODO: could be an off/on switch?
+            self.ignored_roles.append('test')
 
     def __del__(self):
         self.shutdown()
@@ -108,10 +111,10 @@ class Sentinel:
         """
         self.log.info('Alert listener thread started')
 
-        # Define basic handler function to create an Event and add it to the queue
+        # Define basic handler function to create a GCNNotice instance and add it to the queue
         def _handler(payload, root):
-            event = Event.from_payload(payload)
-            self.events_queue.append(event)
+            notice = GCNNotice.from_payload(payload)
+            self.notice_queue.append(notice)
 
         # Create a simple listen function, based on PyGCN's listen()
         # We have our own version here so we can have it in a thread with our own loop,
@@ -170,7 +173,7 @@ class Sentinel:
         return
 
     def _kafka_listener_thread(self):
-        """Connect to a Kafka server and listen for VOEvents.
+        """Connect to a Kafka server and listen for notices.
 
         This uses GCN Kafka (https://github.com/nasa-gcn/gcn-kafka-python) which is built around
         Confluent Kafka (https://github.com/confluentinc/confluent-kafka-python).
@@ -186,7 +189,7 @@ class Sentinel:
                                 )
 
             # Subscribe to any notices we want
-            # TODO: Also params? Or we could get from Events?
+            # TODO: Also params? Or we could get from the subclasses?
             #       For now just subscribe to everything...
             all_topics = [t for t in consumer.list_topics().topics.keys() if 'voevent' in t]
             consumer.subscribe(all_topics)
@@ -201,10 +204,11 @@ class Sentinel:
                     if msg.error():
                         self.log.error(msg.error())
                     else:
-                        # Handle the event
+                        # Add to the queue
                         payload = msg.value()
-                        event = Event.from_payload(payload)
-                        self.events_queue.append(event)
+                        notice = GCNNotice.from_payload(payload)
+                        self.log.debug(f'Received GCN notice: {notice.ivorn}')
+                        self.notice_queue.append(notice)
             except KeyboardInterrupt:
                 pass
             except Exception:
@@ -224,73 +228,66 @@ class Sentinel:
         return
 
     def _handler_thread(self):
-        """Monitor the events queue and handle any events."""
+        """Monitor the notice queue and handle any new notices."""
         self.log.info('Alert handler thread started')
 
         while self.running:
-            # Check the events queue, take off the first entry
-            if len(self.events_queue) > 0:
-                # There's at least one new event!
-                event = self.events_queue.pop(0)
-                self.latest_event = event
-                self.log.info('Processing new event: {}'.format(event.ivorn))
+            if len(self.notice_queue) > 0:
+                # We have received a new notice
+                self.received_notices += 1
+                notice = self.notice_queue.pop(0)
+                self.latest_notice = notice
+                self.log.debug('Processing new notice: {}'.format(notice.ivorn))
 
                 try:
-                    # First archive the event
-                    path = os.path.join(params.FILE_PATH, 'voevents')
-                    event.archive(path)
-                    self.log.info('Archived to {}'.format(path))
+                    # Check if we want to process or ignore it
+                    if notice.event_type == 'unknown':  # i.e. it's not one of the subclasses
+                        self.log.debug('Ignoring unrecognised event class')
+                        continue
+                    elif notice.role in self.ignored_roles:
+                        self.log.debug(f'Ignoring {notice.role} notice')
+                        continue
 
-                    # Call the event handler, which will return True if it was processed
-                    # or False if it was ignored (e.g. test events, or no matching subclasses)
-                    try:
-                        processed = event_handler(event,
-                                                  send_messages=params.ENABLE_SLACK,
-                                                  log=self.log,
-                                                  )
-                    except Exception:
-                        self.log.exception('Exception in event handler')
-                        send_slack_msg('Exception in event handler for event {event.ivorn}')
+                    send_slack_msg(f'Sentinel processing new notice ({notice.ivorn})')
+                    handle_notice(notice, send_messages=params.ENABLE_SLACK, log=self.log)
+                    self.processed_notices += 1
+                    send_slack_msg('Sentinel successfully processed notice')
 
-                    if processed:
-                        self.log.info('Event {} processed'.format(event.name))
-                        self.processed_events += 1
-
-                        # Start a followup thread to wait for the skymap of Fermi events
-                        if event.source == 'Fermi':
+                    # Start a followup thread to wait for the skymap of Fermi notices
+                    if notice.event_source == 'Fermi':
+                        try:
+                            # Might as well try once
+                            urlopen(notice.skymap_url)
+                        except URLError:
+                            # The skymap hasn't been uploaded yet
                             try:
-                                # Might as well try once
-                                urlopen(event.skymap_url)
-                            except URLError:
-                                # The skymap hasn't been uploaded yet
-                                try:
-                                    t = threading.Thread(target=self._fermi_skymap_thread(event))
-                                    t.daemon = True
-                                    t.start()
-                                except Exception:
-                                    self.log.exception('Error in Fermi followup thread')
+                                t = threading.Thread(target=self._fermi_skymap_thread(notice))
+                                t.daemon = True
+                                t.start()
+                            except Exception:
+                                self.log.exception('Error in Fermi followup thread')
 
-                    # Done!
-                    self.received_events += 1
-
-                except Exception:
-                    self.log.exception('Error handling event {}'.format(event.name))
+                except Exception as err:
+                    self.log.exception('Error handling notice')
+                    msg = 'Sentinel reports ERROR handling notice'
+                    msg += f' ("{err.__class__.__name__}: {err}")'
+                    send_slack_msg(msg)
 
             time.sleep(0.1)
 
         self.log.info('Alert handler thread stopped')
         return
 
-    def _fermi_skymap_thread(self, event):
-        """Listen for the official skymap for Fermi events."""
-        self.log.info('{} skymap listening thread started'.format(event.name))
+    def _fermi_skymap_thread(self, notice):
+        """Listen for the official skymap for Fermi notices."""
+        self.log.info('{} skymap listening thread started'.format(notice.event_name))
 
         found_skymap = False
         while self.running and not found_skymap:
             try:
-                urlopen(event.skymap_url)
-                event = Event.from_payload(event.payload)
-                event.ivorn = event.ivorn + '_new_skymap'  # create a new ivorn for the DB
+                urlopen(notice.skymap_url)
+                notice = GCNNotice.from_payload(notice.payload)
+                notice.ivorn = notice.ivorn + '_new_skymap'  # create a new ivorn for the DB
                 found_skymap = True
             except URLError:
                 # if the link is not working yet, sleep for 30s
@@ -298,38 +295,39 @@ class Sentinel:
 
         if found_skymap:
             try:
-                # Call the handler for the new event
-                event_handler(event, send_messages=params.ENABLE_SLACK, log=self.log)
-                send_slack_msg('Latest skymap used for {}'.format(event.name))
+                # Call the handler for the new notice
+                # TODO: could just add to the queue?
+                handle_notice(notice, send_messages=params.ENABLE_SLACK, log=self.log)
+                send_slack_msg('Latest skymap used for {}'.format(notice.event_name))
             except Exception:
-                self.log.exception('Exception in event handler')
-            self.log.info('{} skymap listening thread finished'.format(event.name))
+                self.log.exception('Exception in handler')
+            self.log.info('{} skymap listening thread finished'.format(notice.event_name))
         else:
             # Thread was shutdown before we found the skymap
-            self.log.info('{} skymap listening thread aborted'.format(event.name))
+            self.log.info('{} skymap listening thread aborted'.format(notice.event_name))
             return
 
     # Functions
     def ingest_from_payload(self, payload):
-        """Ingest an event payload."""
-        event = Event.from_payload(payload)
-        self.events_queue.append(event)
-        return 'Event added to queue'
+        """Ingest a VOEvent payload."""
+        notice = GCNNotice.from_payload(payload)
+        self.notice_queue.append(notice)
+        return 'VOEvent notice added to queue'
 
     def ingest_from_file(self, filepath):
-        """Ingest an event payload from a file."""
-        event = Event.from_file(filepath)
-        self.events_queue.append(event)
-        return 'Event added to queue'
+        """Ingest a VOEvent payload from a file."""
+        notice = GCNNotice.from_file(filepath)
+        self.notice_queue.append(notice)
+        return 'VOEvent notice added to queue'
 
     def ingest_from_ivorn(self, ivorn):
-        """Ingest an event from its IVORN.
+        """Ingest a VOEvent payload from its IVORN.
 
-        Will attempt to download the event payload from the 4pisky VOEvent DB.
+        Will attempt to download the payload from the 4pisky VOEvent DB.
         """
-        event = Event.from_ivorn(ivorn)
-        self.events_queue.append(event)
-        return 'Event added to queue'
+        notice = GCNNotice.from_ivorn(ivorn)
+        self.notice_queue.append(notice)
+        return 'VOEvent notice added to queue'
 
 
 def run():
@@ -352,3 +350,4 @@ def run():
         time.sleep(1)  # wait to stop threads
         send_slack_msg('Sentinel shutdown')
         print('Sentinel done')
+        sys.exit(0)

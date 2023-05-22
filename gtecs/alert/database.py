@@ -1,182 +1,325 @@
-"""Functions to add events into the GOTO Observation Database."""
+"""Alert database archive functions and ORM."""
 
-import logging
+import datetime
+import os
+from contextlib import contextmanager
+from gzip import GzipFile
+from io import BytesIO
 
-from astropy import units as u
+from astropy.io import fits
 from astropy.time import Time
 
-from gtecs.obs import database as db
+from gototile.skymap import SkyMap
+
+from gtecs.common.database import get_session as get_session_common
+from gtecs.obs.database.models import Base
+
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, LargeBinary, String
+from sqlalchemy import func
+from sqlalchemy.orm import backref, relationship, validates
+
+from . import params
+from .gcn import GCNNotice
 
 
-def get_user(session):
-    """Get the sentinel database user, or create one if it doesn't exist."""
+def get_session(user=None, password=None, host=None, echo=None, pool_pre_ping=None):
+    """Create a database connection session.
+
+    All arguments are passed to `gtecs.common.database.get_session()`,
+    with the defaults taken from the module parameters.
+
+    Note it is generally better to use the session_manager() context manager,
+    which will automatically commit or rollback changes when done.
+    """
+    # This means the user doesn't need to worry about the params, but can overwrite if needed.
+    if user is None:
+        user = params.DATABASE_USER
+    if password is None:
+        password = params.DATABASE_PASSWORD
+    if host is None:
+        host = params.DATABASE_HOST
+    if echo is None:
+        echo = params.DATABASE_ECHO
+    if pool_pre_ping is None:
+        pool_pre_ping = params.DATABASE_PRE_PING
+    session = get_session_common(
+        user=user,
+        password=password,
+        host=host,
+        echo=echo,
+        pool_pre_ping=pool_pre_ping,
+    )
+    return session
+
+
+@contextmanager
+def session_manager(**kwargs):
+    """Create a session context manager connection to the database."""
+    session = get_session(**kwargs)
     try:
-        user = db.get_user(session, username='sentinel')
-    except ValueError:
-        user = db.User('sentinel', '', 'Sentinel Alert Listener')
-    return user
-
-
-def get_event(session, event):
-    """Get the database event entry, or create one if it doesn't exist."""
-    db_event = session.query(db.Event).filter(db.Event.name == event.name).one_or_none()
-    if db_event is None:
-        db_event = db.Event(
-            name=event.name,
-            source=event.source,
-            type=event.type,
-            time=event.time,
-        )
-    return db_event
-
-
-def add_to_database(event, time=None, log=None):
-    """Add the Event into the database."""
-    if time is None:
-        time = Time.now()
-    if log is None:
-        log = logging.getLogger('database')
-        log.setLevel(level=logging.DEBUG)
-
-    with db.open_session() as session:
-        # Get the database Event (or make one if it's new)
-        db_event = get_event(session, event)
-        session.add(db_event)  # Need to add now, so it has an ID for the query below
+        yield session
         session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
 
-        # Go through any previous Surveys for this Event and "delete" any incomplete Targets
-        # Using target.mark_deleted() will also delete any pending Pointings for each Target,
-        # but won't interrupt one if it's currently running.
-        log.debug('Event {} has {} previous Surveys in the database'.format(event.name,
-                                                                            len(db_event.surveys)))
-        for db_survey in db_event.surveys:
-            # TODO: This could be a lot smarter.
-            #       We don't want to delete Pointings if the skymap hasn't changed?
-            #       But we might still want to adjust the strategy...
-            #       For now we always reset the database on every update.
-            num_deleted = 0
-            for db_target in db_survey.targets:
-                if db_target.status_at_time(time) not in ['deleted', 'expired', 'completed']:
-                    db_target.mark_deleted(time=time)
-                    num_deleted += 1
-            if num_deleted > 0:
-                log.debug('Deleted {} Targets for Survey {}'.format(num_deleted, db_survey.name))
-            session.commit()
 
-        # If it's a retraction event that's all we need to do
-        if event.strategy is None:
-            return
+class Event(Base):
+    """A class to represent a transient astrophysical Event.
 
-        # Create the new Survey
-        db_survey = db.Survey(name=f'{event.name}_{len(db_event.surveys) + 1}',
-                              skymap=event.skymap_url,  # TODO: What about Gaussian/file skymaps?
-                              )
-        db_survey.event = db_event
-        log.debug('Adding Survey {} to database'.format(db_survey.name))
-        session.add(db_survey)  # Add now, even if we don't add any tiles below
-        session.commit()
+    Events can be linked to Notices, with a specific event (e.g. GW170817)
+    potentially producing multiple Notices as the skymap is updated.
 
-        # Get the grid tiles from the skymap
-        db_grid = db.get_current_grid(session)
-        log.info('Applying to Grid {}'.format(db_grid.name))
-        grid = db_grid.skygrid
+    Parameters
+    ----------
+    name : string
+        a unique, human-readable identifier for the event
+    type : string
+        the type of event, e.g. GW, GRB
+    origin : string
+        the group that produced the event, e.g. LVC, Fermi, GAIA
 
-        # Chose the contour level
-        # NOTE: The code below is rather preliminary, based of what's best for 4- or 8-UT systems.
-        # It needs simulating to find the optimal value.
-        if grid.tile_area < 20:
-            # GOTO-4
-            contour_level = 0.9
+    time : string, `astropy.time.Time` or datetime.datetime, optional
+        time the event occurred (or at least was first detected)
+
+    When created the instance can be linked to the following other tables as parameters,
+    otherwise they are populated when it is added to the database:
+
+    Primary relationships
+    ---------------------
+    notices : list of `Notice`, optional
+        the Notices relating to this Event, if any
+
+    Attributes
+    ----------
+    db_id : int
+        primary database key
+        only populated when the instance is added to the database
+
+    Secondary relationships
+    -----------------------
+    surveys : list of `gtecs.obs.database.Survey`
+        the Surveys relating to this Event, if any
+
+    """
+
+    # Set corresponding SQL table name
+    __tablename__ = 'events'
+    __table_args__ = {'schema': 'alert'}
+
+    # Primary key
+    db_id = Column('id', Integer, primary_key=True)
+
+    # Columns
+    name = Column(String(255), nullable=False, unique=True, index=True)
+    type = Column(String(255), nullable=False, index=True)  # noqa: A003
+    origin = Column(String(255), nullable=False)
+    time = Column(DateTime, nullable=True, default=None)
+
+    # Foreign relationships
+    notices = relationship(
+        'Notice',
+        order_by='Notice.db_id',
+        back_populates='event',
+    )
+
+    # Secondary relationships
+    surveys = relationship(
+        'Survey',
+        order_by='Survey.db_id',
+        secondary='alert.notices',
+        primaryjoin='Notice.event_id == Event.db_id',
+        secondaryjoin='Survey.db_id == Notice.survey_id',
+        backref=backref(  # NB Use legacy backref to add corresponding relationship to Surveys
+            'event',
+            uselist=False,
+        ),
+        viewonly=True,
+    )
+
+    def __repr__(self):
+        strings = ['db_id={}'.format(self.db_id),
+                   'name={}'.format(self.name),
+                   'type={}'.format(self.type),
+                   'origin={}'.format(self.origin),
+                   'time={}'.format(self.time),
+                   ]
+        return 'Event({})'.format(', '.join(strings))
+
+    @validates('time')
+    def validate_times(self, key, field):
+        """Use validators to allow various types of input for times."""
+        if field is None:
+            # time is nullable
+            return None
+
+        if isinstance(field, datetime.datetime):
+            value = field.strftime('%Y-%m-%d %H:%M:%S')
+        elif isinstance(field, Time):
+            field.precision = 0  # no D.P on seconds
+            value = field.iso
         else:
-            # GOTO-8
-            contour_level = 0.95
+            # just hope the string works!
+            value = str(field)
+        return value
 
-        # Get the masked tile table
-        selected_tiles = event.get_tiles(grid, contour_level)
-        selected_tiles.sort('prob')
-        selected_tiles.reverse()
-        log.debug('Masked tile table has {} entries'.format(len(selected_tiles)))
-        if len(selected_tiles) < 1:
-            log.warning('No tiles passed filtering, nothing to add to the database')
-            log.debug('Highest tile has {:.2f}%'.format(max(event.tiles['prob']) * 100))
-            return
 
-        # Get the database User, or make it if it doesn't exist
-        db_user = get_user(session)
+class Notice(Base):
+    """An alert Notice relating to an astrophysical Event.
 
-        # Create Targets for each tile
-        db_targets = []
-        for tile_name, _, _, tile_weight in selected_tiles:
-            # Find the matching GridTile
-            query = session.query(db.GridTile)
-            query = query.filter(db.GridTile.grid == db_grid)
-            query = query.filter(db.GridTile.name == str(tile_name))
-            db_grid_tile = query.one_or_none()
+    Parameters
+    ----------
+    ivorn : string
+        The Notice IVORN (IVOA Resource Name).
+    received : datetime.datetime
+        The time the Notice was received.
+    payload : bytes
+        The VOEvent XML payload, stored as binary data.
 
-            # Create ExposureSets
-            db_exposure_sets = []
-            for exposure_sets_dict in event.strategy['exposure_sets_dict']:
-                db_exposure_sets.append(
-                    db.ExposureSet(
-                        num_exp=exposure_sets_dict['num_exp'],
-                        exptime=exposure_sets_dict['exptime'],
-                        filt=exposure_sets_dict['filt'],
-                    )
-                )
+    skymap : `gototile.skymap.Skymap`, optional
+        The skymap associated with this Notice, if any.
+        The skymap is stored in the database as binary data.
 
-            # Create Strategies
-            constraints_dict = event.strategy['constraints_dict']
-            if isinstance(event.strategy['cadence_dict'], dict):
-                cadence_dicts = [event.strategy['cadence_dict']]
+    When created the instance can be linked to the following other tables as parameters,
+    otherwise they are populated when it is added to the database:
+
+    Primary relationships
+    ---------------------
+    event : `Event`, optional
+        the Event this Notice is related to, if any
+        can also be added with the event_id parameter
+    survey : `gtecs.obs.database.Survey`, optional
+        the Survey created from this Notice, if any
+        can also be added with the survey_id parameter
+
+    Attributes
+    ----------
+    db_id : int
+        primary database key
+        only populated when the instance is added to the database
+
+    Secondary relationships
+    -----------------------
+    targets : list of `gtecs.obs.database.Target`
+        the Targets created from this Notice, if any
+
+    """
+
+    # Set corresponding SQL table name
+    __tablename__ = 'notices'
+    __table_args__ = {'schema': 'alert'}
+
+    # Primary key
+    db_id = Column('id', Integer, primary_key=True)
+
+    # Columns
+    ivorn = Column(String(255), nullable=False, unique=True)
+    received = Column(DateTime, nullable=False, index=True, server_default=func.now())
+    payload = Column(LargeBinary, nullable=False)
+    skymap = Column(LargeBinary, nullable=True)
+
+    # Foreign keys
+    event_id = Column(Integer, ForeignKey('alert.events.id'), nullable=True)
+    survey_id = Column(Integer, ForeignKey('obs.surveys.id'), nullable=True)
+
+    # Foreign relationships
+    event = relationship(
+        'Event',
+        uselist=False,
+        back_populates='notices',
+    )
+    survey = relationship(
+        'Survey',
+        uselist=False,
+        backref=backref(  # NB Use legacy backref to add corresponding relationship to Surveys
+            'notices',
+            order_by='Notice.db_id',
+        ),
+    )
+
+    # Secondary relationships
+    targets = relationship(
+        'Target',
+        order_by='Target.db_id',
+        secondary='obs.surveys',
+        primaryjoin='Survey.db_id == Notice.survey_id',
+        secondaryjoin='Survey.db_id == Target.survey_id',
+        backref=backref(  # NB Use legacy backref to add corresponding relationship to Targets
+            'notice',
+            uselist=False,
+        ),
+        viewonly=True,
+    )
+
+    def __repr__(self):
+        strings = ['ivorn={}'.format(self.ivorn),
+                   'received={}'.format(self.received),
+                   'event_id={}'.format(self.event_id),
+                   'survey_id={}'.format(self.survey_id),
+                   ]
+        return 'Notice({})'.format(', '.join(strings))
+
+    @validates('received')
+    def validate_times(self, key, field):
+        """Use validators to allow various types of input for times."""
+        if field is None:
+            # time is nullable
+            return None
+
+        if isinstance(field, datetime.datetime):
+            value = field.strftime('%Y-%m-%d %H:%M:%S')
+        elif isinstance(field, Time):
+            field.precision = 0  # no D.P on seconds
+            value = field.iso
+        else:
+            # just hope the string works!
+            value = str(field)
+        return value
+
+    @classmethod
+    def from_gcn(cls, notice):
+        """Create a database-linked Notice entry from a GCN notice."""
+        if notice.skymap is None:
+            notice.get_skymap()
+        if notice.skymap is None:
+            # Can't raise an error, it could be a retraction
+            skymap_bytes = None
+        else:
+            if notice.skymap_file is None:
+                # We created our own Skymap
+                # So we have to save it to a file and read it back in, which is awkward..
+                path = f'/tmp/skymap_{Time.now().isot}.fits'
+                notice.skymap.save(path)
             else:
-                cadence_dicts = event.strategy['cadence_dict']
-            db_strategies = []
-            for cadence_dict in cadence_dicts:
-                db_strategies.append(
-                    db.Strategy(
-                        num_todo=cadence_dict['num_todo'],
-                        stop_time=cadence_dict['stop_time'],
-                        wait_time=cadence_dict['wait_hours'] * u.hour,
-                        valid_time=cadence_dict['valid_days'] * u.day,
-                        min_time=None,
-                        too=True,
-                        min_alt=constraints_dict['min_alt'],
-                        max_sunalt=constraints_dict['max_sunalt'],
-                        max_moon=constraints_dict['max_moon'],
-                        min_moonsep=constraints_dict['min_moonsep'],
-                        # TODO: tel_mask?
-                    )
-                )
+                # The skymap was downloaded to a temp file, so we need to check if it still exists
+                if not os.path.exists(notice.skymap_file):
+                    # We'll need to redownload it
+                    notice.get_skymap()
+                path = notice.skymap_file
+            # Now open the file and read the bytes
+            with open(path, 'rb') as f:
+                skymap_bytes = f.read()
 
-            # Create Target (this will automatically create Pointings)
-            # NB we take the earliest start time and latest stop time from all cadences
-            db_targets.append(
-                db.Target(
-                    name=f'{event.name}_{tile_name}',
-                    ra=None,  # RA/Dec are inherited from the grid tile
-                    dec=None,
-                    rank=event.strategy['rank'],
-                    weight=float(tile_weight),
-                    start_time=cadence_dicts[0]['start_time'],
-                    stop_time=cadence_dicts[-1]['stop_time'],
-                    creation_time=time,
-                    user=db_user,
-                    grid_tile=db_grid_tile,
-                    exposure_sets=db_exposure_sets,
-                    strategies=db_strategies,
-                    survey=db_survey,
-                    event=db_event,
-                )
-            )
+        db_notice = cls(
+            ivorn=notice.ivorn,
+            received=notice.creation_time,
+            payload=notice.payload,
+            skymap=skymap_bytes,
+        )
+        return db_notice
 
-        # Add everything to the database
-        log.debug('Adding {} Targets to the database'.format(len(db_targets)))
-        db.insert_items(session, db_targets)
-
-        # Commit changes
-        try:
-            session.commit()
-        except Exception:
-            # Undo database changes before raising
-            session.rollback()
-            raise
+    @property
+    def gcn(self):
+        """Create a GCNNotice class (or subclass) from this Notice."""
+        notice = GCNNotice.from_payload(self.payload)
+        if self.skymap is not None:
+            try:
+                hdu = fits.open(BytesIO(self.skymap))
+            except OSError:
+                # It might be compressed
+                gzip = GzipFile(fileobj=BytesIO(self.skymap), mode='rb')
+                hdu = fits.open(gzip)
+            notice.skymap = SkyMap.from_fits(hdu)
+        return notice

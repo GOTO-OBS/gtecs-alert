@@ -82,7 +82,7 @@ def print_instructions():
           '   start                  start the sentinel',
           '   ping                   check if the sentinel is running',
           '   shutdown               shut down the sentinel',
-          '   ingest [path|ivorn]    add the given event to the queue',
+          '   ingest [path|ivorn]    add the given notice to the queue',
           '   log [tail args]        print sentinel log (alias for tail)',
           '   help                   print these instructions',
           sep='\n')
