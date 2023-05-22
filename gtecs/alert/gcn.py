@@ -148,8 +148,13 @@ class GCNNotice:
                 # The file gets stored in /tmp/
                 # Don't cache, force redownload every time
                 # https://github.com/GOTO-OBS/goto-alert/issues/36
-                self.skymap_file = download_file(self.skymap_url, cache=False, timeout=timeout)
-                self.skymap = SkyMap.from_fits(self.skymap_file)
+                try:
+                    skymap_file = download_file(self.skymap_url, cache=False, timeout=timeout)
+                except Exception:
+                    # Maybe it's a local file?
+                    skymap_file = self.skymap_url
+                self.skymap = SkyMap.from_fits(skymap_file)
+                self.skymap_file = skymap_file
             except Exception:
                 # Some error meant we can't download the skymap
                 # If we have a position we can try and create our own
