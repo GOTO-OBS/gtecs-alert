@@ -289,6 +289,7 @@ class GWNotice(GCNNotice):
         """Get details for Slack messages."""
         text = f'Event: {self.event_name}\n'
         text += f'Detection time: {self.event_time.iso}\n'
+        text += f'Instruments: {self.instruments}\n'
         text += f'GraceDB page: {self.gracedb_url}\n'
 
         # Classification info
@@ -306,7 +307,11 @@ class GWNotice(GCNNotice):
                 if self.classification[key] > 0.0005
             ]
             text += f'Classification: {", ".join(class_list)}\n'
-            text += f'HasNS (if real): {self.properties["HasNS"]:.0%}\n'
+            text += f'HasNS: {self.properties["HasNS"]:.0%}\n'
+            try:
+                text += f'HasRemnant: {self.properties["HasRemnant"]:.0%}\n'
+            except KeyError:
+                pass
 
         # Skymap info (only if we have downloaded the skymap)
         if self.skymap is not None:
