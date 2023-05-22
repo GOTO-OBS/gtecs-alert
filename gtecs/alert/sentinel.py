@@ -335,6 +335,10 @@ class Sentinel:
         if hasattr(self, 'kafka_topics'):
             return self.kafka_topics
 
+    def get_latest_notice(self):
+        """Return the last processed notice."""
+        return self.latest_notice
+
 
 def run():
     """Start the sentinel."""
