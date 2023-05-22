@@ -275,10 +275,10 @@ class GWNotice(GCNNotice):
                 else:
                     return 'GW_FAR_NS'
             else:
-                if self.skymap.header['distmean'] < 100:
+                if self.skymap.header['distmean'] < 200:
                     return 'GW_CLOSE_BH'
                 else:
-                    return 'GW_FAR_BH'
+                    return 'IGNORE'  # Don't observe far BHs
         elif self.group == 'Burst':
             return 'GW_BURST'
         else:
