@@ -289,11 +289,16 @@ class GWNotice(GCNNotice):
         """Get details for Slack messages."""
         text = f'Event: {self.event_name}\n'
         text += f'Detection time: {self.event_time.iso}\n'
+        text += f'Pipeline: {self.pipeline}\n'
         text += f'Instruments: {self.instruments}\n'
         text += f'GraceDB page: {self.gracedb_url}\n'
 
         # Classification info
-        text += f'FAR: ~1 per {1 / self.far / 3.154e+7:.1f} yrs\n'
+        far_years = self.far * 60 * 60 * 24 * 360  # convert from /s to /yr
+        if far_years > 1:
+            text += f'FAR: ~{far_years:.0f} per year\n'
+        else:
+            text += f'FAR: ~1 per {1 / far_years:.1f} years\n'
         text += f'Group: {self.group}\n'
         if self.group == 'CBC':
             sorted_classification = sorted(
