@@ -226,6 +226,11 @@ class GWNotice(GCNNotice):
         self.instruments = top_params['Instruments']['value']
         self.group = top_params['Group']['value']  # CBC or Burst
         self.pipeline = top_params['Pipeline']['value']
+        try:
+            self.significant = bool(top_params['Significant']['value'])
+        except KeyError:
+            # Fallback for older notices that didn't include the significance
+            self.significant = None
 
         # Get classification probabilities and properties
         if self.group == 'CBC':
