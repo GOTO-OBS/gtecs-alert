@@ -253,8 +253,8 @@ class GWNotice(GCNNotice):
             self.properties = {key: float(properties_group[key]['value'])
                                for key in properties_group}
         else:
-            self.classification = {}
-            self.properties = {}
+            self.classification = None
+            self.properties = None
 
         # Get skymap URL
         try:
@@ -264,6 +264,23 @@ class GWNotice(GCNNotice):
                 if 'skymap_fits' in group_dict:
                     skymap_group = group_dict
         self.skymap_url = skymap_group['skymap_fits']['value']
+
+        # Get external coincidence, if any
+        try:
+            external_group = group_params['External Coincidence']
+            self.external = {
+                'gcn_notice_id': int(external_group['External_GCN_Notice_Id']['value']),
+                'ivorn': external_group['External_Ivorn']['value'],
+                'observatory': external_group['External_Observatory']['value'],
+                'search': external_group['External_Search']['value'],
+                'time_difference': float(external_group['Time_Difference']['value']),
+                'time_coincidence_far': float(external_group['Time_Coincidence_FAR']['value']),
+                'time_sky_position_coincidence_far':
+                    float(external_group['Time_Sky_Position_Coincidence_FAR']['value']),
+                'combined_skymap_url': external_group['joint_skymap_fits']['value'],
+                }
+        except KeyError:
+            self.external = None
 
     @property
     def strategy(self):
@@ -305,7 +322,7 @@ class GWNotice(GCNNotice):
         else:
             text += f'FAR: ~1 per {1 / far_years:.1f} years\n'
         text += f'Group: {self.group}\n'
-        if self.group == 'CBC':
+        if self.classification is not None:
             sorted_classification = sorted(
                 self.classification.keys(),
                 key=lambda key: self.classification[key],
@@ -317,6 +334,7 @@ class GWNotice(GCNNotice):
                 if self.classification[key] > 0.0005
             ]
             text += f'Classification: {", ".join(class_list)}\n'
+        if self.properties is not None:
             text += f'HasNS: {self.properties["HasNS"]:.0%}\n'
             try:
                 text += f'HasRemnant: {self.properties["HasRemnant"]:.0%}\n'
@@ -332,6 +350,18 @@ class GWNotice(GCNNotice):
             text += f'90% probability area: {area:.0f} sq deg\n'
         else:
             text += 'Distance: *UNKNOWN*\n'
+
+        # Coincidence info
+        if self.external is not None:
+            text += '\n'
+            text += '*External event coincidence detected!*\n'
+            text += f'Source: {self.external["observatory"]}\n'
+            text += f'IVORN: {self.external["ivorn"]}\n'
+            far_years = self.external['time_sky_position_coincidence_far'] * 60 * 60 * 24 * 360
+            if far_years > 1:
+                text += f'FAR: ~{far_years:.0f} per year\n'
+            else:
+                text += f'FAR: ~1 per {1 / far_years:.1f} years\n'
 
         return text
 
