@@ -334,6 +334,11 @@ class GWNotice(GCNNotice):
                 if self.classification[key] > 0.0005
             ]
             text += f'Classification: {", ".join(class_list)}\n'
+        elif self.group == 'Burst':
+            # Burst events aren't classified
+            text += 'Classification: N/A\n'
+        else:
+            text += 'Classification: *UNKNOWN*\n'
         if self.properties is not None:
             text += f'HasNS: {self.properties["HasNS"]:.0%}\n'
             try:
@@ -343,13 +348,19 @@ class GWNotice(GCNNotice):
 
         # Skymap info (only if we have downloaded the skymap)
         if self.skymap is not None:
-            distance = self.skymap.header['distmean']
-            distance_error = self.skymap.header['diststd']
+            if 'distmean' in self.skymap.header:
+                distance = self.skymap.header['distmean']
+                distance_error = self.skymap.header['diststd']
+                text += f'Distance: {distance:.0f}+/-{distance_error:.0f} Mpc\n'
+            elif self.group == 'Burst':
+                # We don't expect a distance for burst events
+                text += 'Distance: N/A\n'
+            else:
+                text += 'Distance: *UNKNOWN*\n'
             area = self.skymap.get_contour_area(0.9)
-            text += f'Distance: {distance:.0f}+/-{distance_error:.0f} Mpc\n'
             text += f'90% probability area: {area:.0f} sq deg\n'
         else:
-            text += 'Distance: *UNKNOWN*\n'
+            text += '*NO SKYMAP FOUND*\n'
 
         # Coincidence info
         if self.external is not None:
