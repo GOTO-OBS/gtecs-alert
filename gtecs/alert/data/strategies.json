@@ -60,7 +60,7 @@
             "FOLLOW_LATE"
         ],
         "constraints": "NORMAL",
-        "exposure_sets": "6x90LRGB",
+        "exposure_sets": "4x90L",
         "skymap_contour": 0.95,
         "tile_limit": 4,
         "prob_limit": 0.05
@@ -81,7 +81,7 @@
             "FOLLOW_LATE"
         ],
         "constraints": "NORMAL",
-        "exposure_sets": "6x90LRGB",
+        "exposure_sets": "4x90L",
         "skymap_contour": 0.95,
         "tile_limit": 8,
         "prob_limit": 0.005
