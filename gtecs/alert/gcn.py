@@ -221,16 +221,23 @@ class GWNotice(GCNNotice):
         # See https://emfollow.docs.ligo.org/userguide/content.html#notice-contents
         self.event_id = top_params['GraceID']['value']  # e.g. S190510g
         self.event_name = '{}_{}'.format(self.event_source, self.event_id)  # e.g. LVC_S190510g
-        self.far = float(top_params['FAR']['value'])
         self.gracedb_url = top_params['EventPage']['value']
         self.instruments = top_params['Instruments']['value']
         self.group = top_params['Group']['value']  # CBC or Burst
         self.pipeline = top_params['Pipeline']['value']
+        self.far = float(top_params['FAR']['value'])  # In Hz
         try:
             self.significant = bool(top_params['Significant']['value'])
         except KeyError:
             # Fallback for older notices that didn't include the significance
-            self.significant = None
+            # This uses the "official" definition of 1/month for CBC and 1/year for bursts,
+            # see https://emfollow.docs.ligo.org/userguide/analysis/index.html#alert-threshold
+            if self.group == 'CBC' and self.far < 12 / (60 * 60 * 24 * 365):
+                self.significant = True
+            elif self.group == 'Burst' and self.far < 1 / (60 * 60 * 24 * 365):
+                self.significant = True
+            else:
+                self.significant = False
 
         # Get classification probabilities and properties
         if self.group == 'CBC':
@@ -318,9 +325,13 @@ class GWNotice(GCNNotice):
         # Classification info
         far_years = self.far * 60 * 60 * 24 * 360  # convert from /s to /yr
         if far_years > 1:
-            text += f'FAR: ~{far_years:.0f} per year\n'
+            text += f'FAR: ~{far_years:.0f} per year'
         else:
-            text += f'FAR: ~1 per {1 / far_years:.1f} years\n'
+            text += f'FAR: ~1 per {1 / far_years:.1f} years'
+        if self.significant:
+            text += ' (significant=True)\n'
+        else:
+            text += ' (significant=False)\n'
         text += f'Group: {self.group}\n'
         if self.classification is not None:
             sorted_classification = sorted(
