@@ -200,6 +200,7 @@ def add_to_database(notice, time=None, log=None):
                         stop_time=cadence_dict['stop_time'],
                         wait_time=cadence_dict['wait_hours'] * u.hour,
                         valid_time=None,  # Pointings are valid up until the stop_time
+                        rank_change=cadence_dict['rank_change'],
                         min_time=None,
                         too=True,
                         min_alt=constraints_dict['min_alt'],

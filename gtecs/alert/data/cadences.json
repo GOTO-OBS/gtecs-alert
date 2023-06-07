@@ -2,11 +2,13 @@
     "NO_DELAY": {
         "num_todo": 99,
         "wait_hours": 0,
+        "rank_change": 10,
         "valid_days": 3
     },
     "TWO_NIGHTS": {
         "num_todo": 2,
         "wait_hours": 12,
+        "rank_change": 10,
         "valid_days": 3
     },
     "TWO_FIRST_ONE_SECOND": {
@@ -15,6 +17,7 @@
             4,
             12
         ],
+        "rank_change": 10,
         "valid_days": 3
     },
     "MANY_FIRST_ONE_SECOND": {
@@ -28,11 +31,13 @@
             2,
             12
         ],
+        "rank_change": 10,
         "valid_days": 3
     },
     "HAMMER_EARLY": {
         "num_todo": 8,
         "wait_hours": 0.25,
+        "rank_change": 10,
         "valid_days": 0.125
     },
     "FOLLOW_LATE": {
@@ -43,6 +48,7 @@
             4
         ],
         "delay_days": 0.125,
+        "rank_change": 10,
         "valid_days": 2.875
     }
 }
