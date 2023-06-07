@@ -298,18 +298,36 @@ class GWNotice(GCNNotice):
             raise ValueError('Cannot determine strategy without skymap')
 
         if self.group == 'CBC':
-            if self.properties['HasNS'] > 0.25:
-                if self.skymap.header['distmean'] < 400:
-                    return 'GW_CLOSE_NS'
+            if self.properties['HasRemnant'] > 0.25:
+                if (self.skymap.get_contour_area(0.9) < 5000 and
+                        self.skymap.header['distmean'] < 200):
+                    if self.skymap.get_contour_area(0.9) < 1000:
+                        return 'GW_RANK_1_NARROW'
+                    else:
+                        return 'GW_RANK_1_WIDE'
                 else:
-                    return 'GW_FAR_NS'
+                    if self.skymap.get_contour_area(0.9) < 1000:
+                        return 'GW_RANK_2_NARROW'
+                    else:
+                        return 'GW_RANK_2_WIDE'
             else:
-                if self.skymap.header['distmean'] < 200:
-                    return 'GW_CLOSE_BH'
+                if self.significant and self.skymap.header['distmean'] < 200:
+                    if self.skymap.get_contour_area(0.9) < 1000:
+                        return 'GW_RANK_4_NARROW'
+                    else:
+                        return 'GW_RANK_4_WIDE'
                 else:
-                    return 'IGNORE'  # Don't observe far BHs
+                    return 'IGNORE'
+
         elif self.group == 'Burst':
-            return 'GW_BURST'
+            if self.significant and self.skymap.get_contour_area(0.9) < 5000:
+                if self.skymap.get_contour_area(0.9) < 1000:
+                    return 'GW_RANK_3_NARROW'
+                else:
+                    return 'GW_RANK_3_WIDE'
+            else:
+                return 'IGNORE'
+
         else:
             raise ValueError(f'Cannot determine observing strategy for group "{self.group}"')
 

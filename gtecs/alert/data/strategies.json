@@ -8,8 +8,17 @@
         "tile_limit": 200,
         "prob_limit": 0
     },
-    "GW_CLOSE_NS": {
-        "rank": 2,
+    "GW_RANK_1_WIDE": {
+        "rank": 11,
+        "cadence": "1H_REPEATED",
+        "constraints": "LENIENT",
+        "exposure_sets": "4x90L",
+        "skymap_contour": 0.95,
+        "tile_limit": 200,
+        "prob_limit": 0
+    },
+    "GW_RANK_1_NARROW": {
+        "rank": 11,
         "cadence": "NO_DELAY",
         "constraints": "LENIENT",
         "exposure_sets": "4x90L",
@@ -17,8 +26,17 @@
         "tile_limit": 200,
         "prob_limit": 0
     },
-    "GW_FAR_NS": {
-        "rank": 13,
+    "GW_RANK_2_WIDE": {
+        "rank": 22,
+        "cadence": "1H_REPEATED",
+        "constraints": "LENIENT",
+        "exposure_sets": "4x90L",
+        "skymap_contour": 0.95,
+        "tile_limit": 200,
+        "prob_limit": 0
+    },
+    "GW_RANK_2_NARROW": {
+        "rank": 22,
         "cadence": "NO_DELAY",
         "constraints": "LENIENT",
         "exposure_sets": "4x90L",
@@ -26,26 +44,35 @@
         "tile_limit": 200,
         "prob_limit": 0
     },
-    "GW_CLOSE_BH": {
-        "rank": 24,
-        "cadence": "TWO_NIGHTS",
+    "GW_RANK_3_WIDE": {
+        "rank": 33,
+        "cadence": "1H_REPEATED",
         "constraints": "LENIENT",
         "exposure_sets": "4x90L",
         "skymap_contour": 0.95,
         "tile_limit": 200,
         "prob_limit": 0
     },
-    "GW_FAR_BH": {
-        "rank": 105,
-        "cadence": "TWO_NIGHTS",
+    "GW_RANK_3_NARROW": {
+        "rank": 33,
+        "cadence": "NO_DELAY",
         "constraints": "LENIENT",
         "exposure_sets": "4x90L",
         "skymap_contour": 0.95,
         "tile_limit": 200,
         "prob_limit": 0
     },
-    "GW_BURST": {
-        "rank": 52,
+    "GW_RANK_4_WIDE": {
+        "rank": 44,
+        "cadence": "1H_REPEATED",
+        "constraints": "LENIENT",
+        "exposure_sets": "4x90L",
+        "skymap_contour": 0.95,
+        "tile_limit": 200,
+        "prob_limit": 0
+    },
+    "GW_RANK_4_NARROW": {
+        "rank": 44,
         "cadence": "NO_DELAY",
         "constraints": "LENIENT",
         "exposure_sets": "4x90L",

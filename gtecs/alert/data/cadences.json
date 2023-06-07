@@ -2,7 +2,7 @@
     "NO_DELAY": {
         "num_todo": 99,
         "wait_hours": 0,
-        "rank_change": 10,
+        "rank_change": 20,
         "valid_days": 3
     },
     "TWO_NIGHTS": {
@@ -50,5 +50,17 @@
         "delay_days": 0.125,
         "rank_change": 10,
         "valid_days": 2.875
+    },
+    "1H_REPEATED": {
+        "num_todo": 99,
+        "wait_hours": [
+            1,
+            0
+        ],
+        "rank_change": [
+            0,
+            10
+        ],
+        "valid_days": 3
     }
 }
