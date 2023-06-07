@@ -297,34 +297,41 @@ class GWNotice(GCNNotice):
             # TODO: We could assume it is far, would that be better?
             raise ValueError('Cannot determine strategy without skymap')
 
+        if self.external is not None:
+            # External coincidences are always highest priority
+            if self.skymap.get_contour_area(0.9) < 1000:
+                return 'GW_RANK_1_NARROW'
+            else:
+                return 'GW_RANK_1_WIDE'
+
         if self.group == 'CBC':
             if self.properties['HasRemnant'] > 0.25:
                 if (self.skymap.get_contour_area(0.9) < 5000 and
                         self.skymap.header['distmean'] < 200):
                     if self.skymap.get_contour_area(0.9) < 1000:
-                        return 'GW_RANK_1_NARROW'
-                    else:
-                        return 'GW_RANK_1_WIDE'
-                else:
-                    if self.skymap.get_contour_area(0.9) < 1000:
                         return 'GW_RANK_2_NARROW'
                     else:
                         return 'GW_RANK_2_WIDE'
+                else:
+                    if self.skymap.get_contour_area(0.9) < 1000:
+                        return 'GW_RANK_3_NARROW'
+                    else:
+                        return 'GW_RANK_3_WIDE'
             else:
                 if self.significant and self.skymap.header['distmean'] < 200:
                     if self.skymap.get_contour_area(0.9) < 1000:
-                        return 'GW_RANK_4_NARROW'
+                        return 'GW_RANK_5_NARROW'
                     else:
-                        return 'GW_RANK_4_WIDE'
+                        return 'GW_RANK_5_WIDE'
                 else:
                     return 'IGNORE'
 
         elif self.group == 'Burst':
             if self.significant and self.skymap.get_contour_area(0.9) < 5000:
                 if self.skymap.get_contour_area(0.9) < 1000:
-                    return 'GW_RANK_3_NARROW'
+                    return 'GW_RANK_4_NARROW'
                 else:
-                    return 'GW_RANK_3_WIDE'
+                    return 'GW_RANK_4_WIDE'
             else:
                 return 'IGNORE'
 

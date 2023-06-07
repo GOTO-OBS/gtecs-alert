@@ -80,6 +80,24 @@
         "tile_limit": 200,
         "prob_limit": 0
     },
+    "GW_RANK_5_WIDE": {
+        "rank": 55,
+        "cadence": "1H_REPEATED",
+        "constraints": "LENIENT",
+        "exposure_sets": "4x90L",
+        "skymap_contour": 0.95,
+        "tile_limit": 200,
+        "prob_limit": 0
+    },
+    "GW_RANK_5_NARROW": {
+        "rank": 55,
+        "cadence": "NO_DELAY",
+        "constraints": "LENIENT",
+        "exposure_sets": "4x90L",
+        "skymap_contour": 0.95,
+        "tile_limit": 200,
+        "prob_limit": 0
+    },
     "GRB_SWIFT": {
         "rank": 207,
         "cadence": [
