@@ -412,6 +412,28 @@ class GWNotice(GCNNotice):
 
         return text
 
+    @property
+    def short_details(self):
+        """Get a short one-line summary to include when forwarding Slack messages."""
+        text = f'{self.group}'
+        if self.properties is not None and 'HasRemnant' in self.properties:
+            text += f' (HasRemnant={self.properties["HasRemnant"]:.0%}), '
+        else:
+            text += ', '
+        if self.skymap is not None:
+            if 'distmean' in self.skymap.header:
+                text += f'{self.skymap.header["distmean"]:.0f} Mpc, '
+            text += f'{self.skymap.get_contour_area(0.9):.0f} sq deg, '
+        far_years = self.far * 60 * 60 * 24 * 360  # convert from /s to /yr
+        if far_years > 1:
+            text += f'FAR: ~{far_years:.0f} per year, '
+        else:
+            text += f'FAR: ~1 per {1 / far_years:.1f} years, '
+        text += f'strategy: `{self.strategy}`'
+        if self.external is not None:
+            text += '\n*External event coincidence detected!*'
+        return text
+
 
 class GWRetractionNotice(GCNNotice):
     """A class to represent a Gravitational Wave retraction notice."""

@@ -31,7 +31,7 @@ def send_slack_msg(text, channel=None, *args, **kwargs):
         The channel to post the message to.
         If None, defaults to `gtecs.alert.params.SLACK_DEFAULT_CHANNEL`.
 
-    Other parameters are passed to `gtecs.common.slack.send_slack_msg`.
+    Other parameters are passed to `gtecs.common.slack.send_message`.
 
     """
     if channel is None:
@@ -39,7 +39,7 @@ def send_slack_msg(text, channel=None, *args, **kwargs):
 
     if params.ENABLE_SLACK:
         # Use the common function
-        send_message(text, channel, params.SLACK_BOT_TOKEN, *args, **kwargs)
+        return send_message(text, channel, params.SLACK_BOT_TOKEN, *args, **kwargs)
     else:
         print('Slack Message:', text)
 
@@ -134,7 +134,7 @@ def send_notice_report(notice, slack_channel=None, time=None):
         plt.close(plt.gcf())
 
     # Send the message
-    send_slack_msg(msg, filepath=filepath, channel=slack_channel)
+    return send_slack_msg(msg, filepath=filepath, channel=slack_channel, return_link=True)
 
 
 def send_strategy_report(notice, slack_channel=None):
@@ -147,8 +147,7 @@ def send_strategy_report(notice, slack_channel=None):
     msg += f'Observing strategy: `{notice.strategy}`\n'
     if notice.strategy_dict is None:
         s += 'ERROR: No strategy details given\n'
-        send_slack_msg(s, channel=slack_channel)
-        return
+        return send_slack_msg(s, channel=slack_channel)
 
     # Basic strategy
     s += f'Rank: {notice.strategy_dict["rank"]}\n'
@@ -181,7 +180,7 @@ def send_strategy_report(notice, slack_channel=None):
     s += f'Tile probability limit: {notice.strategy_dict["prob_limit"]:.1%}\n'
 
     # Send the message
-    send_slack_msg(s, channel=slack_channel)
+    return send_slack_msg(s, channel=slack_channel)
 
 
 def send_observing_report(notice, slack_channel=None, time=None):
@@ -203,16 +202,14 @@ def send_observing_report(notice, slack_channel=None, time=None):
         db_notice = query.one_or_none()
         if db_notice is None:
             msg += '*ERROR: No matching entry found in database*\n'
-            send_slack_msg(msg, channel=slack_channel)
-            return
+            return send_slack_msg(msg, channel=slack_channel)
         msg += f'Notice added to database (ID={db_notice.db_id})\n'
 
         # Look at the Event this Notice is for
         db_event = db_notice.event
         if db_event is None:
             msg += '*ERROR: No matching event found in database*\n'
-            send_slack_msg(msg, channel=slack_channel)
-            return
+            return send_slack_msg(msg, channel=slack_channel)
         msg += f'Notice linked to Event `{db_event.name}` (ID={db_event.db_id})\n'
         msg += f'- Event is linked to {len(db_event.notices)} notices'
         msg += f' and {len(db_event.surveys)} surveys\n'
@@ -232,13 +229,11 @@ def send_observing_report(notice, slack_channel=None, time=None):
                     msg += 'Event has been successfully retracted\n'
                 else:
                     msg += '*ERROR: Retraction failed to remove pending pointings*\n'
-                send_slack_msg(msg, channel=slack_channel)
-                return
+                return send_slack_msg(msg, channel=slack_channel)
             else:
                 # Uh-oh, something went wrong when inserting?
                 msg += '*ERROR: No survey found in database*\n'
-                send_slack_msg(msg, channel=slack_channel)
-                return
+                return send_slack_msg(msg, channel=slack_channel)
 
         # We have a Survey in the database, but it might be an old one
         if len(db_survey.notices) > 1 and db_survey.notices[0] != db_notice:
@@ -246,8 +241,7 @@ def send_observing_report(notice, slack_channel=None, time=None):
             msg += f'Notice linked to existing Survey `{db_survey.name}` (ID={db_survey.db_id})\n'
             msg += f'- Survey created from notice {db_survey.notices[0].ivorn}\n'
             msg += '- Event skymap and strategy are unchanged\n'
-            send_slack_msg(msg, channel=slack_channel)
-            return
+            return send_slack_msg(msg, channel=slack_channel)
 
         msg += f'Notice linked to new Survey `{db_survey.name}` (ID={db_survey.db_id})\n'
         msg += f'- Survey contains {len(db_survey.targets)} targets\n'
@@ -280,8 +274,7 @@ def send_observing_report(notice, slack_channel=None, time=None):
         else:
             # Uh-oh, something went wrong when inserting?
             msg += '- *ERROR: No targets found in database*\n'
-        send_slack_msg(msg, channel=slack_channel)
-        return
+        return send_slack_msg(msg, channel=slack_channel)
 
     total_prob = grid.get_probability(survey_tiles)
     msg += f'Total probability in survey tiles: {total_prob:.1%}\n'
@@ -379,4 +372,4 @@ def send_observing_report(notice, slack_channel=None, time=None):
     plt.close(plt.gcf())
 
     # Send the message with the plot attached
-    send_slack_msg(msg, filepath=filepath, channel=slack_channel)
+    return send_slack_msg(msg, filepath=filepath, channel=slack_channel)
