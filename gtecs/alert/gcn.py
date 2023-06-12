@@ -227,7 +227,7 @@ class GWNotice(GCNNotice):
         self.pipeline = top_params['Pipeline']['value']
         self.far = float(top_params['FAR']['value'])  # In Hz
         try:
-            self.significant = bool(top_params['Significant']['value'])
+            self.significant = top_params['Significant']['value'] == '1'
         except KeyError:
             # Fallback for older notices that didn't include the significance
             # This uses the "official" definition of 1/month for CBC and 1/year for bursts,
