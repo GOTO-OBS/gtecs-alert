@@ -279,26 +279,9 @@ def handle_notice(notice, send_messages=False, log=None, time=None):
     if send_messages:
         log.debug('Sending Slack notice report')
         try:
-            message_link = send_notice_report(notice, time=time)
+            send_notice_report(notice, time=time)
         except Exception:
             log.exception('Error sending Slack report')
-
-        # Forward to another channel if requested
-        if notice.event_type == 'GW' and params.SLACK_GW_FORWARD_CHANNEL is not None:
-            log.debug('Forwarding GW message')
-            msg = f'*<{message_link}|New {notice.event_type} notice received>*\n'
-            msg += notice.short_details
-            try:
-                send_slack_msg(msg, channel=params.SLACK_GW_FORWARD_CHANNEL)
-            except Exception:
-                log.exception('Error forwarding message')
-        elif notice.event_type == 'GRB' and params.SLACK_GRB_FORWARD_CHANNEL is not None:
-            log.debug('Forwarding GRB message')
-            msg = f'*<{message_link}|New {notice.event_type} notice received>*\n'
-            try:
-                send_slack_msg(msg, channel=params.SLACK_GRB_FORWARD_CHANNEL)
-            except Exception:
-                log.exception('Error forwarding message')
 
     log.info('Adding notice to the alert database')
     add_to_database(notice, time=time, log=log)

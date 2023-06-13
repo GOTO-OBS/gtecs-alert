@@ -15,7 +15,8 @@
         "exposure_sets": "4x90L",
         "skymap_contour": 0.95,
         "tile_limit": 200,
-        "prob_limit": 0
+        "prob_limit": 0,
+        "wakeup_alert": 1
     },
     "GW_RANK_1_NARROW": {
         "rank": 11,
@@ -24,7 +25,8 @@
         "exposure_sets": "4x90L",
         "skymap_contour": 0.95,
         "tile_limit": 200,
-        "prob_limit": 0
+        "prob_limit": 0,
+        "wakeup_alert": 1
     },
     "GW_RANK_2_WIDE": {
         "rank": 22,
@@ -33,7 +35,8 @@
         "exposure_sets": "4x90L",
         "skymap_contour": 0.95,
         "tile_limit": 200,
-        "prob_limit": 0
+        "prob_limit": 0,
+        "wakeup_alert": 1
     },
     "GW_RANK_2_NARROW": {
         "rank": 22,
@@ -42,7 +45,8 @@
         "exposure_sets": "4x90L",
         "skymap_contour": 0.95,
         "tile_limit": 200,
-        "prob_limit": 0
+        "prob_limit": 0,
+        "wakeup_alert": 1
     },
     "GW_RANK_3_WIDE": {
         "rank": 33,

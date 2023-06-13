@@ -44,7 +44,7 @@ def send_slack_msg(text, channel=None, *args, **kwargs):
         print('Slack Message:', text)
 
 
-def send_notice_report(notice, slack_channel=None, time=None):
+def send_notice_report(notice, slack_channel=None, enable_forwarding=True, time=None):
     """Send a message to Slack with the notice details and skymap."""
     if time is None:
         time = Time.now()
@@ -134,7 +134,25 @@ def send_notice_report(notice, slack_channel=None, time=None):
         plt.close(plt.gcf())
 
     # Send the message
-    return send_slack_msg(msg, filepath=filepath, channel=slack_channel, return_link=True)
+    message_link = send_slack_msg(msg, filepath=filepath, channel=slack_channel, return_link=True)
+
+    # Forward to another channel if requested
+    if enable_forwarding:
+        forward_message = f'*<{message_link}|New {notice.event_type} notice received>*'
+        if hasattr(notice, 'short_details'):
+            forward_message += '\n'
+            forward_message += notice.short_details
+
+        if notice.event_type == 'GW' and params.SLACK_GW_FORWARD_CHANNEL is not None:
+            # TODO: Only initial alerts?
+            send_slack_msg(forward_message, channel=params.SLACK_GW_FORWARD_CHANNEL)
+        if notice.event_type == 'GRB' and params.SLACK_GRB_FORWARD_CHANNEL is not None:
+            send_slack_msg(forward_message, channel=params.SLACK_GRB_FORWARD_CHANNEL)
+        if 'wakeup_alert' in notice.strategy_dict and params.SLACK_WAKEUP_CHANNEL is not None:
+            forward_message = '*WAKEUP ALERT:* ' + forward_message
+            send_slack_msg(forward_message, channel=params.SLACK_WAKEUP_CHANNEL)
+
+    return message_link
 
 
 def send_strategy_report(notice, slack_channel=None):
