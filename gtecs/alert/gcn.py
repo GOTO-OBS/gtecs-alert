@@ -286,6 +286,9 @@ class GWNotice(GCNNotice):
                     float(external_group['Time_Sky_Position_Coincidence_FAR']['value']),
                 'combined_skymap_url': external_group['joint_skymap_fits']['value'],
                 }
+            # Override the skymap URL with the combined skymap
+            self.skymap_url_original = self.skymap_url
+            self.skymap_url = self.external['combined_skymap_url']
         except KeyError:
             self.external = None
 
