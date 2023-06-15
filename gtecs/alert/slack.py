@@ -29,7 +29,7 @@ def send_slack_msg(text, channel=None, *args, **kwargs):
         The message text.
     channel : string, optional
         The channel to post the message to.
-        If None, defaults to `gtecs.alert.params.SLACK_DEFAULT_CHANNEL`.
+        If None, defaults to `params.SLACK_DEFAULT_CHANNEL`.
 
     Other parameters are passed to `gtecs.common.slack.send_message`.
 
@@ -44,7 +44,7 @@ def send_slack_msg(text, channel=None, *args, **kwargs):
         print('Slack Message:', text)
 
 
-def send_notice_report(notice, slack_channel=None, enable_forwarding=True, time=None):
+def send_notice_report(notice, time=None):
     """Send a message to Slack with the notice details and skymap."""
     if time is None:
         time = Time.now()
@@ -133,75 +133,34 @@ def send_notice_report(notice, slack_channel=None, enable_forwarding=True, time=
         plt.savefig(filepath)
         plt.close(plt.gcf())
 
-    # Send the message
+    # Send the message to the appropriate channel
+    if notice.strategy == 'IGNORE' and params.SLACK_IGNORED_CHANNEL is not None:
+        # Ignored notices are still useful to log on Slack
+        slack_channel = params.SLACK_IGNORED_CHANNEL
+    elif (notice.event_type in params.SLACK_EVENT_CHANNELS and
+            params.SLACK_EVENT_CHANNELS[notice.event_type] is not None):
+        # Send to the specific event channel if it exists
+        slack_channel = params.SLACK_EVENT_CHANNELS[notice.event_type]
+    else:
+        # Just send to the default channel
+        slack_channel = params.SLACK_DEFAULT_CHANNEL
     message_link = send_slack_msg(msg, filepath=filepath, channel=slack_channel, return_link=True)
 
-    # Forward to another channel if requested
-    if enable_forwarding:
-        forward_message = f'*<{message_link}|New {notice.event_type} notice received>*'
+    # If not sent to the default channel, send a copy there too
+    if slack_channel != params.SLACK_DEFAULT_CHANNEL:
+        forward_message = f'<{message_link}|Notice details>'
+        send_slack_msg(forward_message, channel=slack_channel)
+
+    # Forward to the wakeup channel if requested
+    if 'wakeup_alert' in notice.strategy_dict and params.SLACK_WAKEUP_CHANNEL is not None:
+        forward_message = f'*WAKEUP ALERT: <{message_link}|New notice received>*'
         if hasattr(notice, 'short_details'):
             forward_message += '\n'
             forward_message += notice.short_details
-
-        if notice.event_type == 'GW' and params.SLACK_GW_FORWARD_CHANNEL is not None:
-            # TODO: Only initial alerts?
-            send_slack_msg(forward_message, channel=params.SLACK_GW_FORWARD_CHANNEL)
-        if notice.event_type == 'GRB' and params.SLACK_GRB_FORWARD_CHANNEL is not None:
-            send_slack_msg(forward_message, channel=params.SLACK_GRB_FORWARD_CHANNEL)
-        if 'wakeup_alert' in notice.strategy_dict and params.SLACK_WAKEUP_CHANNEL is not None:
-            forward_message = '*WAKEUP ALERT:* ' + forward_message
-            send_slack_msg(forward_message, channel=params.SLACK_WAKEUP_CHANNEL)
-
-    return message_link
+        send_slack_msg(forward_message, channel=params.SLACK_WAKEUP_CHANNEL)
 
 
-def send_strategy_report(notice, slack_channel=None):
-    """Send a message to Slack with the observation strategy details."""
-    if notice.role == 'observation':
-        s = f'*Strategy for event {notice.event_name}*\n'
-    else:
-        s = f'*Strategy for {notice.role} event {notice.event_name}*\n'
-
-    msg += f'Observing strategy: `{notice.strategy}`\n'
-    if notice.strategy_dict is None:
-        s += 'ERROR: No strategy details given\n'
-        return send_slack_msg(s, channel=slack_channel)
-
-    # Basic strategy
-    s += f'Rank: {notice.strategy_dict["rank"]}\n'
-
-    # Cadence
-    for i, cadence in enumerate(notice.strategy_dict['cadence']):
-        cadence_dict = notice.strategy_dict['cadence_dict'][i]
-        s += f'Cadence {i + 1}: `{cadence}`\n'
-        s += f'- Number of visits: {cadence_dict["num_todo"]}\n'
-        s += f'- Time between visits (hours): {cadence_dict["wait_hours"]}\n'
-        s += f'- Start time: {cadence_dict["start_time"].iso}\n'
-        s += f'- Stop time: {cadence_dict["stop_time"].iso}\n'
-
-    # Constraints
-    s += f'Constraints: `{notice.strategy_dict["constraints"]}`\n'
-    s += f'- Min Alt: {notice.strategy_dict["constraints_dict"]["min_alt"]}\n'
-    s += f'- Max Sun Alt: {notice.strategy_dict["constraints_dict"]["max_sunalt"]}\n'
-    s += f'- Min Moon Sep: {notice.strategy_dict["constraints_dict"]["min_moonsep"]}\n'
-    s += f'- Max Moon Phase: {notice.strategy_dict["constraints_dict"]["max_moon"]}\n'
-
-    # Exposure Sets
-    s += f'ExposureSets: `{notice.strategy_dict["exposure_sets"]}`\n'
-    for expset in notice.strategy_dict['exposure_sets_dict']:
-        s += f'- NumExp: {expset["num_exp"]:.0f}'
-        s += f'  Filter: {expset["filt"]}'
-        s += f'  ExpTime: {expset["exptime"]:.1f}s\n'
-
-    # Tiling
-    s += f'Tile number limit: {notice.strategy_dict["tile_limit"]}\n'
-    s += f'Tile probability limit: {notice.strategy_dict["prob_limit"]:.1%}\n'
-
-    # Send the message
-    return send_slack_msg(s, channel=slack_channel)
-
-
-def send_observing_report(notice, slack_channel=None, time=None):
+def send_observing_report(notice, time=None):
     """Send a message to Slack with details of the observing details and visibility."""
     if time is None:
         time = Time.now()
@@ -389,5 +348,20 @@ def send_observing_report(notice, slack_channel=None, time=None):
     plt.savefig(filepath)
     plt.close(plt.gcf())
 
-    # Send the message with the plot attached
-    return send_slack_msg(msg, filepath=filepath, channel=slack_channel)
+    # Send the message to the appropriate channel
+    if notice.strategy == 'IGNORE' and params.SLACK_IGNORED_CHANNEL is not None:
+        # Ignored notices are still useful to log on Slack
+        slack_channel = params.SLACK_IGNORED_CHANNEL
+    elif (notice.event_type in params.SLACK_EVENT_CHANNELS and
+            params.SLACK_EVENT_CHANNELS[notice.event_type] is not None):
+        # Send to the specific event channel if it exists
+        slack_channel = params.SLACK_EVENT_CHANNELS[notice.event_type]
+    else:
+        # Just send to the default channel
+        slack_channel = params.SLACK_DEFAULT_CHANNEL
+    message_link = send_slack_msg(msg, filepath=filepath, channel=slack_channel, return_link=True)
+
+    # If not sent to the default channel, send a copy there too
+    if slack_channel != params.SLACK_DEFAULT_CHANNEL:
+        forward_message = f'<{message_link}|Observing details>'
+        send_slack_msg(forward_message, channel=slack_channel)

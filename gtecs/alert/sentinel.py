@@ -315,7 +315,6 @@ class Sentinel:
             msg += f' ("{err.__class__.__name__}: {err}")'
             send_slack_msg(msg)
 
-
     # Functions
     def ingest_from_payload(self, payload):
         """Ingest a VOEvent payload."""
