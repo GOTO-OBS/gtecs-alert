@@ -152,7 +152,8 @@ def send_notice_report(notice, time=None):
         send_slack_msg(forward_message, channel=params.SLACK_DEFAULT_CHANNEL)
 
     # Forward to the wakeup channel if requested
-    if 'wakeup_alert' in notice.strategy_dict and params.SLACK_WAKEUP_CHANNEL is not None:
+    if (notice.strategy_dict is not None and 'wakeup_alert' in notice.strategy_dict and
+            params.SLACK_WAKEUP_CHANNEL is not None):
         forward_message = f'*WAKEUP ALERT: <{message_link}|New notice received>*'
         if hasattr(notice, 'short_details'):
             forward_message += '\n'
