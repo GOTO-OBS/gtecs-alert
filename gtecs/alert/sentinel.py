@@ -255,7 +255,7 @@ class Sentinel:
                     send_slack_msg('Sentinel successfully processed notice')
 
                     # Start a followup thread to wait for the skymap of Fermi notices
-                    if notice.event_source == 'Fermi':
+                    if notice.event_source == 'Fermi' and not notice.ivorn.endswith('_new_skymap'):
                         try:
                             # Check if the URL was valid
                             urlopen(notice.skymap_url)
