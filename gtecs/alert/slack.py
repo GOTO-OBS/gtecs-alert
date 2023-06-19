@@ -149,7 +149,7 @@ def send_notice_report(notice, time=None):
     # If not sent to the default channel, send a copy there too
     if slack_channel != params.SLACK_DEFAULT_CHANNEL:
         forward_message = f'<{message_link}|Notice details>'
-        send_slack_msg(forward_message, channel=slack_channel)
+        send_slack_msg(forward_message, channel=params.SLACK_DEFAULT_CHANNEL)
 
     # Forward to the wakeup channel if requested
     if 'wakeup_alert' in notice.strategy_dict and params.SLACK_WAKEUP_CHANNEL is not None:
@@ -364,4 +364,4 @@ def send_observing_report(notice, time=None):
     # If not sent to the default channel, send a copy there too
     if slack_channel != params.SLACK_DEFAULT_CHANNEL:
         forward_message = f'<{message_link}|Observing details>'
-        send_slack_msg(forward_message, channel=slack_channel)
+        send_slack_msg(forward_message, channel=params.SLACK_DEFAULT_CHANNEL)
