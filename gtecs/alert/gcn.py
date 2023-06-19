@@ -351,7 +351,7 @@ class GWNotice(GCNNotice):
         text += f'GraceDB page: {self.gracedb_url}\n'
 
         # Classification info
-        far_years = self.far * 60 * 60 * 24 * 360  # convert from /s to /yr
+        far_years = self.far * 60 * 60 * 24 * 365  # convert from /s to /yr
         if far_years > 1:
             text += f'FAR: ~{far_years:.0f} per year'
         else:
@@ -407,7 +407,7 @@ class GWNotice(GCNNotice):
             text += '*External event coincidence detected!*\n'
             text += f'Source: {self.external["observatory"]}\n'
             text += f'IVORN: {self.external["ivorn"]}\n'
-            far_years = self.external['time_sky_position_coincidence_far'] * 60 * 60 * 24 * 360
+            far_years = self.external['time_sky_position_coincidence_far'] * 60 * 60 * 24 * 365
             if far_years > 1:
                 text += f'FAR: ~{far_years:.0f} per year\n'
             else:
@@ -427,7 +427,7 @@ class GWNotice(GCNNotice):
             if 'distmean' in self.skymap.header:
                 text += f'{self.skymap.header["distmean"]:.0f} Mpc, '
             text += f'{self.skymap.get_contour_area(0.9):.0f} sq deg, '
-        far_years = self.far * 60 * 60 * 24 * 360  # convert from /s to /yr
+        far_years = self.far * 60 * 60 * 24 * 365  # convert from /s to /yr
         if far_years > 1:
             text += f'FAR: ~{far_years:.0f} per year, '
         else:
