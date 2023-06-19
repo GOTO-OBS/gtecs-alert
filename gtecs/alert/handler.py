@@ -275,13 +275,17 @@ def handle_notice(notice, send_messages=False, log=None, time=None):
 
     log.info('Fetching skymap')
     notice.get_skymap()
-
     if send_messages:
         log.debug('Sending Slack notice report')
         try:
             send_notice_report(notice, time=time)
-        except Exception:
-            log.exception('Error sending Slack report')
+        except Exception as err:
+            log.exception('Error sending notice report')
+            try:
+                msg = 'Error sending notice report ("{err.__class__.__name__}: {err}")'
+                send_slack_msg(msg)
+            except Exception:
+                log.exception('Error sending error report')
 
     log.info('Adding notice to the alert database')
     add_to_database(notice, time=time, log=log)
@@ -291,7 +295,12 @@ def handle_notice(notice, send_messages=False, log=None, time=None):
         try:
             send_observing_report(notice, time=time)
         except Exception:
-            log.exception('Error sending Slack report')
+            log.exception('Error sending observing report')
+            try:
+                msg = f'Error sending observing report ("{err.__class__.__name__}: {err}")'
+                send_slack_msg(msg)
+            except Exception:
+                log.exception('Error sending error report')
 
     log.info('Notice {} successfully processed'.format(notice.ivorn))
     return
