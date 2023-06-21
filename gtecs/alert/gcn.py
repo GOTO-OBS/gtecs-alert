@@ -1,6 +1,8 @@
 """Classes to represent GCN alert notices."""
 
+import json
 import os
+import re
 from urllib.parse import quote_plus
 from urllib.request import urlopen
 
@@ -11,6 +13,8 @@ from astropy.utils.data import download_file
 from gototile.skymap import SkyMap
 
 import numpy as np
+
+import requests
 
 import voeventdb.remote.apiv1 as vdb
 
@@ -291,6 +295,46 @@ class GWNotice(GCNNotice):
             self.skymap_url = self.external['combined_skymap_url']
         except KeyError:
             self.external = None
+
+    @classmethod
+    def from_gracedb(cls, name, which_notice='last'):
+        """Create a GWNotice by downloading the VOEvent XML from GraceDB."""
+        if not ((isinstance(which_notice, int) and which_notice > 0) or
+                which_notice in ['first', 'last']):
+            raise ValueError('which_notice must be "first", "last" or a positive integer')
+
+        template = re.compile(r'(.+)-(\d+)-(.+)')
+        if template.match(name):
+            # e.g. 'S230621ap-1-Preliminary'
+            # Direct match for a specific notice
+            event = template.match(name).groups()[0]
+            url = f'https://gracedb.ligo.org/api/superevents/{event}/files/{name}.xml,0'
+            return cls.from_url(url)
+
+        template = re.compile(r'(.+)-(\d+)')
+        if template.match(name):
+            event, number = template.match(name).groups()
+            number = int(number)
+        elif which_notice == 'first':
+            event = name
+            number = 1
+        elif which_notice == 'last':
+            event = name
+            number = -1
+        else:
+            event = name
+            number = int(which_notice)
+
+        # Query the GraceDB API to get the VOEvent URL
+        url = f'https://gracedb.ligo.org/api/superevents/{event}/voevents/'
+        r = requests.get(url)
+        data = json.loads(r.content.decode())
+        if number == -1:
+            number = len(data['voevents'])
+        if number > len(data['voevents']):
+            raise ValueError(f"Event {event} only has {len(data['voevents'])} notices")
+        url = data['voevents'][number - 1]['links']['file']
+        return cls.from_url(url)
 
     @property
     def strategy(self):
