@@ -345,50 +345,69 @@ class GWNotice(GCNNotice):
     def strategy(self):
         """Get the observing strategy key."""
         if self.skymap is None:
-            # This is very annoying, but we need to get the skymap to get the distance
+            # This is very annoying, but we need to get the skymap to get the distance.
             # TODO: We could assume it is far, would that be better?
             raise ValueError('Cannot determine strategy without skymap')
 
         if self.external is not None:
-            # External coincidences are always highest priority
-            if self.skymap.get_contour_area(0.9) < 1000:
-                return 'GW_RANK_1_NARROW'
-            else:
-                return 'GW_RANK_1_WIDE'
+            # External coincidences are always highest priority, regardless of other factors.
+            strategy = 'GW_RANK_1'
 
         if self.group == 'CBC':
-            if self.properties['HasRemnant'] > 0.25:
-                if (self.skymap.get_contour_area(0.9) < 5000 and
-                        self.skymap.header['distmean'] < 200):
-                    if self.skymap.get_contour_area(0.9) < 1000:
-                        return 'GW_RANK_2_NARROW'
-                    else:
-                        return 'GW_RANK_2_WIDE'
+            # Reject events if the FAR is > 1/month, the significance cut-off for CBC events.
+            # Note we explicitly look at the reported FAR here, not the significance flag
+            # since it's sometimes not consistent (see S230615az).
+            if (self.far * 60 * 60 * 24 * 365) > 12 and not self.significant:
+                return 'IGNORE'
+
+            # For deciding if an event is observable we use the HasRemnant property,
+            # but multiply by the probability it is a BNS or NSBH to downgrade terrestrial events.
+            # This is because some events can have HasRemnant=100% but still high terrestrial
+            # (although the FAR cut above should have removed most of them).
+            observable_metric = self.properties['HasRemnant']
+            observable_metric *= (self.classification['BNS'] + self.classification['NSBH'])
+            # Other factors we use:
+            #  the 90% contour area (ideally the visible area, but that's tricky to calculate)
+            #  the distance (the mean - 1 stddev, since the errors can be very large)
+            distance = self.skymap.header['distmean'] - self.skymap.header['diststd']
+            if observable_metric > 0.5:
+                # These are the ones we always want to follow up.
+                # The choice here just affects the scheduler ranking and if we send a WAKEUP alert.
+                if self.skymap.get_contour_area(0.9) < 5000 and distance < 250:
+                    strategy = 'GW_RANK_2'
                 else:
-                    if self.skymap.get_contour_area(0.9) < 1000:
-                        return 'GW_RANK_3_NARROW'
-                    else:
-                        return 'GW_RANK_3_WIDE'
+                    strategy = 'GW_RANK_3'
             else:
-                if self.significant and self.skymap.header['distmean'] < 200:
-                    if self.skymap.get_contour_area(0.9) < 1000:
-                        return 'GW_RANK_5_NARROW'
-                    else:
-                        return 'GW_RANK_5_WIDE'
+                # These are most likly BBH events, which we only want to follow up if they are
+                # well localised and nearby.
+                if self.skymap.get_contour_area(0.9) < 5000 and distance < 250:
+                    strategy = 'GW_RANK_5'
                 else:
                     return 'IGNORE'
 
         elif self.group == 'Burst':
-            if self.significant and self.skymap.get_contour_area(0.9) < 5000:
-                if self.skymap.get_contour_area(0.9) < 1000:
-                    return 'GW_RANK_4_NARROW'
-                else:
-                    return 'GW_RANK_4_WIDE'
+            # Reject events if the FAR is > 1/year, the significance cut-off for Burst events.
+            if (self.far * 60 * 60 * 24 * 365) > 1 and not self.significant:
+                return 'IGNORE'
+
+            # Just like BBH events, we only want to follow up if they are well localised and nearby.
+            # However Bursts don't include any distance information, so we just decide on the area.
+            if self.skymap.get_contour_area(0.9) < 5000:
+                strategy = 'GW_RANK_4'
             else:
                 return 'IGNORE'
 
         else:
             raise ValueError(f'Cannot determine observing strategy for group "{self.group}"')
+
+        # Now we alter the cadence based on the skymap area, ~how much GOTO can cover in an hour.
+        # This decides between the NO_DELAY and 1H_REPEATED strategies, so we don't waste time
+        # sitting around for the full hour if the map is already covered.
+        # Ideally this would only consider the visible area, but that's much more complicated!
+        if self.skymap.get_contour_area(0.9) < 1000:
+            return strategy + '_NARROW'
+        else:
+            return strategy + '_WIDE'
 
     @property
     def slack_details(self):
