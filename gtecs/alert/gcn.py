@@ -309,6 +309,8 @@ class GWNotice(GCNNotice):
             # Direct match for a specific notice
             event = template.match(name).groups()[0]
             url = f'https://gracedb.ligo.org/api/superevents/{event}/files/{name}.xml,0'
+            if name == 'Retraction':
+                return GWRetractionNotice.from_url(url)
             return cls.from_url(url)
 
         template = re.compile(r'(.+)-(\d+)')
@@ -334,6 +336,8 @@ class GWNotice(GCNNotice):
         if number > len(data['voevents']):
             raise ValueError(f"Event {event} only has {len(data['voevents'])} notices")
         url = data['voevents'][number - 1]['links']['file']
+        if 'Retraction' in url:
+            return GWRetractionNotice.from_url(url)
         return cls.from_url(url)
 
     @property
