@@ -171,6 +171,18 @@ def send_observing_report(notice, time=None):
         # (NB Retractions still check the database that the pointings have been removed)
         return
 
+    # Send the message to the appropriate channel
+    if notice.strategy == 'IGNORE' and params.SLACK_IGNORED_CHANNEL is not None:
+        # Ignored notices are still useful to log on Slack
+        slack_channel = params.SLACK_IGNORED_CHANNEL
+    elif (notice.event_type in params.SLACK_EVENT_CHANNELS and
+            params.SLACK_EVENT_CHANNELS[notice.event_type] is not None):
+        # Send to the specific event channel if it exists
+        slack_channel = params.SLACK_EVENT_CHANNELS[notice.event_type]
+    else:
+        # Just send to the default channel
+        slack_channel = params.SLACK_DEFAULT_CHANNEL
+
     msg = f'*{notice.source} notice:* {notice.ivorn}\n'
 
     # Get info from the alert database
@@ -349,17 +361,6 @@ def send_observing_report(notice, time=None):
     plt.savefig(filepath)
     plt.close(plt.gcf())
 
-    # Send the message to the appropriate channel
-    if notice.strategy == 'IGNORE' and params.SLACK_IGNORED_CHANNEL is not None:
-        # Ignored notices are still useful to log on Slack
-        slack_channel = params.SLACK_IGNORED_CHANNEL
-    elif (notice.event_type in params.SLACK_EVENT_CHANNELS and
-            params.SLACK_EVENT_CHANNELS[notice.event_type] is not None):
-        # Send to the specific event channel if it exists
-        slack_channel = params.SLACK_EVENT_CHANNELS[notice.event_type]
-    else:
-        # Just send to the default channel
-        slack_channel = params.SLACK_DEFAULT_CHANNEL
     message_link = send_slack_msg(msg, filepath=filepath, channel=slack_channel, return_link=True)
 
     # If not sent to the default channel, send a copy there too
