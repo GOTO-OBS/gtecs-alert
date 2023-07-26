@@ -18,6 +18,7 @@ import numpy as np
 
 from . import database as alert_db
 from . import params
+from .gcn import GWNotice
 
 
 def send_slack_msg(text, channel=None, *args, **kwargs):
@@ -48,6 +49,9 @@ def send_notice_report(notice, time=None):
     """Send a message to Slack with the notice details and skymap."""
     if time is None:
         time = Time.now()
+
+    # Get the correct slack channel
+    slack_channel = get_slack_channel(notice)
 
     msg = f'*{notice.source} notice:* {notice.ivorn}\n'
 
@@ -133,17 +137,7 @@ def send_notice_report(notice, time=None):
         plt.savefig(filepath)
         plt.close(plt.gcf())
 
-    # Send the message to the appropriate channel
-    if notice.strategy == 'IGNORE' and params.SLACK_IGNORED_CHANNEL is not None:
-        # Ignored notices are still useful to log on Slack
-        slack_channel = params.SLACK_IGNORED_CHANNEL
-    elif (notice.event_type in params.SLACK_EVENT_CHANNELS and
-            params.SLACK_EVENT_CHANNELS[notice.event_type] is not None):
-        # Send to the specific event channel if it exists
-        slack_channel = params.SLACK_EVENT_CHANNELS[notice.event_type]
-    else:
-        # Just send to the default channel
-        slack_channel = params.SLACK_DEFAULT_CHANNEL
+    # Send the message
     message_link = send_slack_msg(msg, filepath=filepath, channel=slack_channel, return_link=True)
 
     # If not sent to the default channel, send a copy there too
@@ -161,6 +155,33 @@ def send_notice_report(notice, time=None):
         send_slack_msg(forward_message, channel=params.SLACK_WAKEUP_CHANNEL)
 
 
+def get_slack_channel(notice):
+    """Get the correct slack channel for a notice."""
+    if notice.strategy == 'RETRACTION':
+        # We want the retraction to go to the same channel as the original notice,
+        # which might be the ignored channel.
+        # So we need to get the previous alert from GraceDB.
+        try:
+            n = int(notice.ivorn.split('-')[1])
+            prev_notice = GWNotice.from_gracedb(notice.event_id, n - 1)
+            prev_notice.get_skymap()
+            return get_slack_channel(prev_notice)
+        except Exception:
+            # Fall back to the other options
+            raise
+    elif notice.strategy == 'IGNORE' and params.SLACK_IGNORED_CHANNEL is not None:
+        # Ignored notices are still useful to log on Slack
+        return params.SLACK_IGNORED_CHANNEL
+
+    if (notice.event_type in params.SLACK_EVENT_CHANNELS and
+            params.SLACK_EVENT_CHANNELS[notice.event_type] is not None):
+        # Send to the specific event channel if it exists
+        return params.SLACK_EVENT_CHANNELS[notice.event_type]
+    else:
+        # Just send to the default channel
+        return params.SLACK_DEFAULT_CHANNEL
+
+
 def send_observing_report(notice, time=None):
     """Send a message to Slack with details of the observing details and visibility."""
     if time is None:
@@ -171,17 +192,8 @@ def send_observing_report(notice, time=None):
         # (NB Retractions still check the database that the pointings have been removed)
         return
 
-    # Send the message to the appropriate channel
-    if notice.strategy == 'IGNORE' and params.SLACK_IGNORED_CHANNEL is not None:
-        # Ignored notices are still useful to log on Slack
-        slack_channel = params.SLACK_IGNORED_CHANNEL
-    elif (notice.event_type in params.SLACK_EVENT_CHANNELS and
-            params.SLACK_EVENT_CHANNELS[notice.event_type] is not None):
-        # Send to the specific event channel if it exists
-        slack_channel = params.SLACK_EVENT_CHANNELS[notice.event_type]
-    else:
-        # Just send to the default channel
-        slack_channel = params.SLACK_DEFAULT_CHANNEL
+    # Get the correct slack channel
+    slack_channel = get_slack_channel(notice)
 
     msg = f'*{notice.source} notice:* {notice.ivorn}\n'
 
@@ -361,6 +373,7 @@ def send_observing_report(notice, time=None):
     plt.savefig(filepath)
     plt.close(plt.gcf())
 
+    # Send the message
     message_link = send_slack_msg(msg, filepath=filepath, channel=slack_channel, return_link=True)
 
     # If not sent to the default channel, send a copy there too
