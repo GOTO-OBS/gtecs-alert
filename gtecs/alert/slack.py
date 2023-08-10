@@ -215,11 +215,19 @@ def send_observing_report(notice, time=None):
         msg += f'Notice linked to Event `{db_event.name}` (ID={db_event.db_id})\n'
         msg += f'- Event is linked to {len(db_event.notices)} notices'
         msg += f' and {len(db_event.surveys)} surveys\n'
-        pending = [p
-                   for survey in db_event.surveys
-                   for p in survey.pointings
-                   if p.status_at_time(time + 1 * u.s) not in ['deleted', 'expired', 'completed']]
-        msg += f'- Event has {len(pending)} pending pointings\n'
+        status_time = time + 1 * u.s
+        scheduled = [
+            t for survey in db_event.surveys for t in survey.targets
+            if t.scheduled_at_time(status_time)
+        ]
+        msg += f'- Event has {len(scheduled)} scheduled targets'
+        running = [
+            p for survey in db_event.surveys for p in survey.pointings
+            if p.status_at_time(status_time) == 'running'
+        ]
+        if len(running) > 0:
+            msg += f' ({len(running)} are currently being observed)'
+        msg += '\n'
 
         # Look at the Survey this Notice is linked to (if any)
         db_survey = db_notice.survey
@@ -227,7 +235,8 @@ def send_observing_report(notice, time=None):
         if db_survey is None:
             # It could be a retraction
             if notice.strategy == 'RETRACTION':
-                if len(pending) == 0:
+                # Make sure there are no targets still scheduled (running is fine)
+                if len(scheduled) == 0 or len(scheduled) == len(running):
                     msg += 'Event has been successfully retracted\n'
                 else:
                     msg += '*ERROR: Retraction failed to remove pending pointings*\n'
