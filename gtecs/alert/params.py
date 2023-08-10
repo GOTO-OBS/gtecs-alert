@@ -52,6 +52,19 @@ DATABASE_PRE_PING = bool(config['DATABASE_PRE_PING'])
 
 ############################################################
 # Slack bot parameters
-ENABLE_SLACK = config['ENABLE_SLACK']
+ENABLE_SLACK = bool(config['ENABLE_SLACK'])
 SLACK_BOT_TOKEN = config['SLACK_BOT_TOKEN']
+
 SLACK_DEFAULT_CHANNEL = config['SLACK_DEFAULT_CHANNEL']
+if SLACK_DEFAULT_CHANNEL == 'none':
+    SLACK_DEFAULT_CHANNEL = None
+SLACK_WAKEUP_CHANNEL = config['SLACK_WAKEUP_CHANNEL']
+if SLACK_WAKEUP_CHANNEL == 'none':
+    SLACK_WAKEUP_CHANNEL = None
+SLACK_IGNORED_CHANNEL = config['SLACK_IGNORED_CHANNEL']
+if SLACK_IGNORED_CHANNEL == 'none':
+    SLACK_IGNORED_CHANNEL = None
+SLACK_EVENT_CHANNELS = config['SLACK_EVENT_CHANNELS']
+for event_type in SLACK_EVENT_CHANNELS:
+    if SLACK_EVENT_CHANNELS[event_type] == 'none':
+        SLACK_EVENT_CHANNELS[event_type] = None

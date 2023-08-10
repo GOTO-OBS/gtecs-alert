@@ -8,7 +8,8 @@ from astropy.time import Time
 from gtecs.obs import database as obs_db
 
 from . import database as alert_db
-from .slack import send_notice_report, send_observing_report
+from . import params
+from .slack import send_notice_report, send_observing_report, send_slack_msg
 
 
 def add_to_database(notice, time=None, log=None):
@@ -93,10 +94,10 @@ def add_to_database(notice, time=None, log=None):
             # If there are no previous surveys, we'll want to create one.
             requires_update = True
 
-    if notice.strategy is None:
-        # It's a retraction notice.
-        # Now we've deleted the previous Targets there's nothing else to do.
-        log.info('Retraction notice processed')
+    if notice.strategy in ['IGNORE', ' RETRACTION'] or notice.strategy_dict is None:
+        # Either it's an event we don't care about, or it's an explicit retraction notice.
+        # We've added it to the AlertDB and deleted the previous Targets, nothing else to do.
+        log.info(f'{notice.strategy} notice processed')
         return
     elif notice.skymap is None:
         # We have a strategy but no skymap, so we can't do anything?
@@ -199,7 +200,8 @@ def add_to_database(notice, time=None, log=None):
                         num_todo=cadence_dict['num_todo'],
                         stop_time=cadence_dict['stop_time'],
                         wait_time=cadence_dict['wait_hours'] * u.hour,
-                        valid_time=cadence_dict['valid_days'] * u.day,
+                        valid_time=None,  # Pointings are valid up until the stop_time
+                        rank_change=cadence_dict['rank_change'],
                         min_time=None,
                         too=True,
                         min_alt=constraints_dict['min_alt'],
@@ -277,8 +279,13 @@ def handle_notice(notice, send_messages=False, log=None, time=None):
         log.debug('Sending Slack notice report')
         try:
             send_notice_report(notice, time=time)
-        except Exception:
-            log.exception('Error sending Slack report')
+        except Exception as err:
+            log.exception('Error sending notice report')
+            try:
+                msg = 'Error sending notice report ("{err.__class__.__name__}: {err}")'
+                send_slack_msg(msg)
+            except Exception:
+                log.exception('Error sending error report')
 
     log.info('Adding notice to the alert database')
     add_to_database(notice, time=time, log=log)
@@ -288,7 +295,12 @@ def handle_notice(notice, send_messages=False, log=None, time=None):
         try:
             send_observing_report(notice, time=time)
         except Exception:
-            log.exception('Error sending Slack report')
+            log.exception('Error sending observing report')
+            try:
+                msg = f'Error sending observing report ("{err.__class__.__name__}: {err}")'
+                send_slack_msg(msg)
+            except Exception:
+                log.exception('Error sending error report')
 
     log.info('Notice {} successfully processed'.format(notice.ivorn))
     return

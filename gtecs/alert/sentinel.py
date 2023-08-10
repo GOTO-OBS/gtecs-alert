@@ -191,8 +191,9 @@ class Sentinel:
             # Subscribe to any notices we want
             # TODO: Also params? Or we could get from the subclasses?
             #       For now just subscribe to everything...
-            all_topics = [t for t in consumer.list_topics().topics.keys() if 'voevent' in t]
-            consumer.subscribe(all_topics)
+            self.kafka_topics = [t for t in sorted(consumer.list_topics().topics.keys())
+                                 if 'voevent' in t]
+            consumer.subscribe(self.kafka_topics)
 
             # This second loop will monitor the connection
             try:
@@ -254,18 +255,17 @@ class Sentinel:
                     send_slack_msg('Sentinel successfully processed notice')
 
                     # Start a followup thread to wait for the skymap of Fermi notices
-                    if notice.event_source == 'Fermi':
+                    if notice.event_source == 'Fermi' and not notice.ivorn.endswith('_new_skymap'):
                         try:
-                            # Might as well try once
+                            # Check if the URL was valid
                             urlopen(notice.skymap_url)
                         except URLError:
                             # The skymap hasn't been uploaded yet
-                            try:
-                                t = threading.Thread(target=self._fermi_skymap_thread(notice))
-                                t.daemon = True
-                                t.start()
-                            except Exception:
-                                self.log.exception('Error in Fermi followup thread')
+                            self.log.debug('Starting Fermi skymap listener thread')
+                            t = threading.Thread(target=self._fermi_skymap_thread,
+                                                 args=[notice, 600])
+                            t.daemon = True
+                            t.start()
 
                 except Exception as err:
                     self.log.exception('Error handling notice')
@@ -278,34 +278,42 @@ class Sentinel:
         self.log.info('Alert handler thread stopped')
         return
 
-    def _fermi_skymap_thread(self, notice):
+    def _fermi_skymap_thread(self, notice, timeout=600):
         """Listen for the official skymap for Fermi notices."""
-        self.log.info('{} skymap listening thread started'.format(notice.event_name))
+        self.log.info('{} skymap listener thread started'.format(notice.event_name))
 
-        found_skymap = False
-        while self.running and not found_skymap:
-            try:
-                urlopen(notice.skymap_url)
-                notice = GCNNotice.from_payload(notice.payload)
-                notice.ivorn = notice.ivorn + '_new_skymap'  # create a new ivorn for the DB
-                found_skymap = True
-            except URLError:
-                # if the link is not working yet, sleep for 30s
-                time.sleep(30)
+        try:
+            start_time = time.time()
+            found_skymap = False
+            timed_out = False
+            while self.running and not found_skymap and not timed_out:
+                try:
+                    urlopen(notice.skymap_url)
+                    notice = GCNNotice.from_payload(notice.payload)
+                    notice.ivorn = notice.ivorn + '_new_skymap'  # create a new ivorn for the DB
+                    found_skymap = True
+                except URLError:
+                    # if the link is not working yet, sleep for 30s
+                    time.sleep(30)
+                if time.time() - start_time > timeout:
+                    msg = '{} skymap listener thread timed out'.format(notice.event_name)
+                    self.log.warning(msg)
+                    send_slack_msg(msg)
+                    timed_out = True
 
-        if found_skymap:
-            try:
-                # Call the handler for the new notice
-                # TODO: could just add to the queue?
-                handle_notice(notice, send_messages=params.ENABLE_SLACK, log=self.log)
-                send_slack_msg('Latest skymap used for {}'.format(notice.event_name))
-            except Exception:
-                self.log.exception('Exception in handler')
-            self.log.info('{} skymap listening thread finished'.format(notice.event_name))
-        else:
-            # Thread was shutdown before we found the skymap
-            self.log.info('{} skymap listening thread aborted'.format(notice.event_name))
-            return
+            if found_skymap:
+                send_slack_msg('Re-ingesting Fermi notice {}'.format(notice.event_name))
+                self.notice_queue.append(notice)
+                self.log.info('{} skymap listener thread finished'.format(notice.event_name))
+            else:
+                # Thread was shutdown before we found the skymap, or timed out
+                self.log.warning('{} skymap listener thread aborted'.format(notice.event_name))
+
+        except Exception as err:
+            self.log.exception('Error in {} skymap listener thread'.format(notice.event_name))
+            msg = 'Sentinel reports ERROR in {} skymap listener thread'.format(notice.event_name)
+            msg += f' ("{err.__class__.__name__}: {err}")'
+            send_slack_msg(msg)
 
     # Functions
     def ingest_from_payload(self, payload):
@@ -328,6 +336,15 @@ class Sentinel:
         notice = GCNNotice.from_ivorn(ivorn)
         self.notice_queue.append(notice)
         return 'VOEvent notice added to queue'
+
+    def get_kafka_topics(self):
+        """Return a list of subscribed topics."""
+        if hasattr(self, 'kafka_topics'):
+            return self.kafka_topics
+
+    def get_latest_notice(self):
+        """Return the last processed notice."""
+        return self.latest_notice
 
 
 def run():

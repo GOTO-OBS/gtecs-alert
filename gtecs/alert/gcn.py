@@ -1,6 +1,8 @@
 """Classes to represent GCN alert notices."""
 
+import json
 import os
+import re
 from urllib.parse import quote_plus
 from urllib.request import urlopen
 
@@ -11,6 +13,8 @@ from astropy.utils.data import download_file
 from gototile.skymap import SkyMap
 
 import numpy as np
+
+import requests
 
 import voeventdb.remote.apiv1 as vdb
 
@@ -136,7 +140,7 @@ class GCNNotice:
             f.write(self.payload)
         return out_path
 
-    def get_skymap(self, nside=128):
+    def get_skymap(self, nside=128, **kwargs):
         """Return the skymap as a `gototile.skymap.SkyMap object."""
         if self.skymap is not None:
             # Don't do anything if the skymap has already been downloaded/created
@@ -148,8 +152,14 @@ class GCNNotice:
                 # The file gets stored in /tmp/
                 # Don't cache, force redownload every time
                 # https://github.com/GOTO-OBS/goto-alert/issues/36
-                self.skymap_file = download_file(self.skymap_url, cache=False)
-                self.skymap = SkyMap.from_fits(self.skymap_file)
+                # Pass any other arguments (e.g. timeout, show_progress)
+                try:
+                    skymap_file = download_file(self.skymap_url, cache=False, **kwargs)
+                except Exception:
+                    # Maybe it's a local file?
+                    skymap_file = self.skymap_url
+                self.skymap = SkyMap.from_fits(skymap_file)
+                self.skymap_file = skymap_file
             except Exception:
                 # Some error meant we can't download the skymap
                 # If we have a position we can try and create our own
@@ -216,11 +226,23 @@ class GWNotice(GCNNotice):
         # See https://emfollow.docs.ligo.org/userguide/content.html#notice-contents
         self.event_id = top_params['GraceID']['value']  # e.g. S190510g
         self.event_name = '{}_{}'.format(self.event_source, self.event_id)  # e.g. LVC_S190510g
-        self.far = float(top_params['FAR']['value'])
         self.gracedb_url = top_params['EventPage']['value']
         self.instruments = top_params['Instruments']['value']
         self.group = top_params['Group']['value']  # CBC or Burst
         self.pipeline = top_params['Pipeline']['value']
+        self.far = float(top_params['FAR']['value'])  # In Hz
+        try:
+            self.significant = top_params['Significant']['value'] == '1'
+        except KeyError:
+            # Fallback for older notices that didn't include the significance
+            # This uses the "official" definition of 1/month for CBC and 1/year for bursts,
+            # see https://emfollow.docs.ligo.org/userguide/analysis/index.html#alert-threshold
+            if self.group == 'CBC' and self.far < 12 / (60 * 60 * 24 * 365):
+                self.significant = True
+            elif self.group == 'Burst' and self.far < 1 / (60 * 60 * 24 * 365):
+                self.significant = True
+            else:
+                self.significant = False
 
         # Get classification probabilities and properties
         if self.group == 'CBC':
@@ -243,8 +265,8 @@ class GWNotice(GCNNotice):
             self.properties = {key: float(properties_group[key]['value'])
                                for key in properties_group}
         else:
-            self.classification = {}
-            self.properties = {}
+            self.classification = None
+            self.properties = None
 
         # Get skymap URL
         try:
@@ -255,41 +277,159 @@ class GWNotice(GCNNotice):
                     skymap_group = group_dict
         self.skymap_url = skymap_group['skymap_fits']['value']
 
+        # Get external coincidence, if any
+        try:
+            external_group = group_params['External Coincidence']
+            self.external = {
+                'gcn_notice_id': int(external_group['External_GCN_Notice_Id']['value']),
+                'ivorn': external_group['External_Ivorn']['value'],
+                'observatory': external_group['External_Observatory']['value'],
+                'search': external_group['External_Search']['value'],
+                'time_difference': float(external_group['Time_Difference']['value']),
+                'time_coincidence_far': float(external_group['Time_Coincidence_FAR']['value']),
+                'time_sky_position_coincidence_far':
+                    float(external_group['Time_Sky_Position_Coincidence_FAR']['value']),
+                'combined_skymap_url': external_group['joint_skymap_fits']['value'],
+                }
+            # Override the skymap URL with the combined skymap
+            self.skymap_url_original = self.skymap_url
+            self.skymap_url = self.external['combined_skymap_url']
+        except KeyError:
+            self.external = None
+
+    @classmethod
+    def from_gracedb(cls, name, which_notice='last'):
+        """Create a GWNotice by downloading the VOEvent XML from GraceDB."""
+        if not ((isinstance(which_notice, int) and which_notice > 0) or
+                which_notice in ['first', 'last']):
+            raise ValueError('which_notice must be "first", "last" or a positive integer')
+
+        template = re.compile(r'(.+)-(\d+)-(.+)')
+        if template.match(name):
+            # e.g. 'S230621ap-1-Preliminary'
+            # Direct match for a specific notice
+            event = template.match(name).groups()[0]
+            url = f'https://gracedb.ligo.org/api/superevents/{event}/files/{name}.xml,0'
+            if name == 'Retraction':
+                return GWRetractionNotice.from_url(url)
+            return cls.from_url(url)
+
+        template = re.compile(r'(.+)-(\d+)')
+        if template.match(name):
+            event, number = template.match(name).groups()
+            number = int(number)
+        elif which_notice == 'first':
+            event = name
+            number = 1
+        elif which_notice == 'last':
+            event = name
+            number = -1
+        else:
+            event = name
+            number = int(which_notice)
+
+        # Query the GraceDB API to get the VOEvent URL
+        url = f'https://gracedb.ligo.org/api/superevents/{event}/voevents/'
+        r = requests.get(url)
+        data = json.loads(r.content.decode())
+        if number == -1:
+            number = len(data['voevents'])
+        if number > len(data['voevents']):
+            raise ValueError(f"Event {event} only has {len(data['voevents'])} notices")
+        url = data['voevents'][number - 1]['links']['file']
+        if 'Retraction' in url:
+            return GWRetractionNotice.from_url(url)
+        return cls.from_url(url)
+
     @property
     def strategy(self):
         """Get the observing strategy key."""
         if self.skymap is None:
-            # This is very annoying, but we need to get the skymap to get the distance
+            # This is very annoying, but we need to get the skymap to get the distance.
             # TODO: We could assume it is far, would that be better?
             raise ValueError('Cannot determine strategy without skymap')
 
+        if self.external is not None:
+            # External coincidences are always highest priority, regardless of other factors.
+            strategy = 'GW_RANK_1'
+
         if self.group == 'CBC':
-            if self.properties['HasNS'] > 0.25:
-                if self.skymap.header['distmean'] < 400:
-                    return 'GW_CLOSE_NS'
+            # Reject events if the FAR is > 1/month, the significance cut-off for CBC events.
+            # Note we explicitly look at the reported FAR here, not the significance flag
+            # since it's sometimes not consistent (see S230615az).
+            if (self.far * 60 * 60 * 24 * 365) > 12 and not self.significant:
+                return 'IGNORE'
+
+            # For deciding if an event is observable we use the HasRemnant property,
+            # but multiply by the probability it is a BNS or NSBH to downgrade terrestrial events.
+            # This is because some events can have HasRemnant=100% but still high terrestrial
+            # (although the FAR cut above should have removed most of them).
+            observable_metric = self.properties['HasRemnant']
+            observable_metric *= (self.classification['BNS'] + self.classification['NSBH'])
+            # Other factors we use:
+            #  the 90% contour area (ideally the visible area, but that's tricky to calculate)
+            #  the distance (the mean - 1 stddev, since the errors can be very large)
+            distance = self.skymap.header['distmean'] - self.skymap.header['diststd']
+            if observable_metric > 0.5:
+                # These are the ones we always want to follow up.
+                # The choice here just affects the scheduler ranking and if we send a WAKEUP alert.
+                if self.skymap.get_contour_area(0.9) < 5000 and distance < 250:
+                    strategy = 'GW_RANK_2'
                 else:
-                    return 'GW_FAR_NS'
+                    strategy = 'GW_RANK_3'
             else:
-                if self.skymap.header['distmean'] < 100:
-                    return 'GW_CLOSE_BH'
+                # These are most likly BBH events, which we only want to follow up if they are
+                # well localised and nearby.
+                if self.skymap.get_contour_area(0.9) < 5000 and distance < 250:
+                    strategy = 'GW_RANK_5'
                 else:
-                    return 'GW_FAR_BH'
+                    return 'IGNORE'
+
         elif self.group == 'Burst':
-            return 'GW_BURST'
+            # Reject events if the FAR is > 1/year, the significance cut-off for Burst events.
+            if (self.far * 60 * 60 * 24 * 365) > 1 and not self.significant:
+                return 'IGNORE'
+
+            # Just like BBH events, we only want to follow up if they are well localised and nearby.
+            # However Bursts don't include any distance information, so we just decide on the area.
+            if self.skymap.get_contour_area(0.9) < 5000:
+                strategy = 'GW_RANK_4'
+            else:
+                return 'IGNORE'
+
         else:
             raise ValueError(f'Cannot determine observing strategy for group "{self.group}"')
+
+        # Now we alter the cadence based on the skymap area, ~how much GOTO can cover in an hour.
+        # This decides between the NO_DELAY and 1H_REPEATED strategies, so we don't waste time
+        # sitting around for the full hour if the map is already covered.
+        # Ideally this would only consider the visible area, but that's much more complicated!
+        if self.skymap.get_contour_area(0.9) < 1000:
+            return strategy + '_NARROW'
+        else:
+            return strategy + '_WIDE'
 
     @property
     def slack_details(self):
         """Get details for Slack messages."""
         text = f'Event: {self.event_name}\n'
         text += f'Detection time: {self.event_time.iso}\n'
+        text += f'Pipeline: {self.pipeline}\n'
+        text += f'Instruments: {self.instruments}\n'
         text += f'GraceDB page: {self.gracedb_url}\n'
 
         # Classification info
-        text += f'FAR: ~1 per {1 / self.far / 3.154e+7:.1f} yrs\n'
+        far_years = self.far * 60 * 60 * 24 * 365  # convert from /s to /yr
+        if far_years > 1:
+            text += f'FAR: ~{far_years:.0f} per year'
+        else:
+            text += f'FAR: ~1 per {1 / far_years:.1f} years'
+        if self.significant:
+            text += ' (significant=True)\n'
+        else:
+            text += ' (significant=False)\n'
         text += f'Group: {self.group}\n'
-        if self.group == 'CBC':
+        if self.classification is not None:
             sorted_classification = sorted(
                 self.classification.keys(),
                 key=lambda key: self.classification[key],
@@ -301,18 +441,68 @@ class GWNotice(GCNNotice):
                 if self.classification[key] > 0.0005
             ]
             text += f'Classification: {", ".join(class_list)}\n'
-            text += f'HasNS (if real): {self.properties["HasNS"]:.0%}\n'
+        elif self.group == 'Burst':
+            # Burst events aren't classified
+            text += 'Classification: N/A\n'
+        else:
+            text += 'Classification: *UNKNOWN*\n'
+        if self.properties is not None:
+            text += f'HasNS: {self.properties["HasNS"]:.0%}\n'
+            try:
+                text += f'HasRemnant: {self.properties["HasRemnant"]:.0%}\n'
+            except KeyError:
+                pass
 
         # Skymap info (only if we have downloaded the skymap)
         if self.skymap is not None:
-            distance = self.skymap.header['distmean']
-            distance_error = self.skymap.header['diststd']
+            if 'distmean' in self.skymap.header:
+                distance = self.skymap.header['distmean']
+                distance_error = self.skymap.header['diststd']
+                text += f'Distance: {distance:.0f}+/-{distance_error:.0f} Mpc\n'
+            elif self.group == 'Burst':
+                # We don't expect a distance for burst events
+                text += 'Distance: N/A\n'
+            else:
+                text += 'Distance: *UNKNOWN*\n'
             area = self.skymap.get_contour_area(0.9)
-            text += f'Distance: {distance:.0f}+/-{distance_error:.0f} Mpc\n'
             text += f'90% probability area: {area:.0f} sq deg\n'
         else:
-            text += 'Distance: *UNKNOWN*\n'
+            text += '*NO SKYMAP FOUND*\n'
 
+        # Coincidence info
+        if self.external is not None:
+            text += '\n'
+            text += '*External event coincidence detected!*\n'
+            text += f'Source: {self.external["observatory"]}\n'
+            text += f'IVORN: {self.external["ivorn"]}\n'
+            far_years = self.external['time_sky_position_coincidence_far'] * 60 * 60 * 24 * 365
+            if far_years > 1:
+                text += f'FAR: ~{far_years:.0f} per year\n'
+            else:
+                text += f'FAR: ~1 per {1 / far_years:.1f} years\n'
+
+        return text
+
+    @property
+    def short_details(self):
+        """Get a short one-line summary to include when forwarding Slack messages."""
+        text = f'{self.group}'
+        if self.properties is not None and 'HasRemnant' in self.properties:
+            text += f' (HasRemnant={self.properties["HasRemnant"]:.0%}), '
+        else:
+            text += ', '
+        if self.skymap is not None:
+            if 'distmean' in self.skymap.header:
+                text += f'{self.skymap.header["distmean"]:.0f} Mpc, '
+            text += f'{self.skymap.get_contour_area(0.9):.0f} sq deg, '
+        far_years = self.far * 60 * 60 * 24 * 365  # convert from /s to /yr
+        if far_years > 1:
+            text += f'FAR: ~{far_years:.0f} per year, '
+        else:
+            text += f'FAR: ~1 per {1 / far_years:.1f} years, '
+        text += f'strategy: `{self.strategy}`'
+        if self.external is not None:
+            text += '\n*External event coincidence detected!*'
         return text
 
 
@@ -343,7 +533,7 @@ class GWRetractionNotice(GCNNotice):
     @property
     def strategy(self):
         """Get the observing strategy key."""
-        return None  # Retractions don't have an observing strategy
+        return 'RETRACTION'
 
     @property
     def slack_details(self):

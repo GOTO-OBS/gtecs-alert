@@ -18,6 +18,7 @@ import numpy as np
 
 from . import database as alert_db
 from . import params
+from .gcn import GWNotice
 
 
 def send_slack_msg(text, channel=None, *args, **kwargs):
@@ -29,9 +30,9 @@ def send_slack_msg(text, channel=None, *args, **kwargs):
         The message text.
     channel : string, optional
         The channel to post the message to.
-        If None, defaults to `gtecs.alert.params.SLACK_DEFAULT_CHANNEL`.
+        If None, defaults to `params.SLACK_DEFAULT_CHANNEL`.
 
-    Other parameters are passed to `gtecs.common.slack.send_slack_msg`.
+    Other parameters are passed to `gtecs.common.slack.send_message`.
 
     """
     if channel is None:
@@ -39,15 +40,18 @@ def send_slack_msg(text, channel=None, *args, **kwargs):
 
     if params.ENABLE_SLACK:
         # Use the common function
-        send_message(text, channel, params.SLACK_BOT_TOKEN, *args, **kwargs)
+        return send_message(text, channel, params.SLACK_BOT_TOKEN, *args, **kwargs)
     else:
         print('Slack Message:', text)
 
 
-def send_notice_report(notice, slack_channel=None, time=None):
+def send_notice_report(notice, time=None):
     """Send a message to Slack with the notice details and skymap."""
     if time is None:
         time = Time.now()
+
+    # Get the correct slack channel
+    slack_channel = get_slack_channel(notice)
 
     msg = f'*{notice.source} notice:* {notice.ivorn}\n'
 
@@ -68,8 +72,8 @@ def send_notice_report(notice, slack_channel=None, time=None):
 
     # Get strategy details (a short version compared to the full notice)
     msg += '\n'
-    if notice.strategy is not None:
-        msg += f'Observing strategy: `{notice.strategy}`\n'
+    msg += f'Observing strategy: `{notice.strategy}`\n'
+    if notice.strategy_dict is not None:
         cadences = ','.join(f'`{cadence}`' for cadence in notice.strategy_dict['cadence'])
         msg += f'Cadence{"s" if cadences.count(",") > 0 else ""}: {cadences}\n'
         msg += f'Constraints: `{notice.strategy_dict["constraints"]}`\n'
@@ -134,61 +138,62 @@ def send_notice_report(notice, slack_channel=None, time=None):
         plt.close(plt.gcf())
 
     # Send the message
-    send_slack_msg(msg, filepath=filepath, channel=slack_channel)
+    message_link = send_slack_msg(msg, filepath=filepath, channel=slack_channel, return_link=True)
+
+    # If not sent to the default channel, send a copy there too
+    if slack_channel != params.SLACK_DEFAULT_CHANNEL:
+        forward_message = f'<{message_link}|Notice details>'
+        send_slack_msg(forward_message, channel=params.SLACK_DEFAULT_CHANNEL)
+
+    # Forward to the wakeup channel if requested
+    if (notice.strategy_dict is not None and 'wakeup_alert' in notice.strategy_dict and
+            params.SLACK_WAKEUP_CHANNEL is not None):
+        forward_message = f'*WAKEUP ALERT: <{message_link}|New notice received>*'
+        if hasattr(notice, 'short_details'):
+            forward_message += '\n'
+            forward_message += notice.short_details
+        send_slack_msg(forward_message, channel=params.SLACK_WAKEUP_CHANNEL)
 
 
-def send_strategy_report(notice, slack_channel=None):
-    """Send a message to Slack with the observation strategy details."""
-    if notice.role == 'observation':
-        s = f'*Strategy for event {notice.event_name}*\n'
+def get_slack_channel(notice):
+    """Get the correct slack channel for a notice."""
+    if notice.strategy == 'RETRACTION':
+        # We want the retraction to go to the same channel as the original notice,
+        # which might be the ignored channel.
+        # So we need to get the previous alert from GraceDB.
+        try:
+            n = int(notice.ivorn.split('-')[1])
+            prev_notice = GWNotice.from_gracedb(notice.event_id, n - 1)
+            prev_notice.get_skymap()
+            return get_slack_channel(prev_notice)
+        except Exception:
+            # Fall back to the other options
+            raise
+    elif notice.strategy == 'IGNORE' and params.SLACK_IGNORED_CHANNEL is not None:
+        # Ignored notices are still useful to log on Slack
+        return params.SLACK_IGNORED_CHANNEL
+
+    if (notice.event_type in params.SLACK_EVENT_CHANNELS and
+            params.SLACK_EVENT_CHANNELS[notice.event_type] is not None):
+        # Send to the specific event channel if it exists
+        return params.SLACK_EVENT_CHANNELS[notice.event_type]
     else:
-        s = f'*Strategy for {notice.role} event {notice.event_name}*\n'
-
-    if notice.strategy is None:
-        # This is a retraction
-        s += '*ERROR: No strategy defined*\n'
-        send_slack_msg(s, channel=slack_channel)
-        return
-
-    # Basic strategy
-    s += f'Strategy: `{notice.strategy_dict["strategy"]}`\n'
-    s += f'Rank: {notice.strategy_dict["rank"]}\n'
-
-    # Cadence
-    for i, cadence in enumerate(notice.strategy_dict['cadence']):
-        cadence_dict = notice.strategy_dict['cadence_dict'][i]
-        s += f'Cadence {i + 1}: `{cadence}`\n'
-        s += f'- Number of visits: {cadence_dict["num_todo"]}\n'
-        s += f'- Time between visits (hours): {cadence_dict["wait_hours"]}\n'
-        s += f'- Start time: {cadence_dict["start_time"].iso}\n'
-        s += f'- Stop time: {cadence_dict["stop_time"].iso}\n'
-
-    # Constraints
-    s += f'Constraints: `{notice.strategy_dict["constraints"]}`\n'
-    s += f'- Min Alt: {notice.strategy_dict["constraints_dict"]["min_alt"]}\n'
-    s += f'- Max Sun Alt: {notice.strategy_dict["constraints_dict"]["max_sunalt"]}\n'
-    s += f'- Min Moon Sep: {notice.strategy_dict["constraints_dict"]["min_moonsep"]}\n'
-    s += f'- Max Moon Phase: {notice.strategy_dict["constraints_dict"]["max_moon"]}\n'
-
-    # Exposure Sets
-    s += f'ExposureSets: `{notice.strategy_dict["exposure_sets"]}`\n'
-    for expset in notice.strategy_dict['exposure_sets_dict']:
-        s += f'- NumExp: {expset["num_exp"]:.0f}'
-        s += f'  Filter: {expset["filt"]}'
-        s += f'  ExpTime: {expset["exptime"]:.1f}s\n'
-
-    # Tiling
-    s += f'Tile number limit: {notice.strategy_dict["tile_limit"]}\n'
-    s += f'Tile probability limit: {notice.strategy_dict["prob_limit"]:.1%}\n'
-
-    # Send the message
-    send_slack_msg(s, channel=slack_channel)
+        # Just send to the default channel
+        return params.SLACK_DEFAULT_CHANNEL
 
 
-def send_observing_report(notice, slack_channel=None, time=None):
+def send_observing_report(notice, time=None):
     """Send a message to Slack with details of the observing details and visibility."""
     if time is None:
         time = Time.now()
+
+    if notice.strategy == 'IGNORE':
+        # No reason to send a message
+        # (NB Retractions still check the database that the pointings have been removed)
+        return
+
+    # Get the correct slack channel
+    slack_channel = get_slack_channel(notice)
 
     msg = f'*{notice.source} notice:* {notice.ivorn}\n'
 
@@ -199,42 +204,47 @@ def send_observing_report(notice, slack_channel=None, time=None):
         db_notice = query.one_or_none()
         if db_notice is None:
             msg += '*ERROR: No matching entry found in database*\n'
-            send_slack_msg(msg, channel=slack_channel)
-            return
+            return send_slack_msg(msg, channel=slack_channel)
         msg += f'Notice added to database (ID={db_notice.db_id})\n'
 
         # Look at the Event this Notice is for
         db_event = db_notice.event
         if db_event is None:
             msg += '*ERROR: No matching event found in database*\n'
-            send_slack_msg(msg, channel=slack_channel)
-            return
+            return send_slack_msg(msg, channel=slack_channel)
         msg += f'Notice linked to Event `{db_event.name}` (ID={db_event.db_id})\n'
         msg += f'- Event is linked to {len(db_event.notices)} notices'
         msg += f' and {len(db_event.surveys)} surveys\n'
-        pending = [p
-                   for survey in db_event.surveys
-                   for p in survey.pointings
-                   if p.status_at_time(time + 1 * u.s) not in ['deleted', 'expired', 'completed']]
-        msg += f'- Event has {len(pending)} pending pointings\n'
+        status_time = time + 1 * u.s
+        scheduled = [
+            t for survey in db_event.surveys for t in survey.targets
+            if t.scheduled_at_time(status_time)
+        ]
+        msg += f'- Event has {len(scheduled)} scheduled targets'
+        running = [
+            p for survey in db_event.surveys for p in survey.pointings
+            if p.status_at_time(status_time) == 'running'
+        ]
+        if len(running) > 0:
+            msg += f' ({len(running)} are currently being observed)'
+        msg += '\n'
 
         # Look at the Survey this Notice is linked to (if any)
         db_survey = db_notice.survey
 
         if db_survey is None:
             # It could be a retraction
-            if notice.strategy is None:
-                if len(pending) == 0:
+            if notice.strategy == 'RETRACTION':
+                # Make sure there are no targets still scheduled (running is fine)
+                if len(scheduled) == 0 or len(scheduled) == len(running):
                     msg += 'Event has been successfully retracted\n'
                 else:
                     msg += '*ERROR: Retraction failed to remove pending pointings*\n'
-                send_slack_msg(msg, channel=slack_channel)
-                return
+                return send_slack_msg(msg, channel=slack_channel)
             else:
                 # Uh-oh, something went wrong when inserting?
                 msg += '*ERROR: No survey found in database*\n'
-                send_slack_msg(msg, channel=slack_channel)
-                return
+                return send_slack_msg(msg, channel=slack_channel)
 
         # We have a Survey in the database, but it might be an old one
         if len(db_survey.notices) > 1 and db_survey.notices[0] != db_notice:
@@ -242,8 +252,7 @@ def send_observing_report(notice, slack_channel=None, time=None):
             msg += f'Notice linked to existing Survey `{db_survey.name}` (ID={db_survey.db_id})\n'
             msg += f'- Survey created from notice {db_survey.notices[0].ivorn}\n'
             msg += '- Event skymap and strategy are unchanged\n'
-            send_slack_msg(msg, channel=slack_channel)
-            return
+            return send_slack_msg(msg, channel=slack_channel)
 
         msg += f'Notice linked to new Survey `{db_survey.name}` (ID={db_survey.db_id})\n'
         msg += f'- Survey contains {len(db_survey.targets)} targets\n'
@@ -276,8 +285,7 @@ def send_observing_report(notice, slack_channel=None, time=None):
         else:
             # Uh-oh, something went wrong when inserting?
             msg += '- *ERROR: No targets found in database*\n'
-        send_slack_msg(msg, channel=slack_channel)
-        return
+        return send_slack_msg(msg, channel=slack_channel)
 
     total_prob = grid.get_probability(survey_tiles)
     msg += f'Total probability in survey tiles: {total_prob:.1%}\n'
@@ -374,5 +382,10 @@ def send_observing_report(notice, slack_channel=None, time=None):
     plt.savefig(filepath)
     plt.close(plt.gcf())
 
-    # Send the message with the plot attached
-    send_slack_msg(msg, filepath=filepath, channel=slack_channel)
+    # Send the message
+    message_link = send_slack_msg(msg, filepath=filepath, channel=slack_channel, return_link=True)
+
+    # If not sent to the default channel, send a copy there too
+    if slack_channel != params.SLACK_DEFAULT_CHANNEL:
+        forward_message = f'<{message_link}|Observing details>'
+        send_slack_msg(forward_message, channel=params.SLACK_DEFAULT_CHANNEL)
