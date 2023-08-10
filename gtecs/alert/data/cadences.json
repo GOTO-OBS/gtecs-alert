@@ -34,6 +34,23 @@
         "rank_change": 10,
         "valid_days": 3
     },
+    "THREE_FIRST": {
+        "num_todo": 3,
+        "wait_hours": 1,
+        "rank_change": 10,
+        "valid_days": 1
+    },
+    "THREE_FIRST_ONE_SECOND_ONE_THIRD": {
+        "num_todo": 5,
+        "wait_hours": [
+            1,
+            1,
+            12,
+            12
+        ],
+        "rank_change": 10,
+        "valid_days": 3
+    },
     "HAMMER_EARLY": {
         "num_todo": 8,
         "wait_hours": 0.25,
@@ -50,6 +67,12 @@
         "delay_days": 0.125,
         "rank_change": 10,
         "valid_days": 2.875
+    },
+    "EARLY_ONLY": {
+        "num_todo": 2,
+        "wait_hours": 1,
+        "rank_change": 10,
+        "valid_days": 0.08333333333333333
     },
     "1H_REPEATED": {
         "num_todo": 99,
