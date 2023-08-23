@@ -168,7 +168,7 @@ def get_slack_channel(notice):
             return get_slack_channel(prev_notice)
         except Exception:
             # Fall back to the other options
-            raise
+            pass  # TODO Should be raise, or at least some logged warning...
     elif notice.strategy == 'IGNORE' and params.SLACK_IGNORED_CHANNEL is not None:
         # Ignored notices are still useful to log on Slack
         return params.SLACK_IGNORED_CHANNEL
