@@ -377,6 +377,8 @@ class GWNotice(GCNNotice):
         url = f'https://gracedb.ligo.org/api/superevents/{event}/voevents/'
         r = requests.get(url)
         data = json.loads(r.content.decode())
+        if 'voevents' not in data:
+            raise ValueError(f'Event {event} not found in GraceDB')
         if number == -1:
             number = len(data['voevents'])
         if number > len(data['voevents']):
