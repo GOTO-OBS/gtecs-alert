@@ -104,10 +104,7 @@
     },
     "GRB_SWIFT": {
         "rank": 207,
-        "cadence": [
-            "HAMMER_EARLY",
-            "FOLLOW_LATE"
-        ],
+        "cadence": "EARLY_ONLY",
         "constraints": "NORMAL",
         "exposure_sets": "4x90L",
         "skymap_contour": 0.95,
@@ -116,7 +113,7 @@
     },
     "GRB_FERMI": {
         "rank": 218,
-        "cadence": "MANY_FIRST_ONE_SECOND",
+        "cadence": "THREE_FIRST",
         "constraints": "NORMAL",
         "exposure_sets": "4x90L",
         "skymap_contour": 0.95,
@@ -125,10 +122,7 @@
     },
     "GRB_FERMI_SHORT": {
         "rank": 210,
-        "cadence": [
-            "HAMMER_EARLY",
-            "FOLLOW_LATE"
-        ],
+        "cadence": "THREE_FIRST_ONE_SECOND_ONE_THIRD",
         "constraints": "NORMAL",
         "exposure_sets": "4x90L",
         "skymap_contour": 0.95,
