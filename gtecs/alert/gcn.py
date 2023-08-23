@@ -3,6 +3,7 @@
 import json
 import os
 import re
+from collections import Counter
 from urllib.parse import quote_plus
 from urllib.request import urlopen
 
@@ -12,13 +13,13 @@ from astropy.utils.data import download_file
 
 from gototile.skymap import SkyMap
 
+from hop.models import VOEvent
+
 import numpy as np
 
 import requests
 
 import voeventdb.remote.apiv1 as vdb
-
-import voeventparse as vp
 
 from .strategy import get_strategy_details
 
@@ -38,15 +39,65 @@ class GCNNotice:
     def __init__(self, payload):
         self.creation_time = Time.now()
 
-        # Load the payload using voeventparse
+        # Load the message payload using the hop class
         self.payload = payload
         try:
-            self.voevent = vp.loads(payload)
+            self.voevent = VOEvent.load(payload)
         except Exception as err:
             raise ValueError('Invalid payload') from err
 
+        # Try to parse notice parameters
+        # Frustratingly, the VOEvent schema allows multiple Params with the same name,
+        # which makes parsing them just a bit more complicated...
+        # It should never come up with GCN notices, so we'll just try making a dict
+        # and raise an error if there are duplicates.
+        # Plus there are grouped params, which may contain 0, 1 or more Params.
+        # And again if they have more than one they might have multiple Params with the same name.
+        # Top-level params
+        if 'Param' not in self.voevent.What:
+            # No params (seems unlikely, but I think it's allowed)
+            self.top_params = None
+        elif isinstance(self.voevent.What['Param'], dict):
+            # Only one param
+            self.top_params = {k: v for k, v in self.voevent.What['Param'].items()
+                               if k != 'name'}
+        else:
+            # Multiple params
+            param_names = [p['name'] for p in self.voevent.What['Param']]
+            duplicates = [name for name, count in Counter(param_names).items() if count > 1]
+            if duplicates:
+                raise ValueError(f'Duplicate Param names found: {duplicates}')
+            self.top_params = {p['name']: {k: v for k, v in p.items() if k != 'name'}
+                               for p in self.voevent.What['Param']}
+        # Grouped params
+        self.group_params = {}
+        if 'Group' in self.voevent.What:
+            for group in self.voevent.What['Group']:
+                if 'name' not in group and 'type' in group:
+                    # Some old (off-spec) GW notices didn't included group names, just types
+                    group['name'] = group['type']
+                group_dict = {k: v for k, v in group.items() if k not in ['name', 'Param']}
+                if 'Param' not in group:
+                    # No params (happens e.g. for GW Bursts - Classification & Properties)
+                    self.group_params[group['name']] = group_dict
+                elif isinstance(group['Param'], dict):
+                    # Only one param
+                    group_dict[group['Param']['name']] = {k: v for k, v in group['Param'].items()
+                                                          if k != 'name'}
+                    self.group_params[group['name']] = group_dict
+                else:
+                    # Multiple params
+                    param_names = [p['name'] for p in group['Param']]
+                    duplicates = [name for name, count in Counter(param_names).items() if count > 1]
+                    if duplicates:
+                        msg = f'Duplicate Param names found in group {group["name"]}: {duplicates}'
+                        raise ValueError(msg)
+                    for p in group['Param']:
+                        group_dict[p['name']] = {k: v for k, v in p.items() if k != 'name'}
+                    self.group_params[group['name']] = group_dict
+
         # Store and format IVORN
-        self.ivorn = self.voevent.attrib['ivorn']
+        self.ivorn = self.voevent.ivorn
         # Using the official IVOA terms (ivo://authorityID/resourceKey#local_ID):
         self.authorityID = self.ivorn.split('/')[2]
         self.resourceKey = self.ivorn.split('/')[3].split('#')[0]
@@ -58,22 +109,23 @@ class GCNNotice:
 
         # Key attributes
         self.source = 'GCN'
-        top_params = vp.get_toplevel_params(self.voevent)
-        self.packet_id = int(top_params['Packet_Type']['value'])
-        self.packet_type = 'unknown'  # Matched to ID in subclasses
-        self.role = self.voevent.attrib['role']
-        self.time = Time(str(self.voevent.Who.Date))
-        self.author = str(self.voevent.Who.Author.contactName)
+        self.role = self.voevent.role
+        self.time = Time(self.voevent.Who['Date'])
+        self.author = self.voevent.Who['Author']['contactName']
         try:
-            self.contact = str(self.voevent.Who.Author.contactEmail)
-        except AttributeError:
+            self.contact = self.voevent.Who['Author']['contactEmail']
+        except KeyError:
             self.contact = None
 
         # Event properties (will mostly be filled by subclasses)
+        self.packet_id = int(self.top_params['Packet_Type']['value'])
+        self.packet_type = 'unknown'  # Matched to ID in subclasses
         self.event_name = None
         self.event_id = None
         try:
-            self.event_time = Time(vp.convenience.get_event_time_as_utc(self.voevent, index=0))
+            event_location = self.voevent.WhereWhen['ObsDataLocation']['ObservationLocation']
+            event_time = event_location['AstroCoords']['Time']['TimeInstant']['ISOTime']
+            self.event_time = Time(event_time)
         except Exception:
             # Some test events don't have times
             self.event_time = None
@@ -217,22 +269,17 @@ class GWNotice(GCNNotice):
         self.event_type = 'GW'
         self.event_source = 'LVC'
 
-        # Get XML param dicts
-        # NB: you can't store these on the class because they're unpickleable.
-        top_params = vp.get_toplevel_params(self.voevent)
-        group_params = vp.get_grouped_params(self.voevent)
-
         # Get info from the VOEvent
         # See https://emfollow.docs.ligo.org/userguide/content.html#notice-contents
-        self.event_id = top_params['GraceID']['value']  # e.g. S190510g
+        self.event_id = self.top_params['GraceID']['value']  # e.g. S190510g
         self.event_name = '{}_{}'.format(self.event_source, self.event_id)  # e.g. LVC_S190510g
-        self.gracedb_url = top_params['EventPage']['value']
-        self.instruments = top_params['Instruments']['value']
-        self.group = top_params['Group']['value']  # CBC or Burst
-        self.pipeline = top_params['Pipeline']['value']
-        self.far = float(top_params['FAR']['value'])  # In Hz
+        self.gracedb_url = self.top_params['EventPage']['value']
+        self.instruments = self.top_params['Instruments']['value']
+        self.group = self.top_params['Group']['value']  # CBC or Burst
+        self.pipeline = self.top_params['Pipeline']['value']
+        self.far = float(self.top_params['FAR']['value'])  # In Hz
         try:
-            self.significant = top_params['Significant']['value'] == '1'
+            self.significant = self.top_params['Significant']['value'] == '1'
         except KeyError:
             # Fallback for older notices that didn't include the significance
             # This uses the "official" definition of 1/month for CBC and 1/year for bursts,
@@ -246,40 +293,35 @@ class GWNotice(GCNNotice):
 
         # Get classification probabilities and properties
         if self.group == 'CBC':
-            try:
-                classification_group = group_params['Classification']
-            except KeyError:
-                # Fallback for older notices that weren't keyed properly
-                for _, group_dict in group_params.allitems():
-                    if 'BNS' in group_dict:
-                        classification_group = group_dict
-            self.classification = {key: float(classification_group[key]['value'])
-                                   for key in classification_group}
-
-            try:
-                properties_group = group_params['Properties']
-            except KeyError:
-                for _, group_dict in group_params.allitems():
-                    if 'HasNS' in group_dict:
-                        properties_group = group_dict
-            self.properties = {key: float(properties_group[key]['value'])
-                               for key in properties_group}
+            classification_group = self.group_params['Classification']
+            self.classification = {k: float(v['value'])
+                                   for k, v in classification_group.items()
+                                   if 'value' in v}
+            properties_group = self.group_params['Properties']
+            self.properties = {k: float(v['value'])
+                               for k, v in properties_group.items()
+                               if 'value' in v}
         else:
             self.classification = None
             self.properties = None
 
         # Get skymap URL
         try:
-            skymap_group = group_params['GW_SKYMAP']
-        except KeyError:
-            for _, group_dict in group_params.allitems():
-                if 'skymap_fits' in group_dict:
-                    skymap_group = group_dict
+            skymap_group = self.group_params['GW_SKYMAP']
+        except KeyError as err:
+            skymap_group = None
+            # Some old notices used the name of the pipeline (e.g. bayestar) instead
+            for group_name in self.group_params:
+                if self.group_params[group_name]['type'] == 'GW_SKYMAP':
+                    skymap_group = self.group_params[group_name]
+                    break
+            if skymap_group is None:
+                raise ValueError('No skymap group found') from err
         self.skymap_url = skymap_group['skymap_fits']['value']
 
         # Get external coincidence, if any
         try:
-            external_group = group_params['External Coincidence']
+            external_group = self.group_params['External Coincidence']
             self.external = {
                 'gcn_notice_id': int(external_group['External_GCN_Notice_Id']['value']),
                 'ivorn': external_group['External_Ivorn']['value'],
@@ -521,14 +563,10 @@ class GWRetractionNotice(GCNNotice):
         self.event_type = 'GW'
         self.event_source = 'LVC'
 
-        # Get XML param dicts
-        # NB: you can't store these on the class because they're unpickleable.
-        top_params = vp.get_toplevel_params(self.voevent)
-
         # Get info from the VOEvent
-        self.event_id = top_params['GraceID']['value']  # e.g. S190510g
+        self.event_id = self.top_params['GraceID']['value']  # e.g. S190510g
         self.event_name = '{}_{}'.format(self.event_source, self.event_id)  # e.g. LVC_S190510g
-        self.gracedb_url = top_params['EventPage']['value']
+        self.gracedb_url = self.top_params['EventPage']['value']
 
     @property
     def strategy(self):
@@ -566,38 +604,33 @@ class GRBNotice(GCNNotice):
         if self.event_source in ['FERMI', 'SWIFT']:
             self.event_source = self.event_source.capitalize()
 
-        # Get XML param dicts
-        # NB: you can't store these on the class because they're unpickleable.
-        top_params = vp.get_toplevel_params(self.voevent)
-        group_params = vp.get_grouped_params(self.voevent)
-
         # Get info from the VOEvent
         try:
-            self.event_id = top_params['TrigID']['value']  # Fermi & Swift
+            self.event_id = self.top_params['TrigID']['value']  # Fermi & Swift
         except KeyError:
-            self.event_id = top_params['Trigger_Number']['value']  # GECAM
+            self.event_id = self.top_params['Trigger_Number']['value']  # GECAM
         self.event_name = '{}_{}'.format(self.event_source, self.event_id)  # e.g. Fermi_579943502
 
         # Source-specific properties
         if self.event_source == 'Fermi':
-            self.properties = {key: group_params['Trigger_ID'][key]['value']
-                               for key in group_params['Trigger_ID']
+            self.properties = {key: self.group_params['Trigger_ID'][key]['value']
+                               for key in self.group_params['Trigger_ID']
                                if key != 'Long_short'}
             try:
-                self.duration = group_params['Trigger_ID']['Long_short']['value']
+                self.duration = self.group_params['Trigger_ID']['Long_short']['value']
             except KeyError:
                 # Some don't have the duration
                 self.duration = 'unknown'
 
         elif self.event_source == 'Swift':
-            self.properties = {key: group_params['Solution_Status'][key]['value']
-                               for key in group_params['Solution_Status']}
+            self.properties = {key: self.group_params['Solution_Status'][key]['value']
+                               for key in self.group_params['Solution_Status']}
             # Throw out events with no star lock
             if self.properties['StarTrack_Lost_Lock'] == 'true':
                 raise ValueError('Bad Swift GRB notice (no star lock)')
 
         elif self.event_source == 'GECAM':
-            self.properties = {'class': top_params['SRC_CLASS']['value']}
+            self.properties = {'class': self.top_params['SRC_CLASS']['value']}
             if self.properties['class'] != 'GRB':
                 raise ValueError('GECAM notice is not a GRB ({})'.format(self.properties['class']))
         else:
@@ -610,9 +643,13 @@ class GRBNotice(GCNNotice):
                 self.properties[key] = False
 
         # Position coordinates & error
-        position = vp.get_event_position(self.voevent)
-        self.position = SkyCoord(ra=position.ra, dec=position.dec, unit=position.units)
-        self.position_error = Angle(position.err, unit=position.units)
+        event_location = self.voevent.WhereWhen['ObsDataLocation']['ObservationLocation']
+        event_position = event_location['AstroCoords']['Position2D']
+        self.position = SkyCoord(ra=float(event_position['Value2']['C1']),
+                                 dec=float(event_position['Value2']['C2']),
+                                 unit=event_position['unit'])
+        self.position_error = Angle(float(event_position['Error2Radius']),
+                                    unit=event_position['unit'])
         if self.event_source == 'Fermi':
             systematic_error = Angle(5.6, unit='deg')
             self.position_error = Angle(np.sqrt(self.position_error ** 2 + systematic_error ** 2),
@@ -622,7 +659,7 @@ class GRBNotice(GCNNotice):
         # Fermi haven't actually updated their alerts to include the URL to the HEALPix skymap,
         # but we can try and create it based on the typical location.
         try:
-            old_url = top_params['LightCurve_URL']['value']
+            old_url = self.top_params['LightCurve_URL']['value']
             skymap_url = old_url.replace('lc_medres34', 'healpix_all').replace('.gif', '.fit')
             self.skymap_url = skymap_url
         except Exception:
@@ -678,20 +715,20 @@ class NUNotice(GCNNotice):
         self.event_type = 'NU'
         self.event_source = 'IceCube'
 
-        # Get XML param dicts
-        # NB: you can't store these on the class because they're unpickleable.
-        top_params = vp.get_toplevel_params(self.voevent)
-
         # Get info from the VOEvent
-        self.event_id = top_params['AMON_ID']['value']  # e.g. 13311922683750
+        self.event_id = self.top_params['AMON_ID']['value']  # e.g. 13311922683750
         self.event_name = '{}_{}'.format(self.event_source, self.event_id)  # e.g. IceCube_133...
-        self.signalness = float(top_params['signalness']['value'])
-        self.far = float(top_params['FAR']['value'])
+        self.signalness = float(self.top_params['signalness']['value'])
+        self.far = float(self.top_params['FAR']['value'])
 
         # Position coordinates & error
-        position = vp.get_event_position(self.voevent)
-        self.position = SkyCoord(ra=position.ra, dec=position.dec, unit=position.units)
-        self.position_error = Angle(position.err, unit=position.units)
+        event_location = self.voevent.WhereWhen['ObsDataLocation']['ObservationLocation']
+        event_position = event_location['AstroCoords']['Position2D']
+        self.position = SkyCoord(ra=float(event_position['Value2']['C1']),
+                                 dec=float(event_position['Value2']['C2']),
+                                 unit=event_position['unit'])
+        self.position_error = Angle(float(event_position['Error2Radius']),
+                                    unit=event_position['unit'])
         if self.packet_type != 'ICECUBE_CASCADE':
             # Systematic error for cascade events is 0
             systematic_error = Angle(0.2, unit='deg')
@@ -699,8 +736,8 @@ class NUNotice(GCNNotice):
                                         unit='deg')
 
         # Get skymap URL
-        if 'skymap_fits' in top_params:
-            self.skymap_url = top_params['skymap_fits']['value']
+        if 'skymap_fits' in self.top_params:
+            self.skymap_url = self.top_params['skymap_fits']['value']
         else:
             self.skymap_url = None
 

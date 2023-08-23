@@ -8,13 +8,12 @@ from astropy.time import Time
 
 from gototile.skymap import SkyMap
 
+from gtecs.alert.gcn import GCNNotice
 from gtecs.common import logging
 from gtecs.common.system import get_pid, make_pid_file
 from gtecs.obs import database as db
 
 import voeventdb.remote.apiv1 as vdb
-
-import voeventparse as vp
 
 
 def get_skymap(log):
@@ -33,16 +32,13 @@ def get_skymap(log):
     except Exception:
         log.error('Failed to check VOEventDB', exc_info=True)
 
-    # 2) Get the payload, extract the skymap url
+    # 2) Get the payload, extract the skymap url (don't download yet)
     try:
         ivorn = notice_list[0]
         log.info('Found the latest LVC notice: {}'.format(ivorn))
         payload = vdb.packet_xml(ivorn)
-        voevent = vp.loads(payload)
-        group_params = vp.get_grouped_params(voevent)
-        for group in group_params:
-            if 'skymap_fits' in group_params[group]:
-                skymap_url = group_params[group]['skymap_fits']['value']
+        notice = GCNNotice.from_payload(payload)
+        skymap_url = notice.skymap_url
         log.info('Extracted sky map url: {}'.format(skymap_url))
     except Exception:
         log.error('Failed to extract sky map url', exc_info=True)
