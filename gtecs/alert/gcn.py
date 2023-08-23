@@ -147,8 +147,11 @@ class GCNNotice:
         for subclass in subclasses:
             try:
                 return subclass(payload)
-            except ValueError:
-                pass
+            except ValueError as err:
+                if 'GCN packet type' in str(err):
+                    pass
+                else:
+                    raise
         return GCNNotice(payload)
 
     @classmethod
