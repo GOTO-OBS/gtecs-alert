@@ -176,7 +176,7 @@ class Notice(Base):
     received : datetime.datetime
         The time the Notice was received.
     payload : bytes
-        The VOEvent XML payload, stored as binary data.
+        The VOEvent payload in JSON format, stored as binary data.
 
     skymap : `gototile.skymap.Skymap`, optional
         The skymap associated with this Notice, if any.

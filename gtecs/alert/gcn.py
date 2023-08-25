@@ -3,6 +3,7 @@
 import json
 import os
 import re
+import xml
 from collections import Counter
 from urllib.parse import quote_plus
 from urllib.request import urlopen
@@ -36,15 +37,14 @@ class GCNNotice:
         - GCNNotice.from_payload()
     """
 
-    def __init__(self, payload):
+    def __init__(self, message):
         self.creation_time = Time.now()
 
-        # Load the message payload using the hop class
-        self.payload = payload
-        try:
-            self.voevent = VOEvent.load(payload)
-        except Exception as err:
-            raise ValueError('Invalid payload') from err
+        # Store the message on the class
+        if not isinstance(message, VOEvent):
+            raise ValueError('Base message should be hop.models.VOEvent')
+        self.voevent = message
+        self.payload = message.serialize()['content']
 
         # Try to parse notice parameters
         # Frustratingly, the VOEvent schema allows multiple Params with the same name,
@@ -141,27 +141,42 @@ class GCNNotice:
         return '{}(ivorn={})'.format(self.__class__.__name__, self.ivorn)
 
     @staticmethod
-    def _get_class(payload):
+    def _get_subclass(message):
         """Get the correct class of notice by trying each subclass."""
         subclasses = [GWNotice, GWRetractionNotice, GRBNotice, NUNotice]
         for subclass in subclasses:
             try:
-                return subclass(payload)
+                return subclass(message)
             except ValueError as err:
                 if 'GCN packet type' in str(err):
                     pass
                 else:
                     raise
-        return GCNNotice(payload)
+        return GCNNotice(message)
 
     @classmethod
-    def from_payload(cls, payload):
-        """Create a GCNNotice (or subclass) from a VOEvent payload."""
-        notice = cls._get_class(payload)
+    def from_message(cls, message):
+        """Create a GCNNotice (or subclass) from a hop.models.VOEvent message."""
+        notice = cls._get_subclass(message)
         if cls != GCNNotice and cls != notice.__class__:
             raise ValueError('Subtype mismatch (`{}` detected)'.format(
                              notice.__class__.__name__
                              ))
+        return notice
+
+    @classmethod
+    def from_payload(cls, payload):
+        """Create a GCNNotice (or subclass) from either an XML or JSON VOEvent payload."""
+        try:
+            message = VOEvent.load(payload)
+            notice = cls.from_message(message)
+            notice._xml_payload = payload  # Store for debugging (notice.payload will be JSON)
+        except xml.parsers.expat.ExpatError:
+            try:
+                message = VOEvent.deserialize(payload)
+                notice = cls.from_message(message)
+            except json.JSONDecodeError:
+                raise ValueError('Could not parse file as either XML or JSON VOEvent')
         return notice
 
     @classmethod
@@ -172,14 +187,14 @@ class GCNNotice:
 
     @classmethod
     def from_url(cls, url):
-        """Create a GCNNotice (or subclass) by downloading the VOEvent XML from the given URL."""
+        """Create a GCNNotice (or subclass) by downloading the VOEvent from the given URL."""
         with urlopen(url) as r:
             payload = r.read()
         return cls.from_payload(payload)
 
     @classmethod
     def from_file(cls, filepath):
-        """Create a GCNNotice (or subclass) by reading a VOEvent XML file."""
+        """Create a GCNNotice (or subclass) by reading a VOEvent file (XML or JSON)."""
         with open(filepath, 'rb') as f:
             payload = f.read()
         return cls.from_payload(payload)
