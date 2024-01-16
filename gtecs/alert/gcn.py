@@ -627,7 +627,7 @@ class GRBNotice(GCNNotice):
         if self.event_source == 'Swift':
             return 'GRB_SWIFT'
         elif self.event_source == 'Fermi':
-            if self.duration.lower() == 'short':
+            if self.duration.lower() in ['short', 'unknown']:  # Safe side for unknown events
                 return 'GRB_FERMI_SHORT'
             else:
                 return 'GRB_FERMI'
