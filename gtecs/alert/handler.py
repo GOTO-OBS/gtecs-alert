@@ -8,7 +8,6 @@ from astropy.time import Time
 from gtecs.obs import database as obs_db
 
 from . import database as alert_db
-from . import params
 from .slack import send_notice_report, send_observing_report, send_slack_msg
 
 
@@ -232,11 +231,11 @@ def add_to_database(notice, time=None, log=None):
                 )
             )
 
-        # Add everything to the database
-        log.debug('Adding {} Targets to the database'.format(len(db_targets)))
-        obs_db.insert_items(session, db_targets)
+            # Add the target to the database (and all related entries)
+            session.add(db_targets[-1])
 
         # Commit changes
+        log.debug('Adding {} Targets to the database'.format(len(db_targets)))
         try:
             session.commit()
         except Exception:
@@ -282,7 +281,7 @@ def handle_notice(notice, send_messages=False, log=None, time=None):
         except Exception as err:
             log.exception('Error sending notice report')
             try:
-                msg = 'Error sending notice report ("{err.__class__.__name__}: {err}")'
+                msg = f'Error sending notice report ("{err.__class__.__name__}: {err}")'
                 send_slack_msg(msg)
             except Exception:
                 log.exception('Error sending error report')
@@ -294,7 +293,7 @@ def handle_notice(notice, send_messages=False, log=None, time=None):
         log.debug('Sending Slack observing report')
         try:
             send_observing_report(notice, time=time)
-        except Exception:
+        except Exception as err:
             log.exception('Error sending observing report')
             try:
                 msg = f'Error sending observing report ("{err.__class__.__name__}: {err}")'
