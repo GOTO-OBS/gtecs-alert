@@ -290,7 +290,7 @@ class GWNotice(GCNNotice):
                 'time_sky_position_coincidence_far':
                     float(external_group['Time_Sky_Position_Coincidence_FAR']['value']),
                 'combined_skymap_url': external_group['joint_skymap_fits']['value'],
-                }
+            }
             # Override the skymap URL with the combined skymap
             self.skymap_url_original = self.skymap_url
             self.skymap_url = self.external['combined_skymap_url']
@@ -553,6 +553,7 @@ class GRBNotice(GCNNotice):
     VALID_PACKET_TYPES = {
         115: 'FERMI_GBM_FIN_POS',
         61: 'SWIFT_BAT_GRB_POS',
+        189: 'GECAM_GND',
     }
 
     def __init__(self, payload):
@@ -561,7 +562,9 @@ class GRBNotice(GCNNotice):
             raise ValueError(f'GCN packet type {self.packet_id} not valid for this class')
         self.packet_type = self.VALID_PACKET_TYPES[self.packet_id]
         self.event_type = 'GRB'
-        self.event_source = self.packet_type.split('_')[0].capitalize()
+        self.event_source = self.packet_type.split('_')[0]
+        if self.event_source in ['FERMI', 'SWIFT']:
+            self.event_source = self.event_source.capitalize()
 
         # Get XML param dicts
         # NB: you can't store these on the class because they're unpickleable.
@@ -569,7 +572,10 @@ class GRBNotice(GCNNotice):
         group_params = vp.get_grouped_params(self.voevent)
 
         # Get info from the VOEvent
-        self.event_id = top_params['TrigID']['value']  # e.g. 579943502
+        try:
+            self.event_id = top_params['TrigID']['value']  # Fermi & Swift
+        except KeyError:
+            self.event_id = top_params['Trigger_Number']['value']  # GECAM
         self.event_name = '{}_{}'.format(self.event_source, self.event_id)  # e.g. Fermi_579943502
         if self.event_source == 'Fermi':
             self.properties = {key: group_params['Trigger_ID'][key]['value']
@@ -583,6 +589,10 @@ class GRBNotice(GCNNotice):
         elif self.event_source == 'Swift':
             self.properties = {key: group_params['Solution_Status'][key]['value']
                                for key in group_params['Solution_Status']}
+        elif self.event_source == 'GECAM':
+            self.properties = {'class': top_params['SRC_CLASS']['value']}
+            if self.properties['class'] != 'GRB':
+                raise ValueError('GECAM notice is not a GRB ({})'.format(self.properties['class']))
         else:
             raise ValueError(f'Unknown GRB source {self.event_source}')
         for key in self.properties:
@@ -621,6 +631,8 @@ class GRBNotice(GCNNotice):
                 return 'GRB_FERMI_SHORT'
             else:
                 return 'GRB_FERMI'
+        elif self.event_source == 'GECAM':
+            return 'GRB_FERMI'  # Just use the default Fermi strategy
         else:
             raise ValueError(f'Unknown GRB source: "{self.event_source}"')
 
