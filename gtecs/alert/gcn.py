@@ -577,6 +577,8 @@ class GRBNotice(GCNNotice):
         except KeyError:
             self.event_id = top_params['Trigger_Number']['value']  # GECAM
         self.event_name = '{}_{}'.format(self.event_source, self.event_id)  # e.g. Fermi_579943502
+
+        # Source-specific properties
         if self.event_source == 'Fermi':
             self.properties = {key: group_params['Trigger_ID'][key]['value']
                                for key in group_params['Trigger_ID']
@@ -586,15 +588,21 @@ class GRBNotice(GCNNotice):
             except KeyError:
                 # Some don't have the duration
                 self.duration = 'unknown'
+
         elif self.event_source == 'Swift':
             self.properties = {key: group_params['Solution_Status'][key]['value']
                                for key in group_params['Solution_Status']}
+            # Throw out events with no star lock
+            if self.properties['StarTrack_Lost_Lock'] == 'true':
+                raise ValueError('Bad Swift GRB notice (no star lock)')
+
         elif self.event_source == 'GECAM':
             self.properties = {'class': top_params['SRC_CLASS']['value']}
             if self.properties['class'] != 'GRB':
                 raise ValueError('GECAM notice is not a GRB ({})'.format(self.properties['class']))
         else:
             raise ValueError(f'Unknown GRB source {self.event_source}')
+
         for key in self.properties:
             if self.properties[key] == 'true':
                 self.properties[key] = True
