@@ -70,9 +70,9 @@ def query(command, args):
 
     elif command == 'topics':
         with Pyro4.Proxy(params.PYRO_URI) as proxy:
-            topics = proxy.get_kafka_topics()
-        for topic in topics:
-            print(topic)
+            available, requested = proxy.get_kafka_topics()
+        for topic in available:
+            print(topic + (' (subscribed)' if topic in requested else ''))
 
     else:
         print('ERROR: Unrecognized command "{}"'.format(command))

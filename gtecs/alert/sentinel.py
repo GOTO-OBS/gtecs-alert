@@ -1,6 +1,7 @@
 """Class for listening for GCN alert notices."""
 
 import itertools
+import json
 import socket
 import sys
 import threading
@@ -12,9 +13,10 @@ import Pyro4
 
 import gcn.voeventclient as pygcn
 
-from gcn_kafka import Consumer
-
 from gtecs.common import logging
+
+from hop.auth import Auth
+from hop.io import Stream
 
 from . import params
 from .gcn import GCNNotice
@@ -49,10 +51,9 @@ class Sentinel:
         self.running = True
 
         # Start threads
-        if params.KAFKA_CLIENT_ID != 'unknown':  # TODO: Switch, or even have multiple?
-            t1 = threading.Thread(target=self._kafka_listener_thread)
-        else:
-            t1 = threading.Thread(target=self._socket_listener_thread)
+        # TODO: Switch between socket & kafka, or even have both (as a backup)?
+        t1 = threading.Thread(target=self._kafka_listener_thread)
+        # t1 = threading.Thread(target=self._socket_listener_thread)
         t1.daemon = True
         t1.start()
 
@@ -173,9 +174,9 @@ class Sentinel:
         return
 
     def _kafka_listener_thread(self):
-        """Connect to a Kafka server and listen for notices.
+        """Connect to a Kafka server via SCiMMA HOPSKOTCH and listen for notices.
 
-        This uses GCN Kafka (https://github.com/nasa-gcn/gcn-kafka-python) which is built around
+        This uses the Hop client (https://github.com/scimma/hop-client) which is built around
         Confluent Kafka (https://github.com/confluentinc/confluent-kafka-python).
 
         """
@@ -183,37 +184,49 @@ class Sentinel:
 
         # This first while loop means the connection will be recreated if it fails.
         while self.running:
-            # Create a Kafka Consumer
-            consumer = Consumer(client_id=params.KAFKA_CLIENT_ID,
-                                client_secret=params.KAFKA_CLIENT_SECRET
-                                )
-
-            # Subscribe to any notices we want
-            # TODO: Also params? Or we could get from the subclasses?
-            #       For now just subscribe to everything...
-            self.kafka_topics = [t for t in sorted(consumer.list_topics().topics.keys())
-                                 if 'voevent' in t]
-            consumer.subscribe(self.kafka_topics)
+            # Create a Kafka stream
+            auth = Auth(user=params.KAFKA_USER, password=params.KAFKA_PASSWORD)
+            stream = Stream(auth=auth)
 
             # This second loop will monitor the connection
+            self.latest_heartbeat = 0
+            self.heartbeat_timeout = 60
             try:
-                while self.running:
-                    msg = consumer.poll(1.0)
-                    if msg is None:
-                        # self.log.info('Waiting...')
-                        continue
-                    if msg.error():
-                        self.log.error(msg.error())
+                if not params.KAFKA_HOST.endswith('/'):
+                    params.KAFKA_HOST += '/'
+                url = 'kafka://' + params.KAFKA_HOST + ','.join(params.KAFKA_TOPICS)
+                self.log.debug(f'Connecting to Kafka at {url}')
+                consumer = stream.open(url, mode='r')
+
+                # Save the available topics
+                self.kafka_topics = [
+                    t for t in sorted(consumer._consumer._consumer.list_topics().topics.keys())
+                ]
+
+                for payload, metadata in consumer.read_raw(metadata=True, autocommit=True):
+                    if not self.running:
+                        break
+                    if (self.latest_heartbeat and
+                            time.time() - self.latest_heartbeat > self.heartbeat_timeout):
+                        raise TimeoutError(f'No heartbeat in {self.heartbeat_timeout}s')
+
+                    if metadata.topic == 'sys.heartbeat':
+                        msg = json.loads(payload)['content']
+                        self.latest_heartbeat = msg['timestamp'] / 10**6
                     else:
                         # Add to the queue
-                        payload = msg.value()
                         notice = GCNNotice.from_payload(payload)
                         self.log.debug(f'Received GCN notice: {notice.ivorn}')
                         self.notice_queue.append(notice)
             except KeyboardInterrupt:
+                self.log.info('Interrupt detected')
                 pass
-            except Exception:
+            except Exception as err:
                 self.log.exception('Error in alert listener')
+                self.log.debug('', exc_info=True)
+                msg = 'Sentinel reports ERROR in alert listener'
+                msg += f' ("{err.__class__.__name__}: {err}")'
+                send_slack_msg(msg)
             finally:
                 # Either the listener failed or self.running has been set to False
                 # Make sure the connection is closed nicely
@@ -340,7 +353,9 @@ class Sentinel:
     def get_kafka_topics(self):
         """Return a list of subscribed topics."""
         if hasattr(self, 'kafka_topics'):
-            return self.kafka_topics
+            return self.kafka_topics, params.KAFKA_TOPICS
+        else:
+            return [], params.KAFKA_TOPICS
 
     def get_latest_notice(self):
         """Return the last processed notice."""
