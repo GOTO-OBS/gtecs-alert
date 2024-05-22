@@ -72,7 +72,12 @@ class GCNNotice:
         # Grouped params
         self.group_params = {}
         if 'Group' in self.voevent.What:
-            for group in self.voevent.What['Group']:
+            if isinstance(self.voevent.What['Group'], dict):
+                # only a single group, should be a list of
+                groups = [self.voevent.What['Group']]
+            else:
+                groups = self.voevent.What['Group']
+            for group in groups:
                 if 'name' not in group and 'type' in group:
                     # Some old (off-spec) GW notices didn't included group names, just types
                     group['name'] = group['type']
