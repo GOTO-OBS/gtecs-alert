@@ -113,7 +113,7 @@ class Sentinel:
         self.log.info('Alert listener thread started')
 
         # Define basic handler function to create a GCNNotice instance and add it to the queue
-        def _handler(payload, root):
+        def _handler(payload, _root):
             notice = GCNNotice.from_payload(payload)
             self.notice_queue.append(notice)
 
@@ -194,8 +194,9 @@ class Sentinel:
             try:
                 if not params.KAFKA_HOST.endswith('/'):
                     params.KAFKA_HOST += '/'
-                url = 'kafka://' + params.KAFKA_HOST + ','.join(params.KAFKA_TOPICS)
-                self.log.debug(f'Connecting to Kafka at {url}')
+                topics = ['sys.heartbeat'] + params.KAFKA_TOPICS
+                url = 'kafka://' + params.KAFKA_HOST + ','.join(topics)
+                self.log.info(f'Connecting to Kafka at {url}')
                 consumer = stream.open(url, mode='r')
 
                 # Save the available topics
