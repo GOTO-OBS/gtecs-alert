@@ -25,6 +25,12 @@ import voeventdb.remote.apiv1 as vdb
 from .strategy import get_strategy_details
 
 
+class InvalidNoticeError(Exception):
+    """Exception raised for invalid GCN notices."""
+
+    pass
+
+
 class GCNNotice:
     """A class to represent a single GCN notice using the VOEvent protocol.
 
@@ -152,11 +158,10 @@ class GCNNotice:
         for subclass in subclasses:
             try:
                 return subclass(message)
-            except ValueError as err:
-                if 'GCN packet type' in str(err):
-                    pass
-                else:
-                    raise
+            except InvalidNoticeError:
+                # This subclass doesn't match the message, try the next one
+                pass
+        # If we get here then no subclass matched, so return the base class
         return GCNNotice(message)
 
     @classmethod
@@ -289,7 +294,7 @@ class GWNotice(GCNNotice):
     def __init__(self, payload):
         super().__init__(payload)
         if self.packet_id not in self.VALID_PACKET_TYPES:
-            raise ValueError(f'GCN packet type {self.packet_id} not valid for this class')
+            raise InvalidNoticeError(f'GCN packet type {self.packet_id} not valid for this class')
         self.packet_type = self.VALID_PACKET_TYPES[self.packet_id]
         self.event_type = 'GW'
         self.event_source = 'LVC'
@@ -585,7 +590,7 @@ class GWRetractionNotice(GCNNotice):
     def __init__(self, payload):
         super().__init__(payload)
         if self.packet_id not in self.VALID_PACKET_TYPES:
-            raise ValueError(f'GCN packet type {self.packet_id} not valid for this class')
+            raise InvalidNoticeError(f'GCN packet type {self.packet_id} not valid for this class')
         self.packet_type = self.VALID_PACKET_TYPES[self.packet_id]
         self.event_type = 'GW'
         self.event_source = 'LVC'
@@ -624,7 +629,7 @@ class GRBNotice(GCNNotice):
     def __init__(self, payload):
         super().__init__(payload)
         if self.packet_id not in self.VALID_PACKET_TYPES:
-            raise ValueError(f'GCN packet type {self.packet_id} not valid for this class')
+            raise InvalidNoticeError(f'GCN packet type {self.packet_id} not valid for this class')
         self.packet_type = self.VALID_PACKET_TYPES[self.packet_id]
         self.event_type = 'GRB'
         self.event_source = self.packet_type.split('_')[0]
@@ -654,14 +659,15 @@ class GRBNotice(GCNNotice):
                                for key in self.group_params['Solution_Status']}
             # Throw out events with no star lock
             if self.properties['StarTrack_Lost_Lock'] == 'true':
-                raise ValueError('Bad Swift GRB notice (no star lock)')
+                raise InvalidNoticeError('Bad Swift GRB notice (no star lock)')
 
         elif self.event_source == 'GECAM':
             self.properties = {'class': self.top_params['SRC_CLASS']['value']}
             if self.properties['class'] != 'GRB':
-                raise ValueError('GECAM notice is not a GRB ({})'.format(self.properties['class']))
+                msg = 'GECAM notice is not a GRB ({})'.format(self.properties['class'])
+                raise InvalidNoticeError(msg)
         else:
-            raise ValueError(f'Unknown GRB source {self.event_source}')
+            raise InvalidNoticeError(f'Unknown GRB source {self.event_source}')
 
         for key in self.properties:
             if self.properties[key] == 'true':
@@ -737,7 +743,7 @@ class NUNotice(GCNNotice):
     def __init__(self, payload):
         super().__init__(payload)
         if self.packet_id not in self.VALID_PACKET_TYPES:
-            raise ValueError(f'GCN packet type {self.packet_id} not valid for this class')
+            raise InvalidNoticeError(f'GCN packet type {self.packet_id} not valid for this class')
         self.packet_type = self.VALID_PACKET_TYPES[self.packet_id]
         self.event_type = 'NU'
         self.event_source = 'IceCube'
