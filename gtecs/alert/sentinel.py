@@ -188,8 +188,8 @@ class Sentinel:
             auth = Auth(user=params.KAFKA_USER, password=params.KAFKA_PASSWORD)
             stream = Stream(auth=auth)
 
-            # This second loop will monitor the connection
-            self.latest_heartbeat = 0
+            # Now we connect to the stream and start reading messages
+            self.latest_message = 0
             self.heartbeat_timeout = 60
             try:
                 topics = ['sys.heartbeat'] + params.KAFKA_TOPICS
@@ -203,16 +203,16 @@ class Sentinel:
                 ]
 
                 for payload, metadata in consumer.read_raw(metadata=True, autocommit=True):
+                    # Because of the sys.heartbeat messages we should be getting a message every
+                    # few seconds, so we can use this timestamp to check if we're still connected.
                     if not self.running:
                         break
-                    if (self.latest_heartbeat and
-                            time.time() - self.latest_heartbeat > self.heartbeat_timeout):
+                    if (self.latest_message and
+                            time.time() - self.latest_message > self.heartbeat_timeout):
                         raise TimeoutError(f'No heartbeat in {self.heartbeat_timeout}s')
+                    self.latest_message = time.time()
 
-                    if metadata.topic == 'sys.heartbeat':
-                        msg = json.loads(payload)['content']
-                        self.latest_heartbeat = msg['timestamp'] / 10**6
-                    else:
+                    if metadata.topic != 'sys.heartbeat':
                         # Add to the queue
                         try:
                             notice = GCNNotice.from_payload(payload)
