@@ -214,7 +214,12 @@ class Sentinel:
                         self.latest_heartbeat = msg['timestamp'] / 10**6
                     else:
                         # Add to the queue
-                        notice = GCNNotice.from_payload(payload)
+                        try:
+                            notice = GCNNotice.from_payload(payload)
+                        except Exception as err:
+                            self.log.error(f'Error creating GCN notice: {err}')
+                            self.log.debug(f'Payload: {payload}')
+                            self.log.debug('', exc_info=True)
                         self.log.debug(f'Received GCN notice: {notice.ivorn}')
                         self.notice_queue.append(notice)
             except KeyboardInterrupt:
