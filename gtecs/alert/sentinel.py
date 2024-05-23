@@ -192,10 +192,8 @@ class Sentinel:
             self.latest_heartbeat = 0
             self.heartbeat_timeout = 60
             try:
-                if not params.KAFKA_HOST.endswith('/'):
-                    params.KAFKA_HOST += '/'
                 topics = ['sys.heartbeat'] + params.KAFKA_TOPICS
-                url = 'kafka://' + params.KAFKA_HOST + ','.join(topics)
+                url = 'kafka://kafka.scimma.org/' + ','.join(topics)
                 self.log.info(f'Connecting to Kafka at {url}')
                 consumer = stream.open(url, mode='r')
 
