@@ -173,16 +173,18 @@ class GCNNotice:
     def from_payload(cls, payload):
         """Create a GCNNotice (or subclass) from either an XML or JSON VOEvent payload."""
         try:
+            message = VOEvent.deserialize(payload)
+            notice = cls.from_message(message)
+            return notice
+        except json.JSONDecodeError:
+            pass  # We'll try XML parsing instead
+        try:
             message = VOEvent.load(payload)
             notice = cls.from_message(message)
             notice._xml_payload = payload  # Store for debugging (notice.payload will be JSON)
+            return notice
         except xml.parsers.expat.ExpatError:
-            try:
-                message = VOEvent.deserialize(payload)
-                notice = cls.from_message(message)
-            except json.JSONDecodeError:
-                raise ValueError('Could not parse file as either XML or JSON VOEvent')
-        return notice
+            raise ValueError('Could not parse file as either XML or JSON VOEvent')
 
     @classmethod
     def from_ivorn(cls, ivorn):
