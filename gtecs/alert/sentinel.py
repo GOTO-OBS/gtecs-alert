@@ -1,7 +1,6 @@
 """Class for listening for GCN alert notices."""
 
 import itertools
-import json
 import socket
 import sys
 import threading
@@ -16,11 +15,11 @@ import gcn.voeventclient as pygcn
 from gtecs.common import logging
 
 from hop.auth import Auth
-from hop.io import Stream
+from hop.io import StartPosition, Stream
 
 from . import params
 from .gcn import GCNNotice
-from .handler import handle_notice
+from .handler import already_in_database, handle_notice
 from .slack import send_slack_msg
 
 
@@ -186,7 +185,31 @@ class Sentinel:
         while self.running:
             # Create a Kafka stream
             auth = Auth(user=params.KAFKA_USER, password=params.KAFKA_PASSWORD)
-            stream = Stream(auth=auth)
+            group_id = auth.username + '-' + params.KAFKA_GROUP_ID
+            if params.KAFKA_BACKDATE:
+                self.log.debug('Starting Kafka stream from earliest message')
+                start_position = StartPosition.EARLIEST
+                # # NB it would be great to backdate to a specific time as below.
+                # # It was added in https://github.com/astronomy-commons/adc-streaming/pull/65
+                # # but it doesn't seem to be implemented in hop-client yet.
+                # start_position = datetime.now() - timedelta(hours=12)
+
+                # Kafka is great, but we ask for the heartbeat topic to make sure we're connected.
+                # If we backdate with a new group ID we'll get weeks and weeks of heartbeat
+                # messages, which is very annoying.
+                # So instead we'll sneaky read the latest heartbeat message right now.
+                # That gives the starting point for that topic, so when we start the stream below
+                # it'll only have to handle a few seconds of heartbeat messages rather than weeks.
+                url = 'kafka://kafka.scimma.org/sys.heartbeat'
+                stream = Stream(auth=auth, start_at=StartPosition.LATEST, until_eos=True)
+                consumer = stream.open(url, mode='r', group_id=group_id)
+                for payload, metadata in consumer.read_raw(metadata=True, autocommit=True):
+                    if metadata.topic == 'sys.heartbeat':
+                        break
+            else:
+                self.log.debug('Starting Kafka stream from latest message')
+                start_position = StartPosition.LATEST
+            stream = Stream(auth=auth, start_at=start_position, until_eos=False)
 
             # Now we connect to the stream and start reading messages
             self.latest_message = 0
@@ -194,8 +217,8 @@ class Sentinel:
             try:
                 topics = ['sys.heartbeat'] + params.KAFKA_TOPICS
                 url = 'kafka://kafka.scimma.org/' + ','.join(topics)
-                self.log.info(f'Connecting to Kafka at {url}')
-                consumer = stream.open(url, mode='r')
+                self.log.info(f'Connecting to Kafka stream at {url}')
+                consumer = stream.open(url, mode='r', group_id=group_id)
 
                 # Save the available topics
                 self.kafka_topics = [
@@ -220,8 +243,14 @@ class Sentinel:
                             self.log.error(f'Error creating GCN notice: {err}')
                             self.log.debug(f'Payload: {payload}')
                             self.log.debug('', exc_info=True)
+                            # TODO: We could mark the message as unread if there's an error
+                            # by using auto_commit=False.
+                            # But the main processing is in the handler thread, so we won't know
+                            # if that fails until it's too late.
                         self.log.debug(f'Received GCN notice: {notice.ivorn}')
                         self.notice_queue.append(notice)
+                self.log.info('End of Kafka stream')
+
             except KeyboardInterrupt:
                 self.log.info('Interrupt detected')
                 pass
@@ -265,6 +294,9 @@ class Sentinel:
                     elif notice.role in self.ignored_roles:
                         self.log.debug(f'Ignoring {notice.role} notice')
                         continue
+                    elif already_in_database(notice):
+                        self.log.debug('Ignoring already processed notice')
+                        continue
 
                     send_slack_msg(f'Sentinel processing new notice ({notice.ivorn})')
                     handle_notice(notice, send_messages=params.ENABLE_SLACK, log=self.log)
@@ -285,7 +317,9 @@ class Sentinel:
                             t.start()
 
                 except Exception as err:
-                    self.log.exception('Error handling notice')
+                    self.log.error('Error handling notice')
+                    self.log.debug(f'Payload: {notice.payload}')
+                    self.log.debug('', exc_info=True)
                     msg = 'Sentinel reports ERROR handling notice'
                     msg += f' ("{err.__class__.__name__}: {err}")'
                     send_slack_msg(msg)
@@ -361,9 +395,12 @@ class Sentinel:
         else:
             return [], params.KAFKA_TOPICS
 
-    def get_latest_notice(self):
-        """Return the last processed notice."""
-        return self.latest_notice
+    def get_queue(self):
+        """Return the current notice queue."""
+        # Note: this is a list of IVORNs, not the full notice objects.
+        # The GCNNotice objects are not serializable.
+        # We could return raw payloads I guess...
+        return [notice.ivorn for notice in self.notice_queue]
 
 
 def run():

@@ -11,6 +11,17 @@ from . import database as alert_db
 from .slack import send_notice_report, send_observing_report, send_slack_msg
 
 
+def already_in_database(notice):
+    """Check if the given notice already exists in the alert database."""
+    with alert_db.session_manager() as session:
+        query = session.query(alert_db.Notice)
+        query = query.filter(alert_db.Notice.ivorn == notice.ivorn)
+        db_notice = query.one_or_none()
+        if db_notice is not None:
+            return True
+    return False
+
+
 def add_to_database(notice, time=None, log=None):
     """Add entries for this notice into the database(s)."""
     if time is None:
@@ -271,6 +282,12 @@ def handle_notice(notice, send_messages=False, log=None, time=None):
         time = Time.now()
 
     log.info('Handling notice {}'.format(notice.ivorn))
+
+    # Check if the notice is already in the database.
+    # Do this before fetching the skymap to save time.
+    if already_in_database(notice):
+        log.info('Notice already in the alert database')
+        return
 
     log.info('Fetching skymap')
     notice.get_skymap()
