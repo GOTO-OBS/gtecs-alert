@@ -51,7 +51,17 @@ class Sentinel:
 
         # Start threads
         # TODO: Switch between socket & kafka, or even have both (as a backup)?
-        t1 = threading.Thread(target=self._kafka_listener_thread)
+        t1 = threading.Thread(
+            target=self._kafka_listener_thread,
+            args=(
+                params.KAFKA_USER,
+                params.KAFKA_PASSWORD,
+                params.KAFKA_BROKER,
+                params.KAFKA_TOPICS,
+                params.KAFKA_GROUP_ID,
+                params.KAFKA_BACKDATE,
+            ),
+        )
         # t1 = threading.Thread(target=self._socket_listener_thread)
         t1.daemon = True
         t1.start()
@@ -172,7 +182,15 @@ class Sentinel:
         self.log.info('Alert listener thread stopped')
         return
 
-    def _kafka_listener_thread(self):
+    def _kafka_listener_thread(
+            self,
+            user,
+            password,
+            broker='SCIMMA',
+            topics=None,
+            group_id=None,
+            backdate=False,
+    ):
         """Connect to a Kafka server via SCiMMA HOPSKOTCH and listen for notices.
 
         This uses the Hop client (https://github.com/scimma/hop-client) which is built around
@@ -181,12 +199,19 @@ class Sentinel:
         """
         self.log.info('Alert listener thread started')
 
+        if broker == 'SCIMMA':
+            broker_url = 'kafka://kafka.scimma.org/'
+        elif broker == 'NASA':
+            broker_url = 'kafka://kafka.gcn.nasa.gov/'
+        else:
+            raise ValueError('Broker must be "SCIMMA" or "NASA"')
+
         # This first while loop means the connection will be recreated if it fails.
         while self.running:
             # Create a Kafka stream
-            auth = Auth(user=params.KAFKA_USER, password=params.KAFKA_PASSWORD)
-            group_id = auth.username + '-' + params.KAFKA_GROUP_ID
-            if params.KAFKA_BACKDATE:
+            auth = Auth(user=user, password=password)
+            group_id = auth.username + '-' + group_id
+            if backdate:
                 self.log.debug('Starting Kafka stream from earliest message')
                 start_position = StartPosition.EARLIEST
                 # # NB it would be great to backdate to a specific time as below.
@@ -194,29 +219,35 @@ class Sentinel:
                 # # but it doesn't seem to be implemented in hop-client yet.
                 # start_position = datetime.now() - timedelta(hours=12)
 
-                # Kafka is great, but we ask for the heartbeat topic to make sure we're connected.
-                # If we backdate with a new group ID we'll get weeks and weeks of heartbeat
-                # messages, which is very annoying.
-                # So instead we'll sneaky read the latest heartbeat message right now.
-                # That gives the starting point for that topic, so when we start the stream below
-                # it'll only have to handle a few seconds of heartbeat messages rather than weeks.
-                url = 'kafka://kafka.scimma.org/sys.heartbeat'
-                stream = Stream(auth=auth, start_at=StartPosition.LATEST, until_eos=True)
-                consumer = stream.open(url, mode='r', group_id=group_id)
-                for payload, metadata in consumer.read_raw(metadata=True, autocommit=True):
-                    if metadata.topic == 'sys.heartbeat':
-                        break
+                if broker == 'SCIMMA':
+                    # One of the advantages of the SCIMMA broker is monitoring the heartbeat topic
+                    # to make sure we're connected.
+                    # However, if we backdate with a new group ID we'll get weeks and weeks of
+                    # heartbeat messages, which is very annoying.
+                    # So instead we'll sneaky read the latest heartbeat message right now.
+                    # That gives the starting point for that topic, so when we start the stream
+                    # below it'll only have to handle a few seconds of heartbeat messages
+                    # rather than weeks.
+                    url = broker_url + 'sys.heartbeat'
+                    stream = Stream(auth=auth, start_at=StartPosition.LATEST, until_eos=True)
+                    consumer = stream.open(url, mode='r', group_id=group_id)
+                    for payload, metadata in consumer.read_raw(metadata=True, autocommit=True):
+                        if metadata.topic == 'sys.heartbeat':
+                            break
             else:
                 self.log.debug('Starting Kafka stream from latest message')
                 start_position = StartPosition.LATEST
             stream = Stream(auth=auth, start_at=start_position, until_eos=False)
 
             # Now we connect to the stream and start reading messages
-            self.latest_message = 0
-            self.heartbeat_timeout = 60
             try:
-                topics = ['sys.heartbeat'] + params.KAFKA_TOPICS
-                url = 'kafka://kafka.scimma.org/' + ','.join(topics)
+                if broker == 'SCIMMA':
+                    # We can use the system heartbeat to check if we're still connected
+                    topics = ['sys.heartbeat'] + topics
+                    heartbeat_timeout = 60
+                    latest_message_time = 0
+
+                url = broker_url + ','.join(topics)
                 self.log.info(f'Connecting to Kafka stream at {url}')
                 consumer = stream.open(url, mode='r', group_id=group_id)
 
@@ -226,29 +257,35 @@ class Sentinel:
                 ]
 
                 for payload, metadata in consumer.read_raw(metadata=True, autocommit=True):
-                    # Because of the sys.heartbeat messages we should be getting a message every
-                    # few seconds, so we can use this timestamp to check if we're still connected.
                     if not self.running:
                         break
-                    if (self.latest_message and
-                            time.time() - self.latest_message > self.heartbeat_timeout):
-                        raise TimeoutError(f'No heartbeat in {self.heartbeat_timeout}s')
-                    self.latest_message = time.time()
 
-                    if metadata.topic != 'sys.heartbeat':
-                        # Add to the queue
-                        try:
-                            notice = GCNNotice.from_payload(payload)
-                        except Exception as err:
-                            self.log.error(f'Error creating GCN notice: {err}')
-                            self.log.debug(f'Payload: {payload}')
-                            self.log.debug('', exc_info=True)
-                            # TODO: We could mark the message as unread if there's an error
-                            # by using auto_commit=False.
-                            # But the main processing is in the handler thread, so we won't know
-                            # if that fails until it's too late.
-                        self.log.debug(f'Received GCN notice: {notice.ivorn}')
-                        self.notice_queue.append(notice)
+                    if broker == 'SCIMMA':
+                        # Because of the sys.heartbeat messages we should be getting a message
+                        # every few seconds, so we can use this timestamp to check if we're
+                        # still connected.
+                        if (latest_message_time and
+                                time.time() - latest_message_time > heartbeat_timeout):
+                            raise TimeoutError(f'No heartbeat in {heartbeat_timeout}s')
+                        latest_message_time = time.time()
+
+                        if metadata.topic == 'sys.heartbeat':
+                            # No need to process heartbeat messages
+                            continue
+
+                    # Create the notice and add it to the queue
+                    try:
+                        notice = GCNNotice.from_payload(payload)
+                    except Exception as err:
+                        self.log.error(f'Error creating GCN notice: {err}')
+                        self.log.debug(f'Payload: {payload}')
+                        self.log.debug('', exc_info=True)
+                        # TODO: We could mark the message as unread if there's an error
+                        # by using auto_commit=False.
+                        # But the main processing is in the handler thread, so we won't know
+                        # if that fails until it's too late.
+                    self.log.debug(f'Received GCN notice: {notice.ivorn}')
+                    self.notice_queue.append(notice)
                 self.log.info('End of Kafka stream')
 
             except KeyboardInterrupt:

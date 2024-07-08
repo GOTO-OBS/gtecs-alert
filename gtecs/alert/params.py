@@ -37,9 +37,10 @@ VOSERVER_HOST = config['VOSERVER_HOST']
 VOSERVER_PORT = config['VOSERVER_PORT']
 KAFKA_USER = config['KAFKA_USER']
 KAFKA_PASSWORD = config['KAFKA_PASSWORD']
+KAFKA_BROKER = config['KAFKA_BROKER']
 KAFKA_TOPICS = config['KAFKA_TOPICS']
-KAFKA_BACKDATE = config['KAFKA_BACKDATE']
 KAFKA_GROUP_ID = config['KAFKA_GROUP_ID']
+KAFKA_BACKDATE = config['KAFKA_BACKDATE']
 
 # Filter parameters
 # TODO: Couldn't this be a switchable flag within the sentinel?
