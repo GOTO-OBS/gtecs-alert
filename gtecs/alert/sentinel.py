@@ -302,6 +302,9 @@ class Sentinel:
                 # Make sure the connection is closed nicely
                 try:
                     consumer.close()
+                except UnboundLocalError:
+                    # Consumer was never created, e.g. we couldn't connect to the broker
+                    pass
                 except Exception:
                     self.log.error('Could not close consumer')
                     self.log.debug('', exc_info=True)
