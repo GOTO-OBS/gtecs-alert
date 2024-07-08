@@ -276,6 +276,8 @@ class Sentinel:
                     # Create the notice and add it to the queue
                     try:
                         notice = GCNNotice.from_payload(payload)
+                        self.log.debug(f'Received GCN notice: {notice.ivorn}')
+                        self.notice_queue.append(notice)
                     except Exception as err:
                         self.log.error(f'Error creating GCN notice: {err}')
                         self.log.debug(f'Payload: {payload}')
@@ -284,8 +286,6 @@ class Sentinel:
                         # by using auto_commit=False.
                         # But the main processing is in the handler thread, so we won't know
                         # if that fails until it's too late.
-                    self.log.debug(f'Received GCN notice: {notice.ivorn}')
-                    self.notice_queue.append(notice)
                 self.log.info('End of Kafka stream')
 
             except KeyboardInterrupt:
