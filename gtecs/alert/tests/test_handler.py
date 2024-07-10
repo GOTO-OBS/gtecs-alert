@@ -6,7 +6,7 @@ import importlib.resources as pkg_resources
 from astropy import units as u
 
 from gtecs.alert import params
-from gtecs.alert.notices import GCNNotice
+from gtecs.alert.notices import Notice
 from gtecs.alert.handler import handle_notice
 
 
@@ -22,5 +22,5 @@ if __name__ == '__main__':
         print('~~~~~~~~~~~~~~~')
         with pkg_resources.path('gtecs.alert.data.test_notices', test_file) as f:
             print(f'Loading {f}')
-            notice = GCNNotice.from_file(f)
+            notice = Notice.from_file(f)
         handle_notice(notice, send_messages=params.ENABLE_SLACK, time=notice.time + 60 * u.s)

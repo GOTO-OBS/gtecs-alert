@@ -8,7 +8,7 @@ from astropy.time import Time
 
 from gototile.skymap import SkyMap
 
-from gtecs.alert.notices import GCNNotice
+from gtecs.alert.notices import Notice
 from gtecs.common import logging
 from gtecs.common.system import get_pid, make_pid_file
 from gtecs.obs import database as db
@@ -19,7 +19,7 @@ import voeventdb.remote.apiv1 as vdb
 def get_skymap(log):
     """Try and get the LVC sky map."""
     # 1) Check the archive for the latest notice
-    log.info('Checking for LVC GCN notices in the 4pisky database...')
+    log.info('Checking for LVC notices in the 4pisky database...')
     try:
         notice_list = vdb.list_ivorn(
             filters={vdb.FilterKeys.role: 'observation',
@@ -37,7 +37,7 @@ def get_skymap(log):
         ivorn = notice_list[0]
         log.info('Found the latest LVC notice: {}'.format(ivorn))
         payload = vdb.packet_xml(ivorn)
-        notice = GCNNotice.from_payload(payload)
+        notice = Notice.from_payload(payload)
         skymap_url = notice.skymap_url
         log.info('Extracted sky map url: {}'.format(skymap_url))
     except Exception:

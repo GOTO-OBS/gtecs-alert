@@ -4,7 +4,7 @@
 import importlib.resources as pkg_resources
 
 from gtecs.alert import database as db
-from gtecs.alert.notices import GCNNotice
+from gtecs.alert.notices import Notice
 
 
 if __name__ == '__main__':
@@ -20,7 +20,7 @@ if __name__ == '__main__':
         print('Adding to database')
         with pkg_resources.path('gtecs.alert.data.test_notices', test_file) as f:
             print(f'Loading {f}')
-            notice = GCNNotice.from_file(f)
+            notice = Notice.from_file(f)
         notice.get_skymap()
         with db.session_manager() as session:
             db_notice = db.Notice.from_gcn(notice)

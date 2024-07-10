@@ -256,11 +256,11 @@ def add_to_database(notice, time=None, log=None):
 
 
 def handle_notice(notice, send_messages=False, log=None, time=None):
-    """Handle a new GCN notice.
+    """Handle a new transient notice.
 
     Parameters
     ----------
-    notice : `gtecs.alert.notices.GCNNotice` or subclass
+    notice : `gtecs.alert.notices.Notice` or subclass
         The notice to handle
 
     send_messages : bool, optional

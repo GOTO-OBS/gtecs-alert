@@ -1,4 +1,4 @@
-"""Classes to represent GCN alert notices."""
+"""Classes to represent transient alert notices."""
 
 import json
 import os
@@ -26,21 +26,21 @@ from .strategy import get_strategy_details
 
 
 class InvalidNoticeError(Exception):
-    """Exception raised for invalid GCN notices."""
+    """Exception raised for invalid notice types."""
 
     pass
 
 
-class GCNNotice:
-    """A class to represent a single GCN notice using the VOEvent protocol.
+class Notice:
+    """A class to represent a single transient alert notice.
 
     Some notices are better represented as one of the more specialised subclasses.
 
     Use one of the following classmethods to to create the appropriate class:
-        - GCNNotice.from_file()
-        - GCNNotice.from_url()
-        - GCNNotice.from_ivorn()
-        - GCNNotice.from_payload()
+        - Notice.from_file()
+        - Notice.from_url()
+        - Notice.from_ivorn()
+        - Notice.from_payload()
     """
 
     def __init__(self, message):
@@ -162,13 +162,13 @@ class GCNNotice:
                 # This subclass doesn't match the message, try the next one
                 pass
         # If we get here then no subclass matched, so return the base class
-        return GCNNotice(message)
+        return Notice(message)
 
     @classmethod
     def from_message(cls, message):
-        """Create a GCNNotice (or subclass) from a hop.models.VOEvent message."""
+        """Create a Notice (or subclass) from a hop.models.VOEvent message."""
         notice = cls._get_subclass(message)
-        if cls != GCNNotice and cls != notice.__class__:
+        if cls != Notice and cls != notice.__class__:
             raise ValueError('Subtype mismatch (`{}` detected)'.format(
                              notice.__class__.__name__
                              ))
@@ -176,7 +176,7 @@ class GCNNotice:
 
     @classmethod
     def from_payload(cls, payload):
-        """Create a GCNNotice (or subclass) from either an XML or JSON VOEvent payload."""
+        """Create a Notice (or subclass) from either an XML or JSON VOEvent payload."""
         try:
             message = VOEvent.deserialize(payload)
             notice = cls.from_message(message)
@@ -193,20 +193,20 @@ class GCNNotice:
 
     @classmethod
     def from_ivorn(cls, ivorn):
-        """Create a GCNNotice (or subclass) by querying the 4pisky VOEvent database."""
+        """Create a Notice (or subclass) by querying the 4pisky VOEvent database."""
         payload = vdb.packet_xml(ivorn)
         return cls.from_payload(payload)
 
     @classmethod
     def from_url(cls, url):
-        """Create a GCNNotice (or subclass) by downloading the VOEvent from the given URL."""
+        """Create a Notice (or subclass) by downloading the VOEvent from the given URL."""
         with urlopen(url) as r:
             payload = r.read()
         return cls.from_payload(payload)
 
     @classmethod
     def from_file(cls, filepath):
-        """Create a GCNNotice (or subclass) by reading a VOEvent file (XML or JSON)."""
+        """Create a Notice (or subclass) by reading a VOEvent file (XML or JSON)."""
         with open(filepath, 'rb') as f:
             payload = f.read()
         return cls.from_payload(payload)
@@ -281,7 +281,7 @@ class GCNNotice:
         return text
 
 
-class GWNotice(GCNNotice):
+class GWNotice(Notice):
     """A class to represent a Gravitational Wave detection notice."""
 
     VALID_PACKET_TYPES = {
@@ -580,7 +580,7 @@ class GWNotice(GCNNotice):
         return text
 
 
-class GWRetractionNotice(GCNNotice):
+class GWRetractionNotice(Notice):
     """A class to represent a Gravitational Wave retraction notice."""
 
     VALID_PACKET_TYPES = {
@@ -617,7 +617,7 @@ class GWRetractionNotice(GCNNotice):
         return text
 
 
-class GRBNotice(GCNNotice):
+class GRBNotice(Notice):
     """A class to represent a Gamma-Ray Burst detection notice."""
 
     VALID_PACKET_TYPES = {
@@ -731,7 +731,7 @@ class GRBNotice(GCNNotice):
         return text
 
 
-class NUNotice(GCNNotice):
+class NUNotice(Notice):
     """A class to represent a Neutrino (NU) detection notice."""
 
     VALID_PACKET_TYPES = {

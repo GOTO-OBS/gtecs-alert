@@ -1,4 +1,4 @@
-"""Class for listening for GCN alert notices."""
+"""Class for listening for transient alert notices."""
 
 import itertools
 import socket
@@ -18,7 +18,7 @@ from hop.auth import Auth
 from hop.io import StartPosition, Stream
 
 from . import params
-from .notices import GCNNotice
+from .notices import Notice
 from .handler import already_in_database, handle_notice
 from .slack import send_slack_msg
 
@@ -121,9 +121,9 @@ class Sentinel:
         """
         self.log.info('Alert listener thread started')
 
-        # Define basic handler function to create a GCNNotice instance and add it to the queue
+        # Define basic handler function to create a Notice instance and add it to the queue
         def _handler(payload, _root):
-            notice = GCNNotice.from_payload(payload)
+            notice = Notice.from_payload(payload)
             self.notice_queue.append(notice)
 
         # Create a simple listen function, based on PyGCN's listen()
@@ -275,11 +275,11 @@ class Sentinel:
 
                     # Create the notice and add it to the queue
                     try:
-                        notice = GCNNotice.from_payload(payload)
-                        self.log.debug(f'Received GCN notice: {notice.ivorn}')
+                        notice = Notice.from_payload(payload)
+                        self.log.debug(f'Received notice: {notice.ivorn}')
                         self.notice_queue.append(notice)
                     except Exception as err:
-                        self.log.error(f'Error creating GCN notice: {err}')
+                        self.log.error(f'Error creating notice: {err}')
                         self.log.debug(f'Payload: {payload}')
                         self.log.debug('', exc_info=True)
                         # TODO: We could mark the message as unread if there's an error
@@ -380,7 +380,7 @@ class Sentinel:
             while self.running and not found_skymap and not timed_out:
                 try:
                     urlopen(notice.skymap_url)
-                    notice = GCNNotice.from_payload(notice.payload)
+                    notice = Notice.from_payload(notice.payload)
                     notice.ivorn = notice.ivorn + '_new_skymap'  # create a new ivorn for the DB
                     found_skymap = True
                 except URLError:
@@ -409,13 +409,13 @@ class Sentinel:
     # Functions
     def ingest_from_payload(self, payload):
         """Ingest a VOEvent payload."""
-        notice = GCNNotice.from_payload(payload)
+        notice = Notice.from_payload(payload)
         self.notice_queue.append(notice)
         return 'VOEvent notice added to queue'
 
     def ingest_from_file(self, filepath):
         """Ingest a VOEvent payload from a file."""
-        notice = GCNNotice.from_file(filepath)
+        notice = Notice.from_file(filepath)
         self.notice_queue.append(notice)
         return 'VOEvent notice added to queue'
 
@@ -424,7 +424,7 @@ class Sentinel:
 
         Will attempt to download the payload from the 4pisky VOEvent DB.
         """
-        notice = GCNNotice.from_ivorn(ivorn)
+        notice = Notice.from_ivorn(ivorn)
         self.notice_queue.append(notice)
         return 'VOEvent notice added to queue'
 
@@ -438,7 +438,7 @@ class Sentinel:
     def get_queue(self):
         """Return the current notice queue."""
         # Note: this is a list of IVORNs, not the full notice objects.
-        # The GCNNotice objects are not serializable.
+        # The Notice objects are not serializable.
         # We could return raw payloads I guess...
         return [notice.ivorn for notice in self.notice_queue]
 

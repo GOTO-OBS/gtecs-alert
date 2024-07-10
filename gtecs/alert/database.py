@@ -19,7 +19,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import backref, relationship, validates
 
 from . import params
-from .notices import GCNNotice
+from .notices import Notice as EventNotice
 
 
 def get_session(user=None, password=None, host=None, echo=None, pool_pre_ping=None):
@@ -280,7 +280,7 @@ class Notice(Base):
 
     @classmethod
     def from_gcn(cls, notice):
-        """Create a database-linked Notice entry from a GCN notice."""
+        """Create a database-linked Notice entry from a transient notice message."""
         if notice.skymap is None:
             notice.get_skymap()
         if notice.skymap is None:
@@ -312,8 +312,8 @@ class Notice(Base):
 
     @property
     def gcn(self):
-        """Create a GCNNotice class (or subclass) from this Notice."""
-        notice = GCNNotice.from_payload(self.payload)
+        """Create a gtecs.alert.notices.Notice class (or subclass) from this Notice."""
+        notice = EventNotice.from_payload(self.payload)
         if self.skymap is not None:
             try:
                 hdu = fits.open(BytesIO(self.skymap))
