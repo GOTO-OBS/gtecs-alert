@@ -260,7 +260,7 @@ def handle_notice(notice, send_messages=False, log=None, time=None):
 
     Parameters
     ----------
-    notice : `gototile.gcn.GCNNotice` or subclass
+    notice : `gtecs.alert.notices.GCNNotice` or subclass
         The notice to handle
 
     send_messages : bool, optional

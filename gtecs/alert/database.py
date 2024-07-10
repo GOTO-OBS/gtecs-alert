@@ -19,7 +19,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import backref, relationship, validates
 
 from . import params
-from .gcn import GCNNotice
+from .notices import GCNNotice
 
 
 def get_session(user=None, password=None, host=None, echo=None, pool_pre_ping=None):

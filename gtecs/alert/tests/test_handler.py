@@ -6,7 +6,7 @@ import importlib.resources as pkg_resources
 from astropy import units as u
 
 from gtecs.alert import params
-from gtecs.alert.gcn import GCNNotice
+from gtecs.alert.notices import GCNNotice
 from gtecs.alert.handler import handle_notice
 
 

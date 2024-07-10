@@ -4,7 +4,7 @@
 import importlib.resources as pkg_resources
 
 from gtecs.alert import database as db
-from gtecs.alert.gcn import GCNNotice
+from gtecs.alert.notices import GCNNotice
 
 
 if __name__ == '__main__':

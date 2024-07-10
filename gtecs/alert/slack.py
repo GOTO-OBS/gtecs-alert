@@ -18,7 +18,7 @@ import numpy as np
 
 from . import database as alert_db
 from . import params
-from .gcn import GWNotice
+from .notices import GWNotice
 
 
 def send_slack_msg(text, channel=None, *args, **kwargs):

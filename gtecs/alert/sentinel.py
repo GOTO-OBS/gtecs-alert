@@ -18,7 +18,7 @@ from hop.auth import Auth
 from hop.io import StartPosition, Stream
 
 from . import params
-from .gcn import GCNNotice
+from .notices import GCNNotice
 from .handler import already_in_database, handle_notice
 from .slack import send_slack_msg
 
