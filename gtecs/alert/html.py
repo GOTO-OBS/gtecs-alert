@@ -123,10 +123,10 @@ def write_html(file_path, notice, site_data):
     html_path = os.path.join(file_path, html_file)
     with open(html_path, 'w') as f:
 
-        title = "New transient for {} from {} notice".format(site_name, notice.packet_type)
+        title = "New transient for {} from {} notice".format(site_name, notice.type)
         f.write('<!DOCTYPE html><html lang="en"><head>{}</head><body>'.format(title))
 
-        page = '{}.{}'.format(notice.event_id, notice.event_source.lower())
+        page = '{}.{}'.format(notice.event_id, notice.source.lower())
         f.write('<p>https://gcn.gsfc.nasa.gov/other/{}</p>'.format(page))
         f.write('<p>Event ID:  {}</p>'.format(notice.event_id))
 
@@ -138,9 +138,6 @@ def write_html(file_path, notice, site_data):
         f.write('<p>RA:  {:.3f} degrees</p>'.format(notice.position.ra.deg))
         f.write('<p>DEC: {:.3f} degrees</p>'.format(notice.position.dec.deg))
         f.write('<p>RA, DEC Error:   {:.3f}</p>'.format(notice.position_error.deg))
-
-        # Write event contact
-        f.write('<p>Contact: {}</p>'.format(notice.contact))
 
         # Write obs details
         f.write('<p>Observation Details: Time in UTC</p>')

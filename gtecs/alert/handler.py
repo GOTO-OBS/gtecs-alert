@@ -44,7 +44,7 @@ def add_to_database(notice, time=None, log=None):
             db_event = alert_db.Event(
                 name=notice.event_name,
                 type=notice.event_type,
-                origin=notice.event_source,
+                origin=notice.source,
                 time=notice.event_time,
             )
 

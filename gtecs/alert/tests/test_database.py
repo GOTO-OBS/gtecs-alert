@@ -30,5 +30,5 @@ if __name__ == '__main__':
         with db.session_manager() as session:
             db_notice = session.query(db.Notice).filter(db.Notice.ivorn == notice.ivorn).one()
 
-            assert notice.packet_type == db_notice.gcn.packet_type
+            assert notice.type == db_notice.gcn.type
             assert notice.skymap == db_notice.gcn.skymap

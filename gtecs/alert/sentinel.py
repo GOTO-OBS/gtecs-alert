@@ -344,7 +344,7 @@ class Sentinel:
                     send_slack_msg('Sentinel successfully processed notice')
 
                     # Start a followup thread to wait for the skymap of Fermi notices
-                    if notice.event_source == 'Fermi' and not notice.ivorn.endswith('_new_skymap'):
+                    if notice.source == 'Fermi' and not notice.ivorn.endswith('_new_skymap'):
                         try:
                             # Check if the URL was valid
                             urlopen(notice.skymap_url)
@@ -408,25 +408,25 @@ class Sentinel:
 
     # Functions
     def ingest_from_payload(self, payload):
-        """Ingest a VOEvent payload."""
+        """Ingest a notice payload."""
         notice = Notice.from_payload(payload)
         self.notice_queue.append(notice)
-        return 'VOEvent notice added to queue'
+        return f'Notice {notice.ivorn} added to queue'
 
     def ingest_from_file(self, filepath):
-        """Ingest a VOEvent payload from a file."""
+        """Ingest a notice payload from a file."""
         notice = Notice.from_file(filepath)
         self.notice_queue.append(notice)
-        return 'VOEvent notice added to queue'
+        return f'Notice {notice.ivorn} added to queue'
 
     def ingest_from_ivorn(self, ivorn):
-        """Ingest a VOEvent payload from its IVORN.
+        """Ingest a notice payload from its IVORN.
 
         Will attempt to download the payload from the 4pisky VOEvent DB.
         """
         notice = Notice.from_ivorn(ivorn)
         self.notice_queue.append(notice)
-        return 'VOEvent notice added to queue'
+        return f'Notice {notice.ivorn} added to queue'
 
     def get_kafka_topics(self):
         """Return a list of subscribed topics."""

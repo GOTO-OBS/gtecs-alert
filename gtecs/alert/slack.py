@@ -56,7 +56,7 @@ def send_notice_report(notice, time=None):
     msg = f'*{notice.source} notice:* {notice.ivorn}\n'
 
     # Add basic notice details
-    msg += f'Notice type: {notice.packet_type}\n'
+    msg += f'Notice type: {notice.type}\n'
     msg += f'Notice time: {notice.time.iso}'
     msg += f' _({(time - notice.time).to(u.hour).value:.1f}h ago)_\n'
 

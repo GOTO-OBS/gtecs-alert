@@ -14,7 +14,7 @@ from astropy.utils.data import download_file
 
 from gototile.skymap import SkyMap
 
-from hop.models import VOEvent
+from hop.models import AvroBlob, JSONBlob, VOEvent
 
 import numpy as np
 
@@ -22,7 +22,57 @@ import requests
 
 import voeventdb.remote.apiv1 as vdb
 
+from .skymap import skymap_from_bytes
 from .strategy import get_strategy_details
+
+
+def deserialize(raw_payload):
+    """Deserialize a raw payload to a hop model class.
+
+    While hop-client does have a deserialize function, it only works with the messages
+    which contain format information. Here we only have the raw payload, so we need to
+    try a few different formats to see which one works.
+
+    Valid formats:
+    - VOEvent XML (produced by GCN Classic notices) -> hop.models.VOEvent
+    - VOEvent JSON (GCN Notices converted to JSON by SCIMMA) -> hop.models.VOEvent
+    - Avro (newer encoding format used by IGWN notices) -> hop.models.AvroBlob
+    - Pure JSON (e.g. new GCN Unified schema) -> hop.models.JSONBlob
+    """
+    if isinstance(raw_payload, str):
+        raw_payload = raw_payload.encode('utf-8')
+
+    # Try Avro first, since it's the most specific
+    try:
+        return AvroBlob.deserialize(raw_payload)
+    except TypeError:
+        pass
+    except ValueError as err:
+        if 'is it an avro file?' in str(err):
+            pass
+        else:
+            raise
+
+    # If it's valid JSON it might be a VOEvent, or else a generic JSONBlob
+    try:
+        return VOEvent.deserialize(raw_payload)
+    except TypeError:
+        # Valid JSON, but not a VOEvent
+        try:
+            return JSONBlob.deserialize(raw_payload)
+        except json.JSONDecodeError:
+            pass
+    except json.JSONDecodeError:
+        pass  # We'll try XML parsing instead
+
+    # If it's not Avro or JSON, try parsing it as an XML VOEvent
+    try:
+        return VOEvent.load(raw_payload)
+    except xml.parsers.expat.ExpatError:
+        pass
+
+    # No valid format found
+    raise ValueError('Could not parse message as Avro, JSON or XML')
 
 
 class InvalidNoticeError(Exception):
@@ -37,111 +87,143 @@ class Notice:
     Some notices are better represented as one of the more specialised subclasses.
 
     Use one of the following classmethods to to create the appropriate class:
-        - Notice.from_file()
-        - Notice.from_url()
-        - Notice.from_ivorn()
-        - Notice.from_payload()
+        - Notice.from_file(filepath)
+        - Notice.from_url(url)
+        - Notice.from_ivorn(ivorn)
+        - Notice.from_payload(raw_payload)
     """
 
     def __init__(self, message):
         self.creation_time = Time.now()
 
         # Store the message on the class
-        if not isinstance(message, VOEvent):
-            raise ValueError('Base message should be hop.models.VOEvent')
-        self.voevent = message
-        self.payload = message.serialize()['content']
-
-        # Try to parse notice parameters
-        # Frustratingly, the VOEvent schema allows multiple Params with the same name,
-        # which makes parsing them just a bit more complicated...
-        # It should never come up with GCN notices, so we'll just try making a dict
-        # and raise an error if there are duplicates.
-        # Plus there are grouped params, which may contain 0, 1 or more Params.
-        # And again if they have more than one they might have multiple Params with the same name.
-        # Top-level params
-        if 'Param' not in self.voevent.What:
-            # No params (seems unlikely, but I think it's allowed)
-            self.top_params = None
-        elif isinstance(self.voevent.What['Param'], dict):
-            # Only one param
-            self.top_params = {k: v for k, v in self.voevent.What['Param'].items()
-                               if k != 'name'}
-        else:
-            # Multiple params
-            param_names = [p['name'] for p in self.voevent.What['Param']]
-            duplicates = [name for name, count in Counter(param_names).items() if count > 1]
-            if duplicates:
-                raise ValueError(f'Duplicate Param names found: {duplicates}')
-            self.top_params = {p['name']: {k: v for k, v in p.items() if k != 'name'}
-                               for p in self.voevent.What['Param']}
-        # Grouped params
-        self.group_params = {}
-        if 'Group' in self.voevent.What:
-            if isinstance(self.voevent.What['Group'], dict):
-                # only a single group, should be a list of
-                groups = [self.voevent.What['Group']]
-            else:
-                groups = self.voevent.What['Group']
-            for group in groups:
-                if 'name' not in group and 'type' in group:
-                    # Some old (off-spec) GW notices didn't included group names, just types
-                    group['name'] = group['type']
-                group_dict = {k: v for k, v in group.items() if k not in ['name', 'Param']}
-                if 'Param' not in group:
-                    # No params (happens e.g. for GW Bursts - Classification & Properties)
-                    self.group_params[group['name']] = group_dict
-                elif isinstance(group['Param'], dict):
-                    # Only one param
-                    group_dict[group['Param']['name']] = {k: v for k, v in group['Param'].items()
-                                                          if k != 'name'}
-                    self.group_params[group['name']] = group_dict
+        if not isinstance(message, (AvroBlob, JSONBlob, VOEvent)):
+            raise ValueError('Base message should be a hop.models message class')
+        self.message = message
+        self.payload = self.message.serialize()['content']
+        if hasattr(message, 'content'):
+            self.content = self.message.content
+            if isinstance(self.message.content, list):
+                # Avro messages are wrapped in a list for some reason
+                if len(self.message.content) == 1:
+                    self.content = self.message.content[0]
                 else:
-                    # Multiple params
-                    param_names = [p['name'] for p in group['Param']]
-                    duplicates = [name for name, count in Counter(param_names).items() if count > 1]
-                    if duplicates:
-                        msg = f'Duplicate Param names found in group {group["name"]}: {duplicates}'
-                        raise ValueError(msg)
-                    for p in group['Param']:
-                        group_dict[p['name']] = {k: v for k, v in p.items() if k != 'name'}
-                    self.group_params[group['name']] = group_dict
+                    raise ValueError('Multiple contents found for message')
+        else:
+            # VOEvents don't store their raw content
+            self.content = json.loads(self.payload)
+
+        # Try to parse notice parameters for VOEvents
+        if isinstance(self.message, VOEvent):
+            # Frustratingly, the VOEvent schema allows multiple Params with the same name,
+            # which makes parsing them just a bit more complicated...
+            # It should never come up with GCN notices, so we'll just try making a dict
+            # and raise an error if there are duplicates.
+            # Plus there are grouped params, which may contain 0, 1 or more Params.
+            # And again there can be multiple Params with the same name.
+
+            # Top-level params
+            if 'Param' not in self.content['What']:
+                # No params (seems unlikely, but I think it's allowed)
+                self.top_params = None
+            elif isinstance(self.content['What']['Param'], dict):
+                # Only one param
+                self.top_params = {
+                    k: v for k, v in self.content['What']['Param'].items() if k != 'name'}
+            else:
+                # Multiple params
+                param_names = [p['name'] for p in self.content['What']['Param']]
+                duplicates = [name for name, count in Counter(param_names).items() if count > 1]
+                if duplicates:
+                    raise ValueError(f'Duplicate Params found: {duplicates}')
+                self.top_params = {
+                    p['name']: {k: v for k, v in p.items() if k != 'name'}
+                    for p in self.content['What']['Param']}
+
+            # Grouped params
+            self.group_params = {}
+            if 'Group' in self.content['What']:
+                if isinstance(self.content['What']['Group'], dict):
+                    # only a single group, should be a list of
+                    groups = [self.content['What']['Group']]
+                else:
+                    groups = self.content['What']['Group']
+                for group in groups:
+                    if 'name' not in group and 'type' in group:
+                        # Some old (off-spec) GW notices didn't included group names, just types
+                        group['name'] = group['type']
+                    group_dict = {k: v for k, v in group.items() if k not in ['name', 'Param']}
+                    if 'Param' not in group:
+                        # No params (happens e.g. for GW Bursts - Classification & Properties)
+                        self.group_params[group['name']] = group_dict
+                    elif isinstance(group['Param'], dict):
+                        # Only one param
+                        group_dict[group['Param']['name']] = {
+                            k: v for k, v in group['Param'].items()
+                            if k != 'name'}
+                        self.group_params[group['name']] = group_dict
+                    else:
+                        # Multiple params
+                        param_names = [p['name'] for p in group['Param']]
+                        duplicates = [
+                            name for name, count in Counter(param_names).items()
+                            if count > 1]
+                        if duplicates:
+                            msg = f'Duplicate Params found in group {group["name"]}: {duplicates}'
+                            raise ValueError(msg)
+                        for p in group['Param']:
+                            group_dict[p['name']] = {k: v for k, v in p.items() if k != 'name'}
+                        self.group_params[group['name']] = group_dict
 
         # Store and format IVORN
-        self.ivorn = self.voevent.ivorn
-        # Using the official IVOA terms (ivo://authorityID/resourceKey#local_ID):
-        self.authorityID = self.ivorn.split('/')[2]
-        self.resourceKey = self.ivorn.split('/')[3].split('#')[0]
-        self.local_ID = self.ivorn.split('/')[3].split('#')[1]
-        # Using some easier terms to understand:
-        self.authority = self.authorityID
-        self.publisher = self.resourceKey
-        self.title = self.local_ID
+        # IVORNs are required for all VOEvents, but not all notices come from VOEvents.
+        # We use the message IVORN as keys for all notices, so we have to make one up
+        # for non-VOEvent messages.
+        # TODO: Scrap IVORNs entirely, use source and event time to check uniqueness.
+        if isinstance(self.message, VOEvent):
+            self.ivorn = self.message.ivorn
+        elif '$schema' in self.content:
+            # It's a GCN using the Unified schema
+            publisher, *rest = self.content['$schema'].split('/notices/')[-1].split('/')
+            title = '_'.join(rest).strip('.schema.json')
+            title += '_' + self.content['trigger_time']
+            self.ivorn = f'ivo://nasa.gsfc.gcn/{publisher}#{title}'
+        elif 'superevent_id' in self.content:
+            # It's a new-style IGWN JSON notice
+            # Sadly we can't recreate the old gwnet IVORNs because they don't include the
+            # number of this notice. So we'll have to use the date instead, that should be
+            # unique.
+            event_id = self.content['superevent_id']
+            notice_type = self.content['alert_type']
+            notice_time = self.content['time_created']
+            self.ivorn = f'ivo://gwnet/LVC#{event_id}_{notice_type}_{notice_time}'
+        else:
+            # Some other type we don't know the format for?
+            self.ivorn = 'ivo://unknown/unknown#unknown'
 
-        # Key attributes
-        self.source = 'GCN'
-        self.role = self.voevent.role
-        self.time = Time(self.voevent.Who['Date'])
-        self.author = self.voevent.Who['Author']['contactName']
-        try:
-            self.contact = self.voevent.Who['Author']['contactEmail']
-        except KeyError:
-            self.contact = None
+        # Basic notice attributes
+        if isinstance(self.message, VOEvent):
+            self.source = self.message.ivorn.split('/')[3].split('#')[0]
+            self.role = self.content['role']
+            self.time = Time(self.content['Who']['Date'])
+        elif '$schema' in self.content:
+            self.source = self.content['$schema'].split('/notices/')[-1].split('/')[0]
+            self.role = 'observation'  # TODO: remove roles, have .test = True/False
+            self.time = Time(self.content['trigger_time'])
+        elif 'superevent_id' in self.content:
+            self.source = 'LVC'  # Backwards compatibility with GCNs, IGWN (or LVK) would be better
+            self.role = 'observation'
+            self.time = Time(self.content['time_created'])
+        else:
+            self.source = 'unknown'
+            self.role = 'unknown'
+            self.time = None
 
-        # Event properties (will mostly be filled by subclasses)
-        self.packet_id = int(self.top_params['Packet_Type']['value'])
-        self.packet_type = 'unknown'  # Matched to ID in subclasses
-        self.event_name = None
-        self.event_id = None
-        try:
-            event_location = self.voevent.WhereWhen['ObsDataLocation']['ObservationLocation']
-            event_time = event_location['AstroCoords']['Time']['TimeInstant']['ISOTime']
-            self.event_time = Time(event_time)
-        except Exception:
-            # Some test events don't have times
-            self.event_time = None
-        self.event_type = 'unknown'
-        self.event_source = 'unknown'
+        # Event properties (filled by subclasses)
+        self.type = 'unknown'  # e.g. INITIAL, OBSERVATION, RETRACTION
+        self.event_type = 'unknown'  # e.g. GW, GRB, NU
+        self.event_id = None  # e.g. S190510g, 579943502
+        self.event_time = None
         self.position = None
         self.position_error = None
         self.skymap = None
@@ -154,19 +236,35 @@ class Notice:
     @staticmethod
     def _get_subclass(message):
         """Get the correct class of notice by trying each subclass."""
-        subclasses = [GWNotice, GWRetractionNotice, GRBNotice, NUNotice]
-        for subclass in subclasses:
-            try:
-                return subclass(message)
-            except InvalidNoticeError:
-                # This subclass doesn't match the message, try the next one
-                pass
-        # If we get here then no subclass matched, so return the base class
-        return Notice(message)
+        base_notice = Notice(message)
+        try:
+            if base_notice.source.upper() == 'LVC':
+                # We split retractions out into their own class
+                if (hasattr(base_notice, 'top_params') and
+                        'AlertType' in base_notice.top_params and
+                        base_notice.top_params['AlertType']['value'].upper() == 'RETRACTION'):
+                    return GWRetractionNotice(message)
+                elif ('alert_type' in base_notice.content and
+                        base_notice.content['alert_type'].upper() == 'RETRACTION'):
+                    return GWRetractionNotice(message)
+                else:
+                    return GWNotice(message)
+            elif base_notice.source.upper() == 'FERMI':
+                return GRBNotice(message)
+            elif base_notice.source.upper() == 'SWIFT':
+                return GRBNotice(message)
+            elif base_notice.source.upper() == 'GECAM':
+                return GRBNotice(message)
+            elif base_notice.source.upper() == 'ICECUBE':
+                return NUNotice(message)
+        except InvalidNoticeError:
+            # For whatever reason the notice isn't valid, so fall back to the default class
+            pass
+        return base_notice
 
     @classmethod
     def from_message(cls, message):
-        """Create a Notice (or subclass) from a hop.models.VOEvent message."""
+        """Create a Notice (or appropriate subclass) from a hop.models message class."""
         notice = cls._get_subclass(message)
         if cls != Notice and cls != notice.__class__:
             raise ValueError('Subtype mismatch (`{}` detected)'.format(
@@ -176,40 +274,39 @@ class Notice:
 
     @classmethod
     def from_payload(cls, payload):
-        """Create a Notice (or subclass) from either an XML or JSON VOEvent payload."""
-        try:
-            message = VOEvent.deserialize(payload)
-            notice = cls.from_message(message)
-            return notice
-        except json.JSONDecodeError:
-            pass  # We'll try XML parsing instead
-        try:
-            message = VOEvent.load(payload)
-            notice = cls.from_message(message)
-            notice._xml_payload = payload  # Store for debugging (notice.payload will be JSON)
-            return notice
-        except xml.parsers.expat.ExpatError:
-            raise ValueError('Could not parse file as either XML or JSON VOEvent')
+        """Create a Notice (or appropriate subclass) from a raw message payload."""
+        # We need to try and deserialize the payload to get the correct message model
+        message = deserialize(payload)
+        return cls.from_message(message)
 
     @classmethod
     def from_ivorn(cls, ivorn):
-        """Create a Notice (or subclass) by querying the 4pisky VOEvent database."""
+        """Create a Notice (or appropriate subclass) by querying the 4pisky VOEvent database."""
         payload = vdb.packet_xml(ivorn)
         return cls.from_payload(payload)
 
     @classmethod
     def from_url(cls, url):
-        """Create a Notice (or subclass) by downloading the VOEvent from the given URL."""
+        """Create a Notice (or appropriate subclass) by downloading from the given URL."""
         with urlopen(url) as r:
             payload = r.read()
         return cls.from_payload(payload)
 
     @classmethod
     def from_file(cls, filepath):
-        """Create a Notice (or subclass) by reading a VOEvent file (XML or JSON)."""
+        """Create a Notice (or appropriate subclass) from a file."""
         with open(filepath, 'rb') as f:
             payload = f.read()
         return cls.from_payload(payload)
+
+    @property
+    def event_name(self):
+        """Get the event name string.
+
+        This is a combination of "{notice.source}_{notice.event_id}",
+        e.g. LVC_S190510g, Fermi_579943502.
+        """
+        return self.source + '_' + self.event_id
 
     def save(self, path):
         """Save this notice to a file in the given directory."""
@@ -226,6 +323,7 @@ class Notice:
         """Return the skymap as a `gototile.skymap.SkyMap object."""
         if self.skymap is not None:
             # Don't do anything if the skymap has already been downloaded/created
+            # This will also be true for IGWN alerts with embedded skymaps
             return self.skymap
 
         # Try to download the skymap from a given URL
@@ -284,94 +382,116 @@ class Notice:
 class GWNotice(Notice):
     """A class to represent a Gravitational Wave detection notice."""
 
-    VALID_PACKET_TYPES = {
-        163: 'LVC_EARLY_WARNING',
-        150: 'LVC_PRELIMINARY',
-        151: 'LVC_INITIAL',
-        152: 'LVC_UPDATE',
-    }
-
     def __init__(self, payload):
         super().__init__(payload)
-        if self.packet_id not in self.VALID_PACKET_TYPES:
-            raise InvalidNoticeError(f'GCN packet type {self.packet_id} not valid for this class')
-        self.packet_type = self.VALID_PACKET_TYPES[self.packet_id]
+
+        # Check source
+        if self.source.upper() != 'LVC':
+            raise InvalidNoticeError(f'Invalid source for GW notice: "{self.source}"')
+
+        # Event properties
         self.event_type = 'GW'
-        self.event_source = 'LVC'
-
-        # Get info from the VOEvent
-        # See https://emfollow.docs.ligo.org/userguide/content.html#notice-contents
-        self.event_id = self.top_params['GraceID']['value']  # e.g. S190510g
-        self.event_name = '{}_{}'.format(self.event_source, self.event_id)  # e.g. LVC_S190510g
-        self.gracedb_url = self.top_params['EventPage']['value']
-        self.instruments = self.top_params['Instruments']['value']
-        self.group = self.top_params['Group']['value']  # CBC or Burst
-        self.pipeline = self.top_params['Pipeline']['value']
-        self.far = float(self.top_params['FAR']['value'])  # In Hz
-        try:
-            self.significant = self.top_params['Significant']['value'] == '1'
-        except KeyError:
-            # Fallback for older notices that didn't include the significance
-            # This uses the "official" definition of 1/month for CBC and 1/year for bursts,
-            # see https://emfollow.docs.ligo.org/userguide/analysis/index.html#alert-threshold
-            if self.group == 'CBC' and self.far < 12 / (60 * 60 * 24 * 365):
-                self.significant = True
-            elif self.group == 'Burst' and self.far < 1 / (60 * 60 * 24 * 365):
-                self.significant = True
+        if hasattr(self, 'top_params'):
+            # Classic VOEvent format
+            self.type = self.top_params['AlertType']['value'].upper()
+            self.event_id = self.top_params['GraceID']['value']  # e.g. S190510g
+            self.gracedb_url = self.top_params['EventPage']['value']
+            self.instruments = self.top_params['Instruments']['value']
+            self.group = self.top_params['Group']['value']  # CBC or Burst
+            self.pipeline = self.top_params['Pipeline']['value']
+            self.far = float(self.top_params['FAR']['value'])  # In Hz
+            try:
+                self.significant = self.top_params['Significant']['value'] == '1'
+            except KeyError:
+                # Fallback for older notices that didn't include the significance
+                # This uses the "official" definition of 1/month for CBC and 1/year for bursts,
+                # see https://emfollow.docs.ligo.org/userguide/analysis/index.html#alert-threshold
+                if self.group == 'CBC' and self.far < 12 / (60 * 60 * 24 * 365):
+                    self.significant = True
+                elif self.group == 'Burst' and self.far < 1 / (60 * 60 * 24 * 365):
+                    self.significant = True
+                else:
+                    self.significant = False
+            if self.group == 'CBC':
+                self.classification = {
+                    k: float(v['value'])
+                    for k, v in self.group_params['Classification'].items()
+                    if 'value' in v}
+                self.properties = {
+                    k: float(v['value'])
+                    for k, v in self.group_params['Properties'].items()
+                    if 'value' in v}
             else:
-                self.significant = False
-
-        # Get classification probabilities and properties
-        if self.group == 'CBC':
-            classification_group = self.group_params['Classification']
-            self.classification = {k: float(v['value'])
-                                   for k, v in classification_group.items()
-                                   if 'value' in v}
-            properties_group = self.group_params['Properties']
-            self.properties = {k: float(v['value'])
-                               for k, v in properties_group.items()
-                               if 'value' in v}
+                self.classification = None
+                self.properties = None
+            event_location = self.message.WhereWhen['ObsDataLocation']['ObservationLocation']
+            event_time = event_location['AstroCoords']['Time']['TimeInstant']['ISOTime']
+            self.event_time = Time(event_time)
+            # Get the skymap URL to download later
+            try:
+                skymap_group = self.group_params['GW_SKYMAP']
+            except KeyError as err:
+                skymap_group = None
+                # Some old notices used the name of the pipeline (e.g. bayestar) instead
+                for group_name in self.group_params:
+                    if self.group_params[group_name]['type'] == 'GW_SKYMAP':
+                        skymap_group = self.group_params[group_name]
+                        break
+                if skymap_group is None:
+                    raise ValueError('No skymap group found') from err
+            self.skymap_url = skymap_group['skymap_fits']['value']
+            # Get external coincidence, if any
+            try:
+                external_group = self.group_params['External Coincidence']
+                self.external = {
+                    'gcn_notice_id': int(external_group['External_GCN_Notice_Id']['value']),
+                    'ivorn': external_group['External_Ivorn']['value'],
+                    'observatory': external_group['External_Observatory']['value'],
+                    'search': external_group['External_Search']['value'],
+                    'time_difference': float(external_group['Time_Difference']['value']),
+                    'time_coincidence_far': float(external_group['Time_Coincidence_FAR']['value']),
+                    'time_sky_position_coincidence_far':
+                        float(external_group['Time_Sky_Position_Coincidence_FAR']['value']),
+                    'combined_skymap_url': external_group['joint_skymap_fits']['value'],
+                }
+                # Override the skymap URL with the combined skymap
+                self.skymap_url_original = self.skymap_url
+                self.skymap_url = self.external['combined_skymap_url']
+            except KeyError:
+                self.external = None
         else:
-            self.classification = None
-            self.properties = None
-
-        # Get skymap URL
-        try:
-            skymap_group = self.group_params['GW_SKYMAP']
-        except KeyError as err:
-            skymap_group = None
-            # Some old notices used the name of the pipeline (e.g. bayestar) instead
-            for group_name in self.group_params:
-                if self.group_params[group_name]['type'] == 'GW_SKYMAP':
-                    skymap_group = self.group_params[group_name]
-                    break
-            if skymap_group is None:
-                raise ValueError('No skymap group found') from err
-        self.skymap_url = skymap_group['skymap_fits']['value']
-
-        # Get external coincidence, if any
-        try:
-            external_group = self.group_params['External Coincidence']
-            self.external = {
-                'gcn_notice_id': int(external_group['External_GCN_Notice_Id']['value']),
-                'ivorn': external_group['External_Ivorn']['value'],
-                'observatory': external_group['External_Observatory']['value'],
-                'search': external_group['External_Search']['value'],
-                'time_difference': float(external_group['Time_Difference']['value']),
-                'time_coincidence_far': float(external_group['Time_Coincidence_FAR']['value']),
-                'time_sky_position_coincidence_far':
-                    float(external_group['Time_Sky_Position_Coincidence_FAR']['value']),
-                'combined_skymap_url': external_group['joint_skymap_fits']['value'],
-            }
-            # Override the skymap URL with the combined skymap
-            self.skymap_url_original = self.skymap_url
-            self.skymap_url = self.external['combined_skymap_url']
-        except KeyError:
-            self.external = None
+            # New Kafka format
+            self.type = self.content['alert_type'].upper()
+            self.event_id = self.content['superevent_id']
+            self.gracedb_url = self.content['urls']['gracedb']
+            self.instruments = self.content['event']['instruments']
+            self.group = self.content['event']['group']
+            self.pipeline = self.content['event']['pipeline']
+            self.far = float(self.content['event']['far'])
+            self.significant = self.content['event']['significant']
+            if self.group == 'CBC':
+                self.classification = self.content['event']['classification']
+                self.properties = self.content['event']['properties']
+            else:
+                self.classification = None
+                self.properties = None
+            self.event_time = Time(self.content['event']['time'])
+            # Load the embedded skymap
+            self.skymap = skymap_from_bytes(self.content['event']['skymap'])
+            # Get external coincidence, if any
+            if self.content['external_coinc'] is not None:
+                self.external = self.content['external_coinc'].copy()
+                # Override the original skymap with the combined skymap
+                self.skymap_original = self.skymap
+                self.skymap = skymap_from_bytes(self.external['combined_skymap'])
+                del self.external['combined_skymap']
+            else:
+                self.external = None
 
     @classmethod
     def from_gracedb(cls, name, which_notice='last'):
         """Create a GWNotice by downloading the VOEvent XML from GraceDB."""
+        # TODO: download Avro or JSON notices from GraceDB too
         if not ((isinstance(which_notice, int) and which_notice > 0) or
                 which_notice in ['first', 'last']):
             raise ValueError('which_notice must be "first", "last" or a positive integer')
@@ -583,22 +703,24 @@ class GWNotice(Notice):
 class GWRetractionNotice(Notice):
     """A class to represent a Gravitational Wave retraction notice."""
 
-    VALID_PACKET_TYPES = {
-        164: 'LVC_RETRACTION',
-    }
-
     def __init__(self, payload):
         super().__init__(payload)
-        if self.packet_id not in self.VALID_PACKET_TYPES:
-            raise InvalidNoticeError(f'GCN packet type {self.packet_id} not valid for this class')
-        self.packet_type = self.VALID_PACKET_TYPES[self.packet_id]
-        self.event_type = 'GW'
-        self.event_source = 'LVC'
 
-        # Get info from the VOEvent
-        self.event_id = self.top_params['GraceID']['value']  # e.g. S190510g
-        self.event_name = '{}_{}'.format(self.event_source, self.event_id)  # e.g. LVC_S190510g
-        self.gracedb_url = self.top_params['EventPage']['value']
+        # Check source
+        if self.source.upper() != 'LVC':
+            raise InvalidNoticeError(f'Invalid source for GW notice: "{self.source}"')
+
+        # Event properties
+        self.event_type = 'GW'
+        self.type = 'RETRACTION'
+        if hasattr(self, 'top_params'):
+            # Classic VOEvent format
+            self.event_id = self.top_params['GraceID']['value']  # e.g. S190510g
+            self.gracedb_url = self.top_params['EventPage']['value']
+        else:
+            # New Kafka format
+            self.event_id = self.content['superevent_id']
+            self.gracedb_url = self.content['urls']['gracedb']
 
     @property
     def strategy(self):
@@ -609,7 +731,6 @@ class GWRetractionNotice(Notice):
     def slack_details(self):
         """Get details for Slack messages."""
         text = f'Event: {self.event_name}\n'
-        text += f'Detection time: {self.event_time.iso}\n'
         text += f'GraceDB page: {self.gracedb_url}\n'
 
         text += f'*THIS IS A RETRACTION OF EVENT {self.event_name}*\n'
@@ -620,99 +741,116 @@ class GWRetractionNotice(Notice):
 class GRBNotice(Notice):
     """A class to represent a Gamma-Ray Burst detection notice."""
 
-    VALID_PACKET_TYPES = {
-        115: 'FERMI_GBM_FIN_POS',
-        61: 'SWIFT_BAT_GRB_POS',
-        189: 'GECAM_GND',
-    }
-
     def __init__(self, payload):
         super().__init__(payload)
-        if self.packet_id not in self.VALID_PACKET_TYPES:
-            raise InvalidNoticeError(f'GCN packet type {self.packet_id} not valid for this class')
-        self.packet_type = self.VALID_PACKET_TYPES[self.packet_id]
+
+        # Check source
+        if self.source.upper() not in ['FERMI', 'SWIFT', 'GECAM']:
+            raise InvalidNoticeError(f'Invalid source for GRB notice: "{self.source}"')
+        if self.source in ['FERMI', 'SWIFT']:
+            self.source = self.source.capitalize()  # For nice formatting
+
+        # Event properties
         self.event_type = 'GRB'
-        self.event_source = self.packet_type.split('_')[0]
-        if self.event_source in ['FERMI', 'SWIFT']:
-            self.event_source = self.event_source.capitalize()
-
-        # Get info from the VOEvent
-        try:
-            self.event_id = self.top_params['TrigID']['value']  # Fermi & Swift
-        except KeyError:
-            self.event_id = self.top_params['Trigger_Number']['value']  # GECAM
-        self.event_name = '{}_{}'.format(self.event_source, self.event_id)  # e.g. Fermi_579943502
-
-        # Source-specific properties
-        if self.event_source == 'Fermi':
-            self.properties = {key: self.group_params['Trigger_ID'][key]['value']
-                               for key in self.group_params['Trigger_ID']
-                               if key != 'Long_short'}
-            try:
-                self.duration = self.group_params['Trigger_ID']['Long_short']['value']
-            except KeyError:
-                # Some don't have the duration
-                self.duration = 'unknown'
-
-        elif self.event_source == 'Swift':
-            self.properties = {key: self.group_params['Solution_Status'][key]['value']
-                               for key in self.group_params['Solution_Status']}
-            # Throw out events with no star lock
-            if self.properties['StarTrack_Lost_Lock'] == 'true':
-                raise InvalidNoticeError('Bad Swift GRB notice (no star lock)')
-
-        elif self.event_source == 'GECAM':
-            self.properties = {'class': self.top_params['SRC_CLASS']['value']}
-            if self.properties['class'] != 'GRB':
-                msg = 'GECAM notice is not a GRB ({})'.format(self.properties['class'])
+        if hasattr(self, 'top_params'):
+            # VOEvent format, get type from the packet ID
+            packet_id = int(self.top_params['Packet_Type']['value'])
+            if packet_id == 61 and self.source == 'Swift':
+                self.type = 'BAT_GRB_POS'
+            elif packet_id == 115 and self.source == 'Fermi':
+                self.type = 'GBM_FIN_POS'
+            elif packet_id == 189 and self.source == 'GECAM':
+                self.type = 'GND'
+            else:
+                # This could happen with notices from valid sources but with other types
+                msg = f'Unrecognised GRB packet type {packet_id} for source={self.source}'
                 raise InvalidNoticeError(msg)
+
+            # Source-specific properties
+            if self.source == 'Fermi':
+                self.event_id = self.top_params['TrigID']['value']
+                self.properties = {
+                    key: self.group_params['Trigger_ID'][key]['value']
+                    for key in self.group_params['Trigger_ID']
+                    if key != 'Long_short'}
+                try:
+                    self.duration = self.group_params['Trigger_ID']['Long_short']['value']
+                except KeyError:
+                    # Some don't have the duration
+                    self.duration = 'unknown'
+            elif self.source == 'Swift':
+                self.event_id = self.top_params['TrigID']['value']
+                self.properties = {
+                    key: self.group_params['Solution_Status'][key]['value']
+                    for key in self.group_params['Solution_Status']}
+                # Throw out events with no star lock
+                if self.properties['StarTrack_Lost_Lock'] == 'true':
+                    raise InvalidNoticeError('Bad Swift GRB notice (no star lock)')
+            elif self.source == 'GECAM':
+                self.event_id = self.top_params['Trigger_Number']['value']
+                self.properties = {'class': self.top_params['SRC_CLASS']['value']}
+                # Throw out events that aren't GRBs
+                if self.properties['class'] != 'GRB':
+                    msg = 'GECAM notice is not a GRB ({})'.format(self.properties['class'])
+                    raise InvalidNoticeError(msg)
+
+            # Format properties
+            for key in self.properties:
+                if self.properties[key] == 'true':
+                    self.properties[key] = True
+                elif self.properties[key] == 'false':
+                    self.properties[key] = False
+
+            # Time and position
+            event_location = self.message.WhereWhen['ObsDataLocation']['ObservationLocation']
+            event_time = event_location['AstroCoords']['Time']['TimeInstant']['ISOTime']
+            self.event_time = Time(event_time)
+            event_position = event_location['AstroCoords']['Position2D']
+            self.position = SkyCoord(
+                ra=float(event_position['Value2']['C1']),
+                dec=float(event_position['Value2']['C2']),
+                unit=event_position['unit'])
+            self.position_error = Angle(
+                float(event_position['Error2Radius']),
+                unit=event_position['unit'])
+
+            # Skymaps
+            if self.source == 'Fermi':
+                systematic_error = Angle(5.6, unit='deg')
+                self.position_error = Angle(
+                    np.sqrt(self.position_error ** 2 + systematic_error ** 2), unit='deg')
+                # Fermi alerts don't include the URL to the HEALPix skymap,
+                # because at this stage it might not have been created yet.
+                # But we can try and guess it based on the typical format.
+                try:
+                    old_url = self.top_params['LightCurve_URL']['value']
+                    skymap_url = old_url.replace('lc_medres34', 'healpix_all')
+                    self.skymap_url = skymap_url.replace('.gif', '.fit')
+                except Exception:
+                    # Worth a try, fall back to creating our own
+                    self.skymap_url = None
+            else:
+                # Swift and GECAM notices are well localised enough to use use the position
+                self.skymap_url = None
         else:
-            raise InvalidNoticeError(f'Unknown GRB source {self.event_source}')
-
-        for key in self.properties:
-            if self.properties[key] == 'true':
-                self.properties[key] = True
-            elif self.properties[key] == 'false':
-                self.properties[key] = False
-
-        # Position coordinates & error
-        event_location = self.voevent.WhereWhen['ObsDataLocation']['ObservationLocation']
-        event_position = event_location['AstroCoords']['Position2D']
-        self.position = SkyCoord(ra=float(event_position['Value2']['C1']),
-                                 dec=float(event_position['Value2']['C2']),
-                                 unit=event_position['unit'])
-        self.position_error = Angle(float(event_position['Error2Radius']),
-                                    unit=event_position['unit'])
-        if self.event_source == 'Fermi':
-            systematic_error = Angle(5.6, unit='deg')
-            self.position_error = Angle(np.sqrt(self.position_error ** 2 + systematic_error ** 2),
-                                        unit='deg')
-
-        # Try creating the Fermi skymap url
-        # Fermi haven't actually updated their alerts to include the URL to the HEALPix skymap,
-        # but we can try and create it based on the typical location.
-        try:
-            old_url = self.top_params['LightCurve_URL']['value']
-            skymap_url = old_url.replace('lc_medres34', 'healpix_all').replace('.gif', '.fit')
-            self.skymap_url = skymap_url
-        except Exception:
-            # Worth a try, fall back to creating our own
-            self.skymap_url = None
+            # For now we only process VOEvents
+            raise InvalidNoticeError('GRB notices must be VOEvents')
 
     @property
     def strategy(self):
         """Get the observing strategy key."""
-        if self.event_source == 'Swift':
+        if self.source == 'Swift':
             return 'GRB_SWIFT'
-        elif self.event_source == 'Fermi':
+        elif self.source == 'Fermi':
             if self.duration.lower() in ['short', 'unknown']:  # Safe side for unknown events
                 return 'GRB_FERMI_SHORT'
             else:
                 return 'GRB_FERMI'
-        elif self.event_source == 'GECAM':
+        elif self.source == 'GECAM':
             return 'GRB_FERMI'  # Just use the default Fermi strategy
         else:
-            raise ValueError(f'Unknown GRB source: "{self.event_source}"')
+            msg = f'Cannot determine observing strategy for {self.source} {self.type} notice'
+            raise ValueError(msg)
 
     @property
     def slack_details(self):
@@ -721,7 +859,7 @@ class GRBNotice(Notice):
         text += f'Detection time: {self.event_time.iso}\n'
 
         # Classification info
-        if self.event_source == 'Fermi':
+        if self.source == 'Fermi':
             text += f'Duration: {self.duration.capitalize()}\n'
 
         # Position info
@@ -734,39 +872,50 @@ class GRBNotice(Notice):
 class NUNotice(Notice):
     """A class to represent a Neutrino (NU) detection notice."""
 
-    VALID_PACKET_TYPES = {
-        173: 'ICECUBE_ASTROTRACK_GOLD',
-        174: 'ICECUBE_ASTROTRACK_BRONZE',
-        176: 'ICECUBE_CASCADE',
-    }
-
     def __init__(self, payload):
         super().__init__(payload)
-        if self.packet_id not in self.VALID_PACKET_TYPES:
-            raise InvalidNoticeError(f'GCN packet type {self.packet_id} not valid for this class')
-        self.packet_type = self.VALID_PACKET_TYPES[self.packet_id]
+
+        # Check source
+        if self.source.upper() != 'ICECUBE':
+            raise InvalidNoticeError(f'Invalid source for Neutrino notice: "{self.source}"')
+        if self.source == 'ICECUBE':
+            self.source = 'IceCube'  # For nice formatting
+
+        # Event properties
         self.event_type = 'NU'
-        self.event_source = 'IceCube'
+        if hasattr(self, 'top_params'):
+            # VOEvent format, get type from the packet ID
+            packet_id = int(self.top_params['Packet_Type']['value'])
+            if packet_id == 173:
+                self.type = 'ASTROTRACK_GOLD'
+            elif packet_id == 174:
+                self.type = 'ASTROTRACK_BRONZE'
+            elif packet_id == 176:
+                self.type = 'CASCADE'
+            else:
+                msg = f'Unrecognised Neutrino packet type {packet_id} for source={self.source}'
+                raise InvalidNoticeError(msg)
+            self.event_id = self.top_params['AMON_ID']['value']
+            self.signalness = float(self.top_params['signalness']['value'])
+            self.far = float(self.top_params['FAR']['value'])
 
-        # Get info from the VOEvent
-        self.event_id = self.top_params['AMON_ID']['value']  # e.g. 13311922683750
-        self.event_name = '{}_{}'.format(self.event_source, self.event_id)  # e.g. IceCube_133...
-        self.signalness = float(self.top_params['signalness']['value'])
-        self.far = float(self.top_params['FAR']['value'])
-
-        # Position coordinates & error
-        event_location = self.voevent.WhereWhen['ObsDataLocation']['ObservationLocation']
-        event_position = event_location['AstroCoords']['Position2D']
-        self.position = SkyCoord(ra=float(event_position['Value2']['C1']),
-                                 dec=float(event_position['Value2']['C2']),
-                                 unit=event_position['unit'])
-        self.position_error = Angle(float(event_position['Error2Radius']),
-                                    unit=event_position['unit'])
-        if self.packet_type != 'ICECUBE_CASCADE':
-            # Systematic error for cascade events is 0
-            systematic_error = Angle(0.2, unit='deg')
-            self.position_error = Angle(np.sqrt(self.position_error ** 2 + systematic_error ** 2),
-                                        unit='deg')
+            # Time and position
+            event_location = self.message.WhereWhen['ObsDataLocation']['ObservationLocation']
+            event_time = event_location['AstroCoords']['Time']['TimeInstant']['ISOTime']
+            self.event_time = Time(event_time)
+            event_position = event_location['AstroCoords']['Position2D']
+            self.position = SkyCoord(
+                ra=float(event_position['Value2']['C1']),
+                dec=float(event_position['Value2']['C2']),
+                unit=event_position['unit'])
+            self.position_error = Angle(
+                float(event_position['Error2Radius']),
+                unit=event_position['unit'])
+            if self.type != 'CASCADE':
+                # Systematic error for cascade events is 0
+                systematic_error = Angle(0.2, unit='deg')
+                self.position_error = Angle(
+                    np.sqrt(self.position_error ** 2 + systematic_error ** 2), unit='deg')
 
         # Get skymap URL
         if 'skymap_fits' in self.top_params:
@@ -777,14 +926,15 @@ class NUNotice(Notice):
     @property
     def strategy(self):
         """Get the observing strategy key."""
-        if self.packet_type == 'ICECUBE_ASTROTRACK_GOLD':
+        if self.type == 'ASTROTRACK_GOLD':
             return 'NU_ICECUBE_GOLD'
-        elif self.packet_type == 'ICECUBE_ASTROTRACK_BRONZE':
+        elif self.type == 'ASTROTRACK_BRONZE':
             return 'NU_ICECUBE_BRONZE'
-        elif self.packet_type == 'ICECUBE_CASCADE':
+        elif self.type == 'CASCADE':
             return 'NU_ICECUBE_CASCADE'
         else:
-            raise ValueError(f'Cannot determine observing strategy for "{self.packet_type}" notice')
+            msg = f'Cannot determine observing strategy for {self.source} {self.type} notice'
+            raise ValueError(msg)
 
     @property
     def slack_details(self):
