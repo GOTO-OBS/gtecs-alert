@@ -4,6 +4,7 @@ import json
 import os
 import re
 import xml
+from base64 import b64decode
 from collections import Counter
 from urllib.parse import quote_plus
 from urllib.request import urlopen
@@ -477,7 +478,15 @@ class GWNotice(Notice):
                 self.properties = None
             self.event_time = Time(self.content['event']['time'])
             # Load the embedded skymap
-            self.skymap = skymap_from_bytes(self.content['event']['skymap'])
+            skymap_bytes = self.content['event']['skymap']
+            if isinstance(skymap_bytes, str):
+                # IGWN JSON skymaps are base46-encoded
+                # https://emfollow.docs.ligo.org/userguide/tutorial/receiving/gcn.html
+                try:
+                    skymap_bytes = b64decode(skymap_bytes)
+                except Exception as err:
+                    raise ValueError('Failed to decode base64-encoded skymap') from err
+            self.skymap = skymap_from_bytes(skymap_bytes)
             # Get external coincidence, if any
             if self.content['external_coinc'] is not None:
                 self.external = self.content['external_coinc'].copy()
