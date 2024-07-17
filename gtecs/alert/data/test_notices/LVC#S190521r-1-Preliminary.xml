@@ -1,8 +1,6 @@
 <?xml version='1.0' encoding='UTF-8'?>
-<voe:VOEvent xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-xmlns:voe="http://www.ivoa.net/xml/VOEvent/v2.0"
-xsi:schemaLocation="http://www.ivoa.net/xml/VOEvent/v2.0 http://www.ivoa.net/xml/VOEvent/VOEvent-v2.0.xsd"
- version="2.0" role="observation" ivorn="ivo://gwnet/LVC#S190521r-1-Preliminary">
+<voe:VOEvent xmlns:voe="http://www.ivoa.net/xml/VOEvent/v2.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.ivoa.net/xml/VOEvent/v2.0 http://www.ivoa.net/xml/VOEvent/VOEvent-v2.0.xsd" version="2.0" role="observation" ivorn="ivo://gwnet/LVC#S190521r-1-Preliminary">
     <Who>
         <Date>2019-05-21T07:50:19</Date>
         <Author>

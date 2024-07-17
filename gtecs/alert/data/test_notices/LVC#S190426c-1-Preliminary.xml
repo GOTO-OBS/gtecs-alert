@@ -1,8 +1,6 @@
 <?xml version="1.0" ?>
-<voe:VOEvent xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-xmlns:voe="http://www.ivoa.net/xml/VOEvent/v2.0"
-xsi:schemaLocation="http://www.ivoa.net/xml/VOEvent/v2.0 http://www.ivoa.net/xml/VOEvent/VOEvent-v2.0.xsd"
- version="2.0" role="observation" ivorn="ivo://gwnet/LVC#S190426c-1-Preliminary">
+<voe:VOEvent xmlns:voe="http://www.ivoa.net/xml/VOEvent/v2.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.ivoa.net/xml/VOEvent/v2.0 http://www.ivoa.net/xml/VOEvent/VOEvent-v2.0.xsd" version="2.0" role="observation" ivorn="ivo://gwnet/LVC#S190426c-1-Preliminary">
     <Who>
         <Date>2019-04-26T15:47:06</Date>
         <Author>
@@ -105,4 +103,3 @@ xsi:schemaLocation="http://www.ivoa.net/xml/VOEvent/v2.0 http://www.ivoa.net/xml
     </How>
     <Description>Report of a candidate gravitational wave event</Description>
 </voe:VOEvent>
-

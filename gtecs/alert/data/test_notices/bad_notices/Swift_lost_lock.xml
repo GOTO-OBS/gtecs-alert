@@ -1,7 +1,6 @@
 <?xml version = '1.0' encoding = 'UTF-8'?>
-<voe:VOEvent ivorn="ivo://nasa.gsfc.gcn/SWIFT#BAT_GRB_Pos_1209406-601" role="observation" version="2.0"
-    xmlns:voe="http://www.ivoa.net/xml/VOEvent/v2.0"
-    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.ivoa.net/xml/VOEvent/v2.0  http://www.ivoa.net/xml/VOEvent/VOEvent-v2.0.xsd">
+<voe:VOEvent xmlns:voe="http://www.ivoa.net/xml/VOEvent/v2.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" ivorn="ivo://nasa.gsfc.gcn/SWIFT#BAT_GRB_Pos_1209406-601" role="observation" version="2.0" xsi:schemaLocation="http://www.ivoa.net/xml/VOEvent/v2.0  http://www.ivoa.net/xml/VOEvent/VOEvent-v2.0.xsd">
     <Who>
         <AuthorIVORN>ivo://nasa.gsfc.tan/gcn</AuthorIVORN>
         <Author>
