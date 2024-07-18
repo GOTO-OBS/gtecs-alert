@@ -1,26 +1,26 @@
 <?xml version='1.0' encoding='UTF-8'?>
 <voe:VOEvent xmlns:voe="http://www.ivoa.net/xml/VOEvent/v2.0"
-    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.ivoa.net/xml/VOEvent/v2.0 http://www.ivoa.net/xml/VOEvent/VOEvent-v2.0.xsd" version="2.0" role="test" ivorn="ivo://gwnet/LVC#MS181101ab-1-EarlyWarning">
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.ivoa.net/xml/VOEvent/v2.0 http://www.ivoa.net/xml/VOEvent/VOEvent-v2.0.xsd" version="2.0" role="test" ivorn="ivo://gwnet/LVC#MS181101ab3-6-Update">
     <Who>
-        <Date>2018-11-01T22:34:20Z</Date>
+        <Date>2018-11-01T22:39:25Z</Date>
         <Author>
             <contactName>LIGO Scientific Collaboration, Virgo Collaboration, and KAGRA Collaboration</contactName>
         </Author>
     </Who>
     <What>
-        <Param dataType="int" name="Packet_Type" value="163">
-            <Description>The Notice Type number is assigned/used within GCN, eg type=163 is an LVC_EARLY_WARNING notice</Description>
+        <Param dataType="int" name="Packet_Type" value="152">
+            <Description>The Notice Type number is assigned/used within GCN, eg type=152 is an LVC_UPDATE notice</Description>
         </Param>
         <Param dataType="int" name="internal" value="0">
             <Description>Indicates whether this event should be distributed to LSC/Virgo/KAGRA members only</Description>
         </Param>
-        <Param dataType="int" name="Pkt_Ser_Num" value="1">
+        <Param dataType="int" name="Pkt_Ser_Num" value="6">
             <Description>A number that increments by 1 each time a new revision is issued for this event</Description>
         </Param>
-        <Param dataType="string" name="GraceID" ucd="meta.id" value="MS181101ab">
+        <Param dataType="string" name="GraceID" ucd="meta.id" value="MS181101ab3">
             <Description>Identifier in GraceDB</Description>
         </Param>
-        <Param dataType="string" name="AlertType" ucd="meta.version" value="EarlyWarning">
+        <Param dataType="string" name="AlertType" ucd="meta.version" value="Update">
             <Description>VOEvent alert type</Description>
         </Param>
         <Param dataType="int" name="HardwareInj" ucd="meta.number" value="0">
@@ -29,7 +29,7 @@
         <Param dataType="int" name="OpenAlert" ucd="meta.number" value="1">
             <Description>Indicates that this event is an open alert if 1, no if 0</Description>
         </Param>
-        <Param dataType="string" name="EventPage" ucd="meta.ref.url" value="https://example.org/superevents/MS181101ab/view/">
+        <Param dataType="string" name="EventPage" ucd="meta.ref.url" value="https://example.org/superevents/MS181101ab3/view/">
             <Description>Web page for evolving status of this GW candidate</Description>
         </Param>
         <Param dataType="string" name="Instruments" ucd="meta.code" value="H1,L1,V1">
@@ -37,6 +37,9 @@
         </Param>
         <Param dataType="float" name="FAR" ucd="arith.rate;stat.falsealarm" unit="Hz" value="9.11069936486e-14">
             <Description>False alarm rate for GW candidates with this strength or greater</Description>
+        </Param>
+        <Param dataType="int" name="Significant" ucd="meta.number" value="1">
+            <Description>Indicates that this event is a significant alert if 1, no if 0</Description>
         </Param>
         <Param dataType="string" name="Group" ucd="meta.code" value="CBC">
             <Description>Data analysis working group</Description>
@@ -47,6 +50,33 @@
         <Param dataType="string" name="Search" ucd="meta.code" value="MDC">
             <Description>Specific low-latency search</Description>
         </Param>
+        <Group name="External Coincidence" type="External Coincidence">
+            <Param dataType="string" name="External_GCN_Notice_Id" ucd="meta.id" value="524666471">
+                <Description>GCN trigger ID of external event</Description>
+            </Param>
+            <Param dataType="string" name="External_Ivorn" ucd="meta.id" value="ivo://nasa.gsfc.gcn/Fermi#GBM_Fin_Pos2017-08-17T12:41:06.47_524666471_0-389">
+                <Description>IVORN of external event</Description>
+            </Param>
+            <Param dataType="string" name="External_Observatory" ucd="meta.code" value="Fermi">
+                <Description>External Observatory</Description>
+            </Param>
+            <Param dataType="string" name="External_Search" ucd="meta.code" value="GRB">
+                <Description>External astrophysical search</Description>
+            </Param>
+            <Param dataType="float" name="Time_Difference" ucd="meta.code" value="2.02">
+                <Description>Time difference between GW candidate and external event, centered on the GW candidate</Description>
+            </Param>
+            <Param dataType="float" name="Time_Coincidence_FAR" ucd="arith.rate;stat.falsealarm" unit="Hz" value="2.14387838137e-14">
+                <Description>Estimated coincidence false alarm rate in Hz using timing</Description>
+            </Param>
+            <Param dataType="float" name="Time_Sky_Position_Coincidence_FAR" ucd="arith.rate;stat.falsealarm" unit="Hz" value="6.410749524018777e-16">
+                <Description>Estimated coincidence false alarm rate in Hz using timing and sky position</Description>
+            </Param>
+            <Param name="joint_skymap_fits" value="https://emfollow.docs.ligo.org/userguide/_static/combined-ext.multiorder.fits" ucd="meta.ref.url" dataType="string">
+                <Description>Combined GW-External Sky Map FITS</Description>
+            </Param>
+            <Description>Properties of joint coincidence found by RAVEN</Description>
+        </Group>
         <Group name="GW_SKYMAP" type="GW_SKYMAP">
             <Param dataType="string" name="skymap_fits" ucd="meta.ref.url" value="https://emfollow.docs.ligo.org/userguide/_static/bayestar.multiorder.fits,0">
                 <Description>Sky Map FITS</Description>
@@ -95,7 +125,7 @@
             </ObservationLocation>
         </ObsDataLocation>
     </WhereWhen>
-    <Description>Early warning report of a candidate gravitational wave event</Description>
+    <Description>Report of a candidate gravitational wave event</Description>
     <How>
         <Description>Candidate gravitational wave event identified by low-latency analysis</Description>
         <Description>H1: LIGO Hanford 4 km gravitational wave detector</Description>
@@ -103,4 +133,12 @@
         <Description>V1: Virgo 3 km gravitational wave detector</Description>
         <Description>K1: KAGRA 3 km gravitational wave detector</Description>
     </How>
+    <Citations>
+        <EventIVORN cite="supersedes">ivo://gwnet/LVC#MS181101ab3-5-Retraction</EventIVORN>
+        <EventIVORN cite="supersedes">ivo://gwnet/LVC#MS181101ab3-4-Update</EventIVORN>
+        <EventIVORN cite="supersedes">ivo://gwnet/LVC#MS181101ab3-3-Initial</EventIVORN>
+        <EventIVORN cite="supersedes">ivo://gwnet/LVC#MS181101ab3-2-Preliminary</EventIVORN>
+        <EventIVORN cite="supersedes">ivo://gwnet/LVC#MS181101ab3-1-EarlyWarning</EventIVORN>
+        <Description>Updated localization is now available</Description>
+    </Citations>
 </voe:VOEvent>
