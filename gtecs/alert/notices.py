@@ -251,13 +251,13 @@ class Notice:
                 else:
                     return GWNotice(message)
             elif base_notice.source.upper() == 'FERMI':
-                return GRBNotice(message)
+                return FermiNotice(message)
             elif base_notice.source.upper() == 'SWIFT':
-                return GRBNotice(message)
+                return SwiftNotice(message)
             elif base_notice.source.upper() == 'GECAM':
-                return GRBNotice(message)
+                return GECAMNotice(message)
             elif base_notice.source.upper() == 'ICECUBE':
-                return NUNotice(message)
+                return IceCubeNotice(message)
         except InvalidNoticeError:
             # For whatever reason the notice isn't valid, so fall back to the default class
             pass
@@ -761,61 +761,37 @@ class GWRetractionNotice(Notice):
         return text
 
 
-class GRBNotice(Notice):
-    """A class to represent a Gamma-Ray Burst detection notice."""
+class FermiNotice(Notice):
+    """A class to represent a Fermi detection notice."""
 
     def __init__(self, payload):
         super().__init__(payload)
 
         # Check source
-        if self.source.upper() not in ['FERMI', 'SWIFT', 'GECAM']:
-            raise InvalidNoticeError(f'Invalid source for GRB notice: "{self.source}"')
-        if self.source in ['FERMI', 'SWIFT']:
-            self.source = self.source.capitalize()  # For nice formatting
+        if self.source.upper() != 'FERMI':
+            raise InvalidNoticeError(f'Invalid source for Fermi notice: "{self.source}"')
+        self.source = 'Fermi'  # For nice formatting
 
         # Event properties
         self.event_type = 'GRB'
         if hasattr(self, 'top_params'):
             # VOEvent format, get type from the packet ID
             packet_id = int(self.top_params['Packet_Type']['value'])
-            if packet_id == 61 and self.source == 'Swift':
-                self.type = 'BAT_GRB_POS'
-            elif packet_id == 115 and self.source == 'Fermi':
+            if packet_id == 115:
                 self.type = 'GBM_FIN_POS'
-            elif packet_id == 189 and self.source == 'GECAM':
-                self.type = 'GND'
             else:
-                # This could happen with notices from valid sources but with other types
-                msg = f'Unrecognised GRB packet type {packet_id} for source={self.source}'
+                msg = f'Unrecognised packet type {packet_id} for Fermi notice'
                 raise InvalidNoticeError(msg)
-
-            # Source-specific properties
-            if self.source == 'Fermi':
-                self.event_id = self.top_params['TrigID']['value']
-                self.properties = {
-                    key: self.group_params['Trigger_ID'][key]['value']
-                    for key in self.group_params['Trigger_ID']
-                    if key != 'Long_short'}
-                try:
-                    self.duration = self.group_params['Trigger_ID']['Long_short']['value']
-                except KeyError:
-                    # Some don't have the duration
-                    self.duration = 'unknown'
-            elif self.source == 'Swift':
-                self.event_id = self.top_params['TrigID']['value']
-                self.properties = {
-                    key: self.group_params['Solution_Status'][key]['value']
-                    for key in self.group_params['Solution_Status']}
-                # Throw out events with no star lock
-                if self.properties['StarTrack_Lost_Lock'] == 'true':
-                    raise InvalidNoticeError('Bad Swift GRB notice (no star lock)')
-            elif self.source == 'GECAM':
-                self.event_id = self.top_params['Trigger_Number']['value']
-                self.properties = {'class': self.top_params['SRC_CLASS']['value']}
-                # Throw out events that aren't GRBs
-                if self.properties['class'] != 'GRB':
-                    msg = 'GECAM notice is not a GRB ({})'.format(self.properties['class'])
-                    raise InvalidNoticeError(msg)
+            self.event_id = self.top_params['TrigID']['value']
+            self.properties = {
+                key: self.group_params['Trigger_ID'][key]['value']
+                for key in self.group_params['Trigger_ID']
+                if key != 'Long_short'}
+            try:
+                self.duration = self.group_params['Trigger_ID']['Long_short']['value']
+            except KeyError:
+                # Some don't have the duration
+                self.duration = 'unknown'
 
             # Format properties
             for key in self.properties:
@@ -836,44 +812,30 @@ class GRBNotice(Notice):
             self.position_error = Angle(
                 float(event_position['Error2Radius']),
                 unit=event_position['unit'])
-
-            # Skymaps
-            if self.source == 'Fermi':
-                systematic_error = Angle(5.6, unit='deg')
-                self.position_error = Angle(
-                    np.sqrt(self.position_error ** 2 + systematic_error ** 2), unit='deg')
-                # Fermi alerts don't include the URL to the HEALPix skymap,
-                # because at this stage it might not have been created yet.
-                # But we can try and guess it based on the typical format.
-                try:
-                    old_url = self.top_params['LightCurve_URL']['value']
-                    skymap_url = old_url.replace('lc_medres34', 'healpix_all')
-                    self.skymap_url = skymap_url.replace('.gif', '.fit')
-                except Exception:
-                    # Worth a try, fall back to creating our own
-                    self.skymap_url = None
-            else:
-                # Swift and GECAM notices are well localised enough to use use the position
+            systematic_error = Angle(5.6, unit='deg')
+            self.position_error = Angle(
+                np.sqrt(self.position_error ** 2 + systematic_error ** 2), unit='deg')
+            # Fermi alerts don't include the URL to the HEALPix skymap,
+            # because at this stage it might not have been created yet.
+            # But we can try and guess it based on the typical format.
+            try:
+                old_url = self.top_params['LightCurve_URL']['value']
+                skymap_url = old_url.replace('lc_medres34', 'healpix_all')
+                self.skymap_url = skymap_url.replace('.gif', '.fit')
+            except Exception:
+                # Worth a try, fall back to creating our own
                 self.skymap_url = None
         else:
             # For now we only process VOEvents
-            raise InvalidNoticeError('GRB notices must be VOEvents')
+            raise InvalidNoticeError('Fermi notices must be VOEvents')
 
     @property
     def strategy(self):
         """Get the observing strategy key."""
-        if self.source == 'Swift':
-            return 'GRB_SWIFT'
-        elif self.source == 'Fermi':
-            if self.duration.lower() in ['short', 'unknown']:  # Safe side for unknown events
-                return 'GRB_FERMI_SHORT'
-            else:
-                return 'GRB_FERMI'
-        elif self.source == 'GECAM':
-            return 'GRB_FERMI'  # Just use the default Fermi strategy
+        if self.duration.lower() in ['short', 'unknown']:  # Safe side for unknown events
+            return 'GRB_FERMI_SHORT'
         else:
-            msg = f'Cannot determine observing strategy for {self.source} {self.type} notice'
-            raise ValueError(msg)
+            return 'GRB_FERMI'
 
     @property
     def slack_details(self):
@@ -882,8 +844,7 @@ class GRBNotice(Notice):
         text += f'Detection time: {self.event_time.iso}\n'
 
         # Classification info
-        if self.source == 'Fermi':
-            text += f'Duration: {self.duration.capitalize()}\n'
+        text += f'Duration: {self.duration.capitalize()}\n'
 
         # Position info
         text += f'Position: {self.position.to_string("hmsdms")} ({self.position.to_string()})\n'
@@ -892,8 +853,148 @@ class GRBNotice(Notice):
         return text
 
 
-class NUNotice(Notice):
-    """A class to represent a Neutrino (NU) detection notice."""
+class SwiftNotice(Notice):
+    """A class to represent a Swift detection notice."""
+
+    def __init__(self, payload):
+        super().__init__(payload)
+
+        # Check source
+        if self.source.upper() != 'SWIFT':
+            raise InvalidNoticeError(f'Invalid source for Swift notice: "{self.source}"')
+        self.source = 'Swift'  # For nice formatting
+
+        # Event properties
+        self.event_type = 'GRB'
+        if hasattr(self, 'top_params'):
+            # VOEvent format, get type from the packet ID
+            packet_id = int(self.top_params['Packet_Type']['value'])
+            if packet_id == 61:
+                self.type = 'BAT_GRB_POS'
+            else:
+                msg = f'Unrecognised packet type {packet_id} for Swift notice'
+                raise InvalidNoticeError(msg)
+            self.event_id = self.top_params['TrigID']['value']
+            self.properties = {
+                key: self.group_params['Solution_Status'][key]['value']
+                for key in self.group_params['Solution_Status']}
+            # Throw out events with no star lock
+            if self.properties['StarTrack_Lost_Lock'] == 'true':
+                raise InvalidNoticeError('Bad Swift notice (no star lock)')
+
+            # Format properties
+            for key in self.properties:
+                if self.properties[key] == 'true':
+                    self.properties[key] = True
+                elif self.properties[key] == 'false':
+                    self.properties[key] = False
+
+            # Time and position
+            event_location = self.message.WhereWhen['ObsDataLocation']['ObservationLocation']
+            event_time = event_location['AstroCoords']['Time']['TimeInstant']['ISOTime']
+            self.event_time = Time(event_time)
+            event_position = event_location['AstroCoords']['Position2D']
+            self.position = SkyCoord(
+                ra=float(event_position['Value2']['C1']),
+                dec=float(event_position['Value2']['C2']),
+                unit=event_position['unit'])
+            self.position_error = Angle(
+                float(event_position['Error2Radius']),
+                unit=event_position['unit'])
+            self.skymap_url = None
+        else:
+            # For now we only process VOEvents
+            raise InvalidNoticeError('Swift notices must be VOEvents')
+
+    @property
+    def strategy(self):
+        """Get the observing strategy key."""
+        return 'GRB_SWIFT'
+
+    @property
+    def slack_details(self):
+        """Get details for Slack messages."""
+        text = f'Event: {self.event_name}\n'
+        text += f'Detection time: {self.event_time.iso}\n'
+
+        # Position info
+        text += f'Position: {self.position.to_string("hmsdms")} ({self.position.to_string()})\n'
+        text += f'Position error: {self.position_error:.3f}\n'
+
+        return text
+
+
+class GECAMNotice(Notice):
+    """A class to represent a GECAM detection notice."""
+
+    def __init__(self, payload):
+        super().__init__(payload)
+
+        # Check source
+        if self.source.upper() != 'GECAM':
+            raise InvalidNoticeError(f'Invalid source for GECAM notice: "{self.source}"')
+
+        # Event properties
+        self.event_type = 'GRB'
+        if hasattr(self, 'top_params'):
+            # VOEvent format, get type from the packet ID
+            packet_id = int(self.top_params['Packet_Type']['value'])
+            if packet_id == 189:
+                self.type = 'GND'
+            else:
+                msg = f'Unrecognised packet type {packet_id} for GECAM notice'
+                raise InvalidNoticeError(msg)
+            self.event_id = self.top_params['Trigger_Number']['value']
+            self.properties = {'class': self.top_params['SRC_CLASS']['value']}
+            # Throw out events that aren't GRBs
+            if self.properties['class'] != 'GRB':
+                msg = 'GECAM notice is not a GRB ({})'.format(self.properties['class'])
+                raise InvalidNoticeError(msg)
+
+            # Format properties
+            for key in self.properties:
+                if self.properties[key] == 'true':
+                    self.properties[key] = True
+                elif self.properties[key] == 'false':
+                    self.properties[key] = False
+
+            # Time and position
+            event_location = self.message.WhereWhen['ObsDataLocation']['ObservationLocation']
+            event_time = event_location['AstroCoords']['Time']['TimeInstant']['ISOTime']
+            self.event_time = Time(event_time)
+            event_position = event_location['AstroCoords']['Position2D']
+            self.position = SkyCoord(
+                ra=float(event_position['Value2']['C1']),
+                dec=float(event_position['Value2']['C2']),
+                unit=event_position['unit'])
+            self.position_error = Angle(
+                float(event_position['Error2Radius']),
+                unit=event_position['unit'])
+            self.skymap_url = None
+        else:
+            # For now we only process VOEvents
+            raise InvalidNoticeError('GECAM notices must be VOEvents')
+
+    @property
+    def strategy(self):
+        """Get the observing strategy key."""
+        return 'GRB_FERMI'  # Just use the default Fermi strategy
+
+    @property
+    def slack_details(self):
+        """Get details for Slack messages."""
+        text = f'Event: {self.event_name}\n'
+        text += f'Detection time: {self.event_time.iso}\n'
+
+        # Position info
+        text += f'Position: {self.position.to_string("hmsdms")} ({self.position.to_string()})\n'
+        text += f'Position error: {self.position_error:.3f}\n'
+
+        return text
+
+
+class IceCubeNotice(Notice):
+    """A class to represent an IceCube neutrino (NU) detection notice."""
 
     def __init__(self, payload):
         super().__init__(payload)
