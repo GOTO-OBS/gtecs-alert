@@ -307,7 +307,7 @@ class Notice:
         This is a combination of "{notice.source}_{notice.event_id}",
         e.g. LVC_S190510g, Fermi_579943502.
         """
-        return self.source + '_' + self.event_id
+        return f'{self.source}_{self.event_id}'
 
     def save(self, path):
         """Save this notice to a file in the given directory."""
@@ -572,7 +572,13 @@ class GWNotice(Notice):
             # Other factors we use:
             #  the 90% contour area (ideally the visible area, but that's tricky to calculate)
             #  the distance (the mean - 1 stddev, since the errors can be very large)
-            distance = self.skymap.header['distmean'] - self.skymap.header['diststd']
+            if 'distmean' in self.skymap.header:
+                distance = self.skymap.header['distmean'] - self.skymap.header['diststd']
+            else:
+                # Some CBC pipelines don't include distance information
+                # https://git.ligo.org/emfollow/userguide/-/issues/368
+                # So we'll just assume it's far
+                distance = np.inf
             if observable_metric > 0.5:
                 # These are the ones we always want to follow up.
                 # The choice here just affects the scheduler ranking and if we send a WAKEUP alert.
