@@ -12,6 +12,7 @@ from gtecs.obs import database as obs_db
 
 import ligo.skymap.plot  # noqa: F401  (for extra projections)
 
+import matplotlib
 from matplotlib import pyplot as plt
 
 import numpy as np
@@ -88,6 +89,8 @@ def send_notice_report(notice, time=None):
     # Create a skymap plot to attach to the message (if there is one)
     filepath = None
     if notice.skymap is not None:
+        matplotlib.use('agg')  # Use the agg backend for plotting, so we don't need a display
+
         plt.figure(figsize=(8, 4), dpi=120, facecolor='white', tight_layout=True)
         axes = plt.axes(projection='astro hours mollweide')
         axes.grid()
@@ -291,6 +294,7 @@ def send_observing_report(notice, time=None):
     msg += f'Total probability in survey tiles: {total_prob:.1%}\n'
 
     # Create visibility plot
+    matplotlib.use('agg')  # Use the agg backend for plotting, so we don't need a display
     fig = plt.figure(figsize=(9, 4 * len(sites)), dpi=120, facecolor='white', tight_layout=True)
 
     # Find visibility constraints
