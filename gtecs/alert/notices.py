@@ -256,6 +256,8 @@ class Notice:
                 return SwiftNotice(message)
             elif base_notice.source.upper() == 'GECAM':
                 return GECAMNotice(message)
+            elif base_notice.source.upper() == 'EINSTEIN_PROBE':
+                return EinsteinProbeNotice(message)
             elif base_notice.source.upper() == 'ICECUBE':
                 return IceCubeNotice(message)
         except InvalidNoticeError:
@@ -306,8 +308,15 @@ class Notice:
 
         This is a combination of "{notice.source}_{notice.event_id}",
         e.g. LVC_S190510g, Fermi_579943502.
+
+        If an alert isn't given a unique ID, we'll use the event time as the identifier.
         """
-        return f'{self.source}_{self.event_id}'
+        if self.event_id is not None:
+            return f'{self.source}_{self.event_id}'
+        elif self.event_time is not None:
+            return f'{self.source}_{self.event_time.isot}'
+        else:
+            return f'{self.source}_<unknown>'
 
     def save(self, path):
         """Save this notice to a file in the given directory."""
@@ -985,6 +994,64 @@ class GECAMNotice(Notice):
         """Get details for Slack messages."""
         text = f'Event: {self.event_name}\n'
         text += f'Detection time: {self.event_time.iso}\n'
+
+        # Position info
+        text += f'Position: {self.position.to_string("hmsdms")} ({self.position.to_string()})\n'
+        text += f'Position error: {self.position_error:.3f}\n'
+
+        return text
+
+
+class EinsteinProbeNotice(Notice):
+    """A class to represent a Einstein Probe detection notice."""
+
+    def __init__(self, payload):
+        super().__init__(payload)
+
+        # Check source
+        if self.source.upper() != 'EINSTEIN_PROBE':
+            raise InvalidNoticeError(f'Invalid source for EinsteinProbe notice: "{self.source}"')
+        self.source = 'EinsteinProbe'  # For nice formatting
+
+        # Event properties
+        self.event_type = 'GRB'
+        if '$schema' in self.content:
+            # Unified GCN format
+            self.type = self.content['instrument']
+            self.event_id = None  # EP alerts have no unique IDs >:(
+            self.properties = {
+                'image_energy_range': self.content['image_energy_range'],
+                'net_count_rate': self.content['net_count_rate'],
+                'image_snr': self.content['image_snr'],
+            }
+
+            # Time and position
+            self.event_time = Time(self.content['trigger_time'])
+            self.position = SkyCoord(
+                ra=self.content['ra'],
+                dec=self.content['dec'],
+                unit='deg')
+            self.position_error = Angle(
+                self.content['ra_dec_error'],
+                unit='deg')
+            self.skymap_url = None
+        else:
+            # EP only produces Unified GCN format notices
+            raise InvalidNoticeError('EinsteinProbe notices must be VOEvents')
+
+    @property
+    def strategy(self):
+        """Get the observing strategy key."""
+        return 'GRB_FERMI'  # Just use the default Fermi strategy
+
+    @property
+    def slack_details(self):
+        """Get details for Slack messages."""
+        text = f'Event: {self.event_name}\n'
+        text += f'Detection time: {self.event_time.iso}\n'
+
+        # Classification info
+        text += f'SNR: {self.properties["image_snr"]:.1f}\n'
 
         # Position info
         text += f'Position: {self.position.to_string("hmsdms")} ({self.position.to_string()})\n'
