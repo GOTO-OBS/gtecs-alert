@@ -14,7 +14,7 @@ import gcn.voeventclient as pygcn
 
 from gtecs.common import logging
 
-from hop.auth import Auth
+from hop.auth import Auth, SASLMethod
 from hop.io import StartPosition, Stream
 
 from . import params
@@ -209,7 +209,15 @@ class Sentinel:
         # This first while loop means the connection will be recreated if it fails.
         while self.running:
             # Create a Kafka stream
-            auth = Auth(user=user, password=password)
+            if broker == 'SCIMMA':
+                auth = Auth(user=user, password=password)
+            elif broker == 'NASA':
+                auth = Auth(
+                    user=user,
+                    password=password,
+                    method=SASLMethod.OAUTHBEARER,
+                    token_endpoint='https://auth.gcn.nasa.gov/oauth2/token',
+                )
             group_id = auth.username + '-' + group_id
             if backdate:
                 self.log.debug('Starting Kafka stream from earliest message')
