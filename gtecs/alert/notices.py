@@ -786,7 +786,7 @@ class FermiNotice(Notice):
         if hasattr(self, 'top_params'):
             # VOEvent format, get type from the packet ID
             packet_id = int(self.top_params['Packet_Type']['value'])
-            if packet_id == 115:
+            if packet_id == 115:  # FERMI_GBM_FIN_POS
                 self.type = 'GBM_FIN_POS'
             else:
                 msg = f'Unrecognised packet type {packet_id} for Fermi notice'
@@ -878,7 +878,7 @@ class SwiftNotice(Notice):
         if hasattr(self, 'top_params'):
             # VOEvent format, get type from the packet ID
             packet_id = int(self.top_params['Packet_Type']['value'])
-            if packet_id == 61:
+            if packet_id == 61:  # SWIFT_BAT_GRB_POS_ACK
                 self.type = 'BAT_GRB_POS'
             else:
                 msg = f'Unrecognised packet type {packet_id} for Swift notice'

@@ -57,7 +57,6 @@ class Sentinel:
                 params.KAFKA_USER,
                 params.KAFKA_PASSWORD,
                 params.KAFKA_BROKER,
-                params.KAFKA_TOPICS,
                 params.KAFKA_GROUP_ID,
                 params.KAFKA_BACKDATE,
             ),
@@ -187,7 +186,6 @@ class Sentinel:
             user,
             password,
             broker='SCIMMA',
-            topics=None,
             group_id=None,
             backdate=False,
     ):
@@ -201,8 +199,54 @@ class Sentinel:
 
         if broker == 'SCIMMA':
             broker_url = 'kafka://kafka.scimma.org/'
+            # Subscribe to the combined GCN notice stream
+            # Note this only receives "classic" text notices, not the new Unified schema ones (EP)
+            # There's also no way to select specific notice types
+            # SCIMMA have said they will be reworking their GCN system at some point...
+            topics = ['gcn.notice']
+            # Also subscribe to the heartbeat topic, do we can check if we're still connected
+            topics += ['sys.heartbeat']
         elif broker == 'NASA':
             broker_url = 'kafka://kafka.gcn.nasa.gov/'
+            # Subscribe only to the topics we're interested in
+            topics = []
+            # LVC notices (classic only)
+            # New IGWN alerts are under 'igwn.gwalert', but we'll stick to the classic ones for now
+            topics += [
+                'gcn.classic.voevent.LVC_EARLY_WARNING',
+                'gcn.classic.voevent.LVC_INITIAL',
+                'gcn.classic.voevent.LVC_PRELIMINARY',
+                'gcn.classic.voevent.LVC_UPDATE',
+                'gcn.classic.voevent.LVC_RETRACTION',
+            ]
+            # Fermi notices
+            # We only process the final positions for now
+            topics += [
+                'gcn.classic.voevent.FERMI_GBM_FLT_POS',
+                'gcn.classic.voevent.FERMI_GBM_GND_POS',
+                'gcn.classic.voevent.FERMI_GBM_FIN_POS',
+            ]
+            # Swift notices
+            topics += [
+                'gcn.classic.voevent.SWIFT_BAT_GRB_POS_ACK',
+            ]
+            # GECAM notices
+            # We only process the ground notices for now
+            topics += [
+                'gcn.classic.voevent.GECAM_FLT',
+                'gcn.classic.voevent.GECAM_GND',
+            ]
+            # Einstein Probe notices
+            # Note these use the new Unified schema, and are unavailable in the classic format
+            topics += [
+                'gcn.notices.einstein_probe.wxt.alert',
+            ]
+            # IceCube notices
+            topics += [
+                'gcn.classic.voevent.ICECUBE_ASTROTRACK_BRONZE',
+                'gcn.classic.voevent.ICECUBE_ASTROTRACK_GOLD',
+                'gcn.classic.voevent.ICECUBE_CASCADE',
+            ]
         else:
             raise ValueError('Broker must be "SCIMMA" or "NASA"')
 
@@ -249,18 +293,13 @@ class Sentinel:
 
             # Now we connect to the stream and start reading messages
             try:
-                if broker == 'SCIMMA':
-                    # We can use the system heartbeat to check if we're still connected
-                    topics = ['sys.heartbeat'] + topics
-                    heartbeat_timeout = 60
-                    latest_message_time = 0
-
                 url = broker_url + ','.join(topics)
                 self.log.info(f'Connecting to Kafka stream at {url}')
                 consumer = stream.open(url, mode='r', group_id=group_id)
 
-                # Save the available topics
-                self.kafka_topics = [
+                # Save the listed topics
+                self.kafka_topics = topics
+                self.kafka_all_topics = [
                     t for t in sorted(consumer._consumer._consumer.list_topics().topics.keys())
                 ]
 
@@ -269,6 +308,9 @@ class Sentinel:
                         break
 
                     if broker == 'SCIMMA':
+                        # We can use the system heartbeat to check if we're still connected
+                        heartbeat_timeout = 60
+                        latest_message_time = 0
                         # Because of the sys.heartbeat messages we should be getting a message
                         # every few seconds, so we can use this timestamp to check if we're
                         # still connected.
@@ -438,10 +480,7 @@ class Sentinel:
 
     def get_kafka_topics(self):
         """Return a list of subscribed topics."""
-        if hasattr(self, 'kafka_topics'):
-            return self.kafka_topics, params.KAFKA_TOPICS
-        else:
-            return [], params.KAFKA_TOPICS
+        return self.kafka_all_topics, self.kafka_topics
 
     def get_queue(self):
         """Return the current notice queue."""
