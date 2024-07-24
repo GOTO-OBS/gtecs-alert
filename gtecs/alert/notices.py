@@ -23,7 +23,6 @@ import requests
 
 import voeventdb.remote.apiv1 as vdb
 
-from .skymap import skymap_from_bytes
 from .strategy import get_strategy_details
 
 
@@ -495,7 +494,7 @@ class GWNotice(Notice):
                     skymap_bytes = b64decode(skymap_bytes)
                 except Exception as err:
                     raise ValueError('Failed to decode base64-encoded skymap') from err
-            self.skymap = skymap_from_bytes(skymap_bytes)
+            self.skymap = SkyMap.from_fits(skymap_bytes)
             # Get external coincidence, if any
             if self.content['external_coinc'] is not None:
                 self.external = self.content['external_coinc'].copy()
@@ -503,13 +502,11 @@ class GWNotice(Notice):
                 self.skymap_original = self.skymap
                 skymap_bytes = self.external['combined_skymap']
                 if isinstance(skymap_bytes, str):
-                    # IGWN JSON skymaps are base46-encoded
-                    # https://emfollow.docs.ligo.org/userguide/tutorial/receiving/gcn.html
                     try:
                         skymap_bytes = b64decode(skymap_bytes)
                     except Exception as err:
                         raise ValueError('Failed to decode base64-encoded skymap') from err
-                self.skymap = skymap_from_bytes(skymap_bytes)
+                self.skymap = SkyMap.from_fits(skymap_bytes)
                 del self.external['combined_skymap']
             else:
                 self.external = None

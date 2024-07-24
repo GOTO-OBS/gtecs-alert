@@ -6,6 +6,8 @@ from contextlib import contextmanager
 
 from astropy.time import Time
 
+from gototile.skymap import SkyMap
+
 from gtecs.common.database import get_session as get_session_common
 from gtecs.obs.database.models import Base
 
@@ -15,7 +17,6 @@ from sqlalchemy.orm import backref, relationship, validates
 
 from . import params
 from .notices import Notice as EventNotice
-from .skymap import skymap_from_bytes
 
 
 def get_session(user=None, password=None, host=None, echo=None, pool_pre_ping=None):
@@ -311,5 +312,6 @@ class Notice(Base):
         """Create a gtecs.alert.notices.Notice class (or subclass) from this Notice."""
         notice = EventNotice.from_payload(self.payload)
         if self.skymap is not None:
-            notice.skymap = skymap_from_bytes(self.skymap)
+            # Decode the bytes
+            notice.skymap = SkyMap.from_fits(self.skymap)
         return notice
