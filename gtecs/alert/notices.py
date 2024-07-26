@@ -1015,7 +1015,15 @@ class EinsteinProbeNotice(Notice):
         if '$schema' in self.content:
             # Unified GCN format
             self.type = self.content['instrument']
-            self.event_id = None  # EP alerts have no unique IDs >:(
+            if 'id' in self.content:
+                self.event_id = self.content['id']
+                if isinstance(self.event_id, list):
+                    # Why does the schema define this as an array?
+                    self.event_id = self.event_id[0]
+            else:
+                # Initially EP alerts had no IDs, so we just use the trigger time for the name.
+                # (see the Notice.event_name property)
+                self.event_id = None
             self.properties = {
                 'image_energy_range': self.content['image_energy_range'],
                 'net_count_rate': self.content['net_count_rate'],
