@@ -846,7 +846,8 @@ class FermiNotice(Notice):
             # We need the skymap to know the area
             raise ValueError('Cannot determine strategy without skymap')
 
-        if self.skymap.get_contour_area(0.9) < 100:
+        # Select based on 1sigma area
+        if self.skymap.get_contour_area(0.68) < 100:
             return 'GRB_FERMI_NARROW'
         else:
             return 'GRB_FERMI_WIDE'
@@ -859,6 +860,7 @@ class FermiNotice(Notice):
 
         # Classification info
         text += f'Duration: {self.duration.capitalize()}\n'
+        text += f'1σ probability area: {self.skymap.get_contour_area(0.68):.0f} sq deg\n'
 
         # Position info
         text += f'Position: {self.position.to_string("hmsdms")} ({self.position.to_string()})\n'
