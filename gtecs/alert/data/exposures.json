@@ -27,6 +27,13 @@
             "filt": "L"
         }
     ],
+    "8x90L": [
+        {
+            "num_exp": 8,
+            "exptime": 90,
+            "filt": "L"
+        }
+    ],
     "3x60RBG": [
         {
             "num_exp": 1,
