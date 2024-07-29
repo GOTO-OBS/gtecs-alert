@@ -842,10 +842,14 @@ class FermiNotice(Notice):
     @property
     def strategy(self):
         """Get the observing strategy key."""
-        if self.duration.lower() in ['short', 'unknown']:  # Safe side for unknown events
-            return 'GRB_FERMI_SHORT'
+        if self.skymap is None:
+            # We need the skymap to know the area
+            raise ValueError('Cannot determine strategy without skymap')
+
+        if self.skymap.get_contour_area(0.9) < 100:
+            return 'GRB_FERMI_NARROW'
         else:
-            return 'GRB_FERMI'
+            return 'GRB_FERMI_WIDE'
 
     @property
     def slack_details(self):
@@ -988,7 +992,7 @@ class GECAMNotice(Notice):
     @property
     def strategy(self):
         """Get the observing strategy key."""
-        return 'GRB_FERMI'  # Just use the default Fermi strategy
+        return 'GRB_OTHER'
 
     @property
     def slack_details(self):
@@ -1051,7 +1055,7 @@ class EinsteinProbeNotice(Notice):
     @property
     def strategy(self):
         """Get the observing strategy key."""
-        return 'GRB_FERMI'  # Just use the default Fermi strategy
+        return 'GRB_OTHER'
 
     @property
     def slack_details(self):
