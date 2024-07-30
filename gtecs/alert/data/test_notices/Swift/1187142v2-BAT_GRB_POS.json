@@ -1,0 +1,481 @@
+{
+    "ivorn": "ivo://nasa.gsfc.gcn/SWIFT#BAT_GRB_Pos_1187142v2-406",
+    "role": "observation",
+    "version": "2.0",
+    "Who": {
+        "AuthorIVORN": "ivo://nasa.gsfc.tan/gcn",
+        "Author": {
+            "shortName": "VO-GCN",
+            "contactName": "Scott Barthelmy",
+            "contactPhone": "+1-301-286-3106",
+            "contactEmail": "scott.barthelmy@nasa.gov"
+        },
+        "Date": "2023-08-25T09:06:12",
+        "Description": "This VOEvent message was created with GCN VOE version: 15.08 17jun22"
+    },
+    "What": {
+        "Param": [
+            {
+                "name": "Packet_Type",
+                "value": "61"
+            },
+            {
+                "name": "Pkt_Ser_Num",
+                "value": "12"
+            },
+            {
+                "name": "TrigID",
+                "value": "1187142v2",
+                "ucd": "meta.id"
+            },
+            {
+                "name": "Segment_Num",
+                "value": "0",
+                "ucd": "meta.id.part"
+            },
+            {
+                "name": "Burst_TJD",
+                "value": "20181",
+                "unit": "days",
+                "ucd": "time"
+            },
+            {
+                "name": "Burst_SOD",
+                "value": "32616.11",
+                "unit": "sec",
+                "ucd": "time"
+            },
+            {
+                "name": "Burst_Inten",
+                "value": "0",
+                "unit": "cts",
+                "ucd": "phot.count;em.gamma.soft"
+            },
+            {
+                "name": "Burst_Peak",
+                "value": "50010",
+                "unit": "cts",
+                "ucd": "phot.count;em.gamma.soft"
+            },
+            {
+                "name": "Integ_Time",
+                "value": "144.000",
+                "unit": "sec",
+                "ucd": "time.interval"
+            },
+            {
+                "name": "Phi",
+                "value": "-136.41",
+                "unit": "deg",
+                "ucd": "pos.az.azi"
+            },
+            {
+                "name": "Theta",
+                "value": "21.82",
+                "unit": "deg",
+                "ucd": "pos.az.zd"
+            },
+            {
+                "name": "Trig_Index",
+                "value": "20000"
+            },
+            {
+                "name": "Soln_Status",
+                "value": "0x1000001d"
+            },
+            {
+                "name": "Misc_flags",
+                "value": "0x0"
+            },
+            {
+                "name": "Cat_Num",
+                "value": "26959"
+            },
+            {
+                "name": "Rate_Signif",
+                "value": "0.00",
+                "unit": "sigma",
+                "ucd": "stat.snr"
+            },
+            {
+                "name": "Image_Signif",
+                "value": "26.75",
+                "unit": "sigma",
+                "ucd": "stat.snr"
+            },
+            {
+                "name": "Bkg_Inten",
+                "value": "0",
+                "unit": "cts",
+                "ucd": "phot.count"
+            },
+            {
+                "name": "Bkg_Time",
+                "value": "00:00:00.00",
+                "ucd": "time.start"
+            },
+            {
+                "name": "Bkg_Dur",
+                "value": "0.00",
+                "unit": "sec",
+                "ucd": "time.duration"
+            },
+            {
+                "name": "SC_Long",
+                "value": "117.05",
+                "unit": "deg",
+                "ucd": "pos.earth.lon"
+            },
+            {
+                "name": "SC_Lat",
+                "value": "20.58",
+                "unit": "deg",
+                "ucd": "pos.earth.lat"
+            },
+            {
+                "name": "Coords_Type",
+                "value": "1",
+                "unit": "dn"
+            },
+            {
+                "name": "Coords_String",
+                "value": "source_object"
+            }
+        ],
+        "Group": [
+            {
+                "name": "Merit_Values",
+                "Param": [
+                    {
+                        "name": "Merit_Val0",
+                        "value": "0",
+                        "unit": "dn"
+                    },
+                    {
+                        "name": "Merit_Val1",
+                        "value": "0",
+                        "unit": "dn"
+                    },
+                    {
+                        "name": "Merit_Val2",
+                        "value": "100",
+                        "unit": "dn"
+                    },
+                    {
+                        "name": "Merit_Val3",
+                        "value": "7",
+                        "unit": "dn"
+                    },
+                    {
+                        "name": "Merit_Val4",
+                        "value": "1",
+                        "unit": "dn"
+                    },
+                    {
+                        "name": "Merit_Val5",
+                        "value": "9",
+                        "unit": "dn"
+                    },
+                    {
+                        "name": "Merit_Val6",
+                        "value": "-5",
+                        "unit": "dn"
+                    },
+                    {
+                        "name": "Merit_Val7",
+                        "value": "1",
+                        "unit": "dn"
+                    },
+                    {
+                        "name": "Merit_Val8",
+                        "value": "34",
+                        "unit": "dn"
+                    },
+                    {
+                        "name": "Merit_Val9",
+                        "value": "0",
+                        "unit": "dn"
+                    }
+                ]
+            },
+            {
+                "name": "Solution_Status",
+                "Param": [
+                    {
+                        "name": "Point_Source",
+                        "value": "true"
+                    },
+                    {
+                        "name": "GRB_Identified",
+                        "value": "false"
+                    },
+                    {
+                        "name": "Target_of_Interest",
+                        "value": "true"
+                    },
+                    {
+                        "name": "Target_Imag_Trig",
+                        "value": "true"
+                    },
+                    {
+                        "name": "Target_Rate_Trig",
+                        "value": "false"
+                    },
+                    {
+                        "name": "Def_NOT_a_GRB",
+                        "value": "false"
+                    },
+                    {
+                        "name": "Hi_Bkg_Level",
+                        "value": "false"
+                    },
+                    {
+                        "name": "Neg_Bkg_Slope",
+                        "value": "false"
+                    },
+                    {
+                        "name": "Lo_Image_Signif",
+                        "value": "false"
+                    },
+                    {
+                        "name": "VERY_Lo_Image_Signif",
+                        "value": "false"
+                    },
+                    {
+                        "name": "Target_in_Flt_Catalog",
+                        "value": "true"
+                    },
+                    {
+                        "name": "Target_in_Gnd_Catalog",
+                        "value": "false"
+                    },
+                    {
+                        "name": "Target_in_Blk_Catalog",
+                        "value": "false"
+                    },
+                    {
+                        "name": "StarTrack_Lost_Lock",
+                        "value": "false"
+                    },
+                    {
+                        "name": "Near_Bright_Star",
+                        "value": "false"
+                    },
+                    {
+                        "name": "Src_Removed_from_OnBoard",
+                        "value": "false"
+                    },
+                    {
+                        "name": "Converted_SubThresh",
+                        "value": "false"
+                    },
+                    {
+                        "name": "Spatial_Prox_Match",
+                        "value": "true"
+                    },
+                    {
+                        "name": "Temporal_Prox_Match",
+                        "value": "false"
+                    },
+                    {
+                        "name": "Test_Submission",
+                        "value": "false"
+                    }
+                ]
+            },
+            {
+                "name": "Misc_Flags",
+                "Param": [
+                    {
+                        "name": "Values_Out_of_Range",
+                        "value": "false"
+                    },
+                    {
+                        "name": "Already_Observing_Position",
+                        "value": "false"
+                    },
+                    {
+                        "name": "Near_Bright_Star",
+                        "value": "false"
+                    },
+                    {
+                        "name": "Err_Circle_in_Galaxy",
+                        "value": "false"
+                    },
+                    {
+                        "name": "Galaxy_in_Err_Circle",
+                        "value": "false"
+                    },
+                    {
+                        "name": "ImTrig_during_ST_LoL",
+                        "value": "false"
+                    },
+                    {
+                        "name": "TOO_Generated",
+                        "value": "false"
+                    },
+                    {
+                        "name": "Trig_time_is_SecHdrTime",
+                        "value": "false"
+                    },
+                    {
+                        "name": "Delayed_Transmission",
+                        "value": "false"
+                    },
+                    {
+                        "name": "Updated_Notice",
+                        "value": "false"
+                    },
+                    {
+                        "name": "Flt_Generated",
+                        "value": "true"
+                    },
+                    {
+                        "name": "Gnd_Generated",
+                        "value": "false"
+                    },
+                    {
+                        "name": "SERS_Generated",
+                        "value": "false"
+                    },
+                    {
+                        "name": "Other_Generated",
+                        "value": "false"
+                    },
+                    {
+                        "name": "CRC_Error",
+                        "value": "false"
+                    }
+                ]
+            },
+            {
+                "name": "Obs_Support_Info",
+                "Description": "The Sun and Moon values are valid at the time the VOEvent XML message was created.",
+                "Param": [
+                    {
+                        "name": "Sun_RA",
+                        "value": "153.93",
+                        "unit": "deg",
+                        "ucd": "pos.eq.ra"
+                    },
+                    {
+                        "name": "Sun_Dec",
+                        "value": "10.79",
+                        "unit": "deg",
+                        "ucd": "pos.eq.dec"
+                    },
+                    {
+                        "name": "Sun_Distance",
+                        "value": "110.45",
+                        "unit": "deg",
+                        "ucd": "pos.angDistance"
+                    },
+                    {
+                        "name": "Sun_Hr_Angle",
+                        "value": "-7.22",
+                        "unit": "hr"
+                    },
+                    {
+                        "name": "Moon_RA",
+                        "value": "251.95",
+                        "unit": "deg",
+                        "ucd": "pos.eq.ra"
+                    },
+                    {
+                        "name": "Moon_Dec",
+                        "value": "-26.32",
+                        "unit": "deg",
+                        "ucd": "pos.eq.dec"
+                    },
+                    {
+                        "name": "MOON_Distance",
+                        "value": "13.93",
+                        "unit": "deg",
+                        "ucd": "pos.angDistance"
+                    },
+                    {
+                        "name": "Moon_Illum",
+                        "value": "60.50",
+                        "unit": "%",
+                        "ucd": "arith.ratio"
+                    },
+                    {
+                        "name": "Galactic_Long",
+                        "value": "8.64",
+                        "unit": "deg",
+                        "ucd": "pos.galactic.lon"
+                    },
+                    {
+                        "name": "Galactic_Lat",
+                        "value": "10.24",
+                        "unit": "deg",
+                        "ucd": "pos.galactic.lat"
+                    },
+                    {
+                        "name": "Ecliptic_Long",
+                        "value": "262.21",
+                        "unit": "deg",
+                        "ucd": "pos.ecliptic.lon"
+                    },
+                    {
+                        "name": "Ecliptic_Lat",
+                        "value": "7.01",
+                        "unit": "deg",
+                        "ucd": "pos.ecliptic.lat"
+                    }
+                ]
+            }
+        ],
+        "Description": "Type=61: The Swift-BAT instrument position notice."
+    },
+    "WhereWhen": {
+        "ObsDataLocation": {
+            "ObservatoryLocation": {
+                "id": "GEOLUN"
+            },
+            "ObservationLocation": {
+                "AstroCoordSystem": {
+                    "id": "UTC-FK5-GEO"
+                },
+                "AstroCoords": {
+                    "coord_system_id": "UTC-FK5-GEO",
+                    "Time": {
+                        "unit": "s",
+                        "TimeInstant": {
+                            "ISOTime": "2023-08-25T09:03:36.11"
+                        }
+                    },
+                    "Position2D": {
+                        "unit": "deg",
+                        "Name1": "RA",
+                        "Name2": "Dec",
+                        "Value2": {
+                            "C1": "261.9416",
+                            "C2": "-16.2138"
+                        },
+                        "Error2Radius": "0.0500"
+                    }
+                }
+            }
+        },
+        "Description": "The RA,Dec coordinates are of the type: source_object."
+    },
+    "How": {
+        "Description": "Swift Satellite, BAT Instrument",
+        "Reference": {
+            "uri": "http://gcn.gsfc.nasa.gov/swift.html",
+            "type": "url"
+        }
+    },
+    "Why": {
+        "importance": "0.90",
+        "Inference": {
+            "probability": "0.90",
+            "Name": "(null)",
+            "Concept": "process.variation.burst;em.gamma"
+        }
+    },
+    "Citations": {},
+    "Description": null,
+    "Reference": {}
+}

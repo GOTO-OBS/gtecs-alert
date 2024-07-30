@@ -3,10 +3,7 @@
 import datetime
 import os
 from contextlib import contextmanager
-from gzip import GzipFile
-from io import BytesIO
 
-from astropy.io import fits
 from astropy.time import Time
 
 from gototile.skymap import SkyMap
@@ -19,7 +16,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import backref, relationship, validates
 
 from . import params
-from .gcn import GCNNotice
+from .notices import Notice as EventNotice
 
 
 def get_session(user=None, password=None, host=None, echo=None, pool_pre_ping=None):
@@ -176,7 +173,7 @@ class Notice(Base):
     received : datetime.datetime
         The time the Notice was received.
     payload : bytes
-        The VOEvent XML payload, stored as binary data.
+        The VOEvent payload in JSON format, stored as binary data.
 
     skymap : `gototile.skymap.Skymap`, optional
         The skymap associated with this Notice, if any.
@@ -280,7 +277,7 @@ class Notice(Base):
 
     @classmethod
     def from_gcn(cls, notice):
-        """Create a database-linked Notice entry from a GCN notice."""
+        """Create a database-linked Notice entry from a transient notice message."""
         if notice.skymap is None:
             notice.get_skymap()
         if notice.skymap is None:
@@ -312,14 +309,9 @@ class Notice(Base):
 
     @property
     def gcn(self):
-        """Create a GCNNotice class (or subclass) from this Notice."""
-        notice = GCNNotice.from_payload(self.payload)
+        """Create a gtecs.alert.notices.Notice class (or subclass) from this Notice."""
+        notice = EventNotice.from_payload(self.payload)
         if self.skymap is not None:
-            try:
-                hdu = fits.open(BytesIO(self.skymap))
-            except OSError:
-                # It might be compressed
-                gzip = GzipFile(fileobj=BytesIO(self.skymap), mode='rb')
-                hdu = fits.open(gzip)
-            notice.skymap = SkyMap.from_fits(hdu)
+            # Decode the bytes
+            notice.skymap = SkyMap.from_fits(self.skymap)
         return notice

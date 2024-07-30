@@ -1,0 +1,84 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<voe:VOEvent xmlns:voe="http://www.ivoa.net/xml/VOEvent/v2.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" ivorn="ivo://nasa.gsfc.gcn/GECAM#GND_Event_2024-01-12T569:03:04.96_000020-810" role="observation" version="2.0" xsi:schemaLocation="http://www.ivoa.net/xml/VOEvent/v2.0  http://www.ivoa.net/xml/VOEvent/VOEvent-v2.0.xsd">
+    <Who>
+        <AuthorIVORN>ivo://nasa.gsfc.tan/gcn</AuthorIVORN>
+        <Author>
+            <shortName>GECAM (via VO-GCN/TAN)</shortName>
+            <contactName>Yue Huang</contactName>
+            <contactEmail>huangyue@ihep.ac.cn</contactEmail>
+        </Author>
+        <Date>2024-01-12T05:57:06</Date>
+        <Description>This VOEvent message was created with GCN/TAN VOE version: 15.08 17jun22</Description>
+    </Who>
+    <What>
+        <Param name="Packet_Type" dataType="int" value="189"/>
+        <Param name="Pkt_Ser_Num" dataType="int" value="20"/>
+        <Param name="Trigger_Number" dataType="int" value="260" ucd="meta.id"/>
+        <Param name="MISSION" dataType="string" value="B">
+            <Description>Which Mission.</Description>
+        </Param>
+        <Param name="EVENT_DATE" dataType="int" value="20321" unit="days" ucd="time">
+            <Description>Trucated Julian day.</Description>
+        </Param>
+        <Param name="EVENT_TIME" datatype="float" value="20485.850" unit="sec" ucd="time">
+            <Description>Seconds of the Day UT.</Description>
+        </Param>
+        <Param name="SRC_CLASS" dataType="string" value="GRB">
+            <Description>The Event Type is a regular GRB.</Description>
+        </Param>
+        <Param name="BURST_INTEN" dataType="int" value="3655" unit="[counts/sec]">
+            <Description>Intensity of the burst in counts/sec.</Description>
+        </Param>
+        <Param name="BURST_DUR" dataType="float" value="3.000" unit="[sec]">
+            <Description>Duration of the event.</Description>
+        </Param>
+        <Param name="Phi" dataType="float" value="8.09">
+            <Description>YET TO DO.</Description>
+        </Param>
+        <Param name="Theta" dataType="float" value="91.19">
+            <Description>YET TO DO.</Description>
+        </Param>
+        <Param name="SC_LAT" dataType="float" value="-27.65">
+            <Description>Spacecraft location.</Description>
+        </Param>
+        <Param name="SC_LONG" dataType="float" value="50.31">
+            <Description>Spacecraft location.</Description>
+        </Param>
+    </What>
+    <WhereWhen>
+        <ObsDataLocation>
+            <ObservatoryLocation id="GEOLUN"/>
+            <ObservationLocation>
+                <AstroCoordSystem id="UTC-FK5-GEO"/>
+                <AstroCoords coord_system_id="UTC-FK5-GEO">
+                    <Time unit="s">
+                        <TimeInstant>
+                            <ISOTime>2024-01-12T05:41:25.85</ISOTime>
+                        </TimeInstant>
+                    </Time>
+                    <Position2D unit="deg">
+                        <Name1>RA</Name1>
+                        <Name2>Dec</Name2>
+                        <Value2>
+                            <C1>351.9100</C1>
+                            <C2>1.1900</C2>
+                        </Value2>
+                        <Error2Radius>1.9299</Error2Radius>
+                    </Position2D>
+                </AstroCoords>
+            </ObservationLocation>
+        </ObsDataLocation>
+        <Description>The RA,Dec coordinates are of the type: source_object.</Description>
+    </WhereWhen>
+    <How>
+        <Description>GECAM GROUND</Description>
+        <Reference uri="http://gcn.gsfc.nasa.gov/gcn/gecam.html" type="url"/>
+    </How>
+    <Why importance="1.0">
+        <Inference probability="1.0">
+            <Concept>process.variation.burst;em</Concept>
+        </Inference>
+    </Why>
+    <Description></Description>
+</voe:VOEvent>

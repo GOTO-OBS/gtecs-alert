@@ -12,13 +12,14 @@ from gtecs.obs import database as obs_db
 
 import ligo.skymap.plot  # noqa: F401  (for extra projections)
 
+import matplotlib
 from matplotlib import pyplot as plt
 
 import numpy as np
 
 from . import database as alert_db
 from . import params
-from .gcn import GWNotice
+from .notices import GWNotice
 
 
 def send_slack_msg(text, channel=None, *args, **kwargs):
@@ -56,7 +57,7 @@ def send_notice_report(notice, time=None):
     msg = f'*{notice.source} notice:* {notice.ivorn}\n'
 
     # Add basic notice details
-    msg += f'Notice type: {notice.packet_type}\n'
+    msg += f'Notice type: {notice.type}\n'
     msg += f'Notice time: {notice.time.iso}'
     msg += f' _({(time - notice.time).to(u.hour).value:.1f}h ago)_\n'
 
@@ -88,6 +89,8 @@ def send_notice_report(notice, time=None):
     # Create a skymap plot to attach to the message (if there is one)
     filepath = None
     if notice.skymap is not None:
+        matplotlib.use('agg')  # Use the agg backend for plotting, so we don't need a display
+
         plt.figure(figsize=(8, 4), dpi=120, facecolor='white', tight_layout=True)
         axes = plt.axes(projection='astro hours mollweide')
         axes.grid()
@@ -168,7 +171,7 @@ def get_slack_channel(notice):
             return get_slack_channel(prev_notice)
         except Exception:
             # Fall back to the other options
-            raise
+            pass  # TODO Should be raise, or at least some logged warning...
     elif notice.strategy == 'IGNORE' and params.SLACK_IGNORED_CHANNEL is not None:
         # Ignored notices are still useful to log on Slack
         return params.SLACK_IGNORED_CHANNEL
@@ -291,6 +294,7 @@ def send_observing_report(notice, time=None):
     msg += f'Total probability in survey tiles: {total_prob:.1%}\n'
 
     # Create visibility plot
+    matplotlib.use('agg')  # Use the agg backend for plotting, so we don't need a display
     fig = plt.figure(figsize=(9, 4 * len(sites)), dpi=120, facecolor='white', tight_layout=True)
 
     # Find visibility constraints

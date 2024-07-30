@@ -1,1 +1,1 @@
-"""Test VOEvent files."""
+"""Test notice files."""

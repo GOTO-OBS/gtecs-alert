@@ -35,8 +35,11 @@ PYRO_TIMEOUT = config['PYRO_TIMEOUT']
 LOCAL_IVO = config['LOCAL_IVO']
 VOSERVER_HOST = config['VOSERVER_HOST']
 VOSERVER_PORT = config['VOSERVER_PORT']
-KAFKA_CLIENT_ID = config['KAFKA_CLIENT_ID']
-KAFKA_CLIENT_SECRET = config['KAFKA_CLIENT_SECRET']
+KAFKA_USER = config['KAFKA_USER']
+KAFKA_PASSWORD = config['KAFKA_PASSWORD']
+KAFKA_BROKER = config['KAFKA_BROKER']
+KAFKA_GROUP_ID = config['KAFKA_GROUP_ID']
+KAFKA_BACKDATE = config['KAFKA_BACKDATE']
 
 # Filter parameters
 # TODO: Couldn't this be a switchable flag within the sentinel?
