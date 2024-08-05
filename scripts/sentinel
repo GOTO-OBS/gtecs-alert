@@ -69,11 +69,19 @@ def query(command, args):
                 print(proxy.ingest_from_file(args[0]))
 
     elif command == 'queue':
-        with Pyro4.Proxy(params.PYRO_URI) as proxy:
-            queue = proxy.get_queue()
-        print(f'There are {len(queue)} notices currently in the queue')
-        for i, ivorn in enumerate(queue):
-            print(i, ivorn)
+        if len(args) == 0:
+            with Pyro4.Proxy(params.PYRO_URI) as proxy:
+                queue = proxy.get_queue()
+            print(f'There are {len(queue)} notices currently in the queue')
+            for i, ivorn in enumerate(queue):
+                print(i, ivorn)
+        elif len(args) == 1 and args[0] == 'clear':
+            with Pyro4.Proxy(params.PYRO_URI) as proxy:
+                proxy.clear_queue()
+                print('Queue cleared')
+        else:
+            print('ERROR: Invalid arguments for "queue" command')
+            print('Usage: sentinel queue [clear]')
 
     elif command == 'topics':
         with Pyro4.Proxy(params.PYRO_URI) as proxy:
@@ -97,6 +105,7 @@ def print_instructions():
           '   shutdown               shut down the sentinel',
           '   ingest [path|ivorn]    add the given notice to the queue',
           '   queue                  print the notices currently in the queue',
+          '   queue clear            clear all notices currently in the queue',
           '   topics                 print all subscribed Kafka topics',
           '   log [tail args]        print sentinel log (alias for tail)',
           '   help                   print these instructions',
