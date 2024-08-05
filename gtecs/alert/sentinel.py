@@ -204,7 +204,7 @@ class Sentinel:
             # There's also no way to select specific notice types
             # SCIMMA have said they will be reworking their GCN system at some point...
             topics = ['gcn.notice']
-            # Also subscribe to the heartbeat topic, do we can check if we're still connected
+            # Also subscribe to the heartbeat topic, so we can check if we're still connected
             topics += ['sys.heartbeat']
         elif broker == 'NASA':
             broker_url = 'kafka://kafka.gcn.nasa.gov/'
@@ -247,6 +247,8 @@ class Sentinel:
                 'gcn.classic.voevent.ICECUBE_ASTROTRACK_GOLD',
                 'gcn.classic.voevent.ICECUBE_CASCADE',
             ]
+            # Also subscribe to the heartbeat topic, so we can check if we're still connected
+            topics += ['gcn.heartbeat']
         else:
             raise ValueError('Broker must be "SCIMMA" or "NASA"')
 
@@ -271,21 +273,23 @@ class Sentinel:
                 # # but it doesn't seem to be implemented in hop-client yet.
                 # start_position = datetime.now() - timedelta(hours=12)
 
+                # One of the advantages of the newer brokers is monitoring the heartbeat topic
+                # to make sure we're connected.
+                # However, if we backdate with a new group ID we'll get weeks and weeks of
+                # heartbeat messages, which is very annoying.
+                # So instead we'll sneaky read the latest heartbeat message right now.
+                # That gives the starting point for that topic, so when we start the stream
+                # below it'll only have to handle a few seconds of heartbeat messages
+                # rather than weeks.
                 if broker == 'SCIMMA':
-                    # One of the advantages of the SCIMMA broker is monitoring the heartbeat topic
-                    # to make sure we're connected.
-                    # However, if we backdate with a new group ID we'll get weeks and weeks of
-                    # heartbeat messages, which is very annoying.
-                    # So instead we'll sneaky read the latest heartbeat message right now.
-                    # That gives the starting point for that topic, so when we start the stream
-                    # below it'll only have to handle a few seconds of heartbeat messages
-                    # rather than weeks.
                     url = broker_url + 'sys.heartbeat'
-                    stream = Stream(auth=auth, start_at=StartPosition.LATEST, until_eos=True)
-                    consumer = stream.open(url, mode='r', group_id=group_id)
-                    for payload, metadata in consumer.read_raw(metadata=True, autocommit=True):
-                        if metadata.topic == 'sys.heartbeat':
-                            break
+                elif broker == 'NASA':
+                    url = broker_url + 'gcn.heartbeat'
+                stream = Stream(auth=auth, start_at=StartPosition.LATEST, until_eos=True)
+                consumer = stream.open(url, mode='r', group_id=group_id)
+                for payload, metadata in consumer.read_raw(metadata=True, autocommit=True):
+                    if 'heartbeat' in metadata.topic:
+                        break
             else:
                 self.log.debug('Starting Kafka stream from latest message')
                 start_position = StartPosition.LATEST
@@ -307,21 +311,20 @@ class Sentinel:
                     if not self.running:
                         break
 
-                    if broker == 'SCIMMA':
-                        # We can use the system heartbeat to check if we're still connected
-                        heartbeat_timeout = 60
-                        latest_message_time = 0
-                        # Because of the sys.heartbeat messages we should be getting a message
-                        # every few seconds, so we can use this timestamp to check if we're
-                        # still connected.
-                        if (latest_message_time and
-                                time.time() - latest_message_time > heartbeat_timeout):
-                            raise TimeoutError(f'No heartbeat in {heartbeat_timeout}s')
-                        latest_message_time = time.time()
+                    # We can use the system heartbeat to check if we're still connected
+                    heartbeat_timeout = 60
+                    latest_message_time = 0
+                    # Because of the heartbeat messages we should be getting a message
+                    # every few seconds, so we can use this timestamp to check if we're
+                    # still connected.
+                    time_delta = time.time() - latest_message_time
+                    if latest_message_time > 0 and time_delta > heartbeat_timeout:
+                        raise TimeoutError(f'No heartbeat in {time_delta}s')
+                    latest_message_time = time.time()
 
-                        if metadata.topic == 'sys.heartbeat':
-                            # No need to process heartbeat messages
-                            continue
+                    if 'heartbeat' in metadata.topic:
+                        # No need to process heartbeat messages
+                        continue
 
                     # Create the notice and add it to the queue
                     try:
