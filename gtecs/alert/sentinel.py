@@ -525,6 +525,10 @@ class Sentinel:
         # We could return raw payloads I guess...
         return [notice.ivorn for notice in self.notice_queue]
 
+    def clear_queue(self):
+        """Clear the current notice queue."""
+        self.notice_queue = []
+
 
 def run():
     """Start the sentinel."""
