@@ -257,8 +257,12 @@ class Notice:
                 return GECAMNotice(message)
             elif base_notice.source.upper() == 'EINSTEIN_PROBE':
                 return EinsteinProbeNotice(message)
-            elif base_notice.source.upper() == 'ICECUBE':
-                return IceCubeNotice(message)
+            elif base_notice.source.upper() == 'AMON':
+                # AMON is the "Astrophysical Multimessenger Observatory Network",
+                # and there are several different types of notices they produce.
+                # For now we only care about the IceCube neutrino alerts.
+                if hasattr(base_notice, 'ivorn') and 'ICECUBE' in base_notice.ivorn:
+                    return IceCubeNotice(message)
         except InvalidNoticeError:
             # For whatever reason the notice isn't valid, so fall back to the default class
             pass
@@ -1072,10 +1076,10 @@ class IceCubeNotice(Notice):
         super().__init__(payload)
 
         # Check source
-        if self.source.upper() != 'ICECUBE':
-            raise InvalidNoticeError(f'Invalid source for Neutrino notice: "{self.source}"')
-        if self.source == 'ICECUBE':
-            self.source = 'IceCube'  # For nice formatting
+        # Note IceCube uses 'AMON' as the source for all notices
+        if self.source.upper() != 'AMON':
+            raise InvalidNoticeError(f'Invalid source for IceCube notice: "{self.source}"')
+        self.source = 'IceCube'  # For nice formatting
 
         # Event properties
         self.event_type = 'NU'

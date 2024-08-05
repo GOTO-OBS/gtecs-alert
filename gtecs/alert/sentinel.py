@@ -527,7 +527,10 @@ class Sentinel:
 
     def clear_queue(self):
         """Clear the current notice queue."""
+        queue_length = len(self.notice_queue)
+        self.log.info(f'Clearing {queue_length} notices from queue')
         self.notice_queue = []
+        return queue_length
 
 
 def run():
