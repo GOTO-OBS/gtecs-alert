@@ -77,8 +77,8 @@ def query(command, args):
                 print(i, ivorn)
         elif len(args) == 1 and args[0] == 'clear':
             with Pyro4.Proxy(params.PYRO_URI) as proxy:
-                proxy.clear_queue()
-                print('Queue cleared')
+                queue_length = proxy.clear_queue()
+                print(f'Cleared {queue_length} notices from the queue')
         else:
             print('ERROR: Invalid arguments for "queue" command')
             print('Usage: sentinel queue [clear]')
