@@ -78,7 +78,10 @@ def send_notice_report(notice, time=None):
         cadences = ','.join(f'`{cadence}`' for cadence in notice.strategy_dict['cadence'])
         msg += f'Cadence{"s" if cadences.count(",") > 0 else ""}: {cadences}\n'
         msg += f'Constraints: `{notice.strategy_dict["constraints"]}`\n'
-        msg += f'Exposure sets: `{notice.strategy_dict["exposure_sets"]}`\n'
+        msg += 'Exposure sets: '
+        for exposure_set in notice.strategy_dict['exposure_sets']:
+            msg += f'`{exposure_set["num_exp"]}x{exposure_set["exptime"]}{exposure_set["filt"]}` '
+        msg += '\n'
         stop_time = max(d['stop_time'] for d in notice.strategy_dict['cadence_dict'])
         msg += f'Valid until: {stop_time.iso}'
         if stop_time < time:

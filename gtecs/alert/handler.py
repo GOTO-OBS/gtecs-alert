@@ -188,12 +188,12 @@ def add_to_database(notice, time=None, log=None):
 
             # Create ExposureSets
             db_exposure_sets = []
-            for exposure_sets_dict in notice.strategy_dict['exposure_sets_dict']:
+            for exposure_set in notice.strategy_dict['exposure_sets']:
                 db_exposure_sets.append(
                     obs_db.ExposureSet(
-                        num_exp=exposure_sets_dict['num_exp'],
-                        exptime=exposure_sets_dict['exptime'],
-                        filt=exposure_sets_dict['filt'],
+                        num_exp=exposure_set['num_exp'],
+                        exptime=exposure_set['exptime'],
+                        filt=exposure_set['filt'],
                     )
                 )
 

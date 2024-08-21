@@ -3,7 +3,13 @@
         "rank": 309,
         "cadence": "TWO_NIGHTS",
         "constraints": "NORMAL",
-        "exposure_sets": "4x90L",
+        "exposure_sets": [
+            {
+                "num_exp": 4,
+                "exptime": 90,
+                "filt": "L"
+            }
+        ],
         "skymap_contour": 0.95,
         "tile_limit": 200,
         "prob_limit": 0
@@ -12,7 +18,13 @@
         "rank": 11,
         "cadence": "1H_REPEATED",
         "constraints": "LENIENT",
-        "exposure_sets": "4x90L",
+        "exposure_sets": [
+            {
+                "num_exp": 4,
+                "exptime": 90,
+                "filt": "L"
+            }
+        ],
         "skymap_contour": 0.95,
         "tile_limit": 200,
         "prob_limit": 0,
@@ -22,7 +34,13 @@
         "rank": 11,
         "cadence": "NO_DELAY",
         "constraints": "LENIENT",
-        "exposure_sets": "4x90L",
+        "exposure_sets": [
+            {
+                "num_exp": 4,
+                "exptime": 90,
+                "filt": "L"
+            }
+        ],
         "skymap_contour": 0.95,
         "tile_limit": 200,
         "prob_limit": 0,
@@ -32,7 +50,13 @@
         "rank": 22,
         "cadence": "1H_REPEATED",
         "constraints": "LENIENT",
-        "exposure_sets": "4x90L",
+        "exposure_sets": [
+            {
+                "num_exp": 4,
+                "exptime": 90,
+                "filt": "L"
+            }
+        ],
         "skymap_contour": 0.95,
         "tile_limit": 200,
         "prob_limit": 0,
@@ -42,7 +66,13 @@
         "rank": 22,
         "cadence": "NO_DELAY",
         "constraints": "LENIENT",
-        "exposure_sets": "4x90L",
+        "exposure_sets": [
+            {
+                "num_exp": 4,
+                "exptime": 90,
+                "filt": "L"
+            }
+        ],
         "skymap_contour": 0.95,
         "tile_limit": 200,
         "prob_limit": 0,
@@ -52,7 +82,13 @@
         "rank": 33,
         "cadence": "1H_REPEATED",
         "constraints": "LENIENT",
-        "exposure_sets": "4x90L",
+        "exposure_sets": [
+            {
+                "num_exp": 4,
+                "exptime": 90,
+                "filt": "L"
+            }
+        ],
         "skymap_contour": 0.95,
         "tile_limit": 200,
         "prob_limit": 0
@@ -61,7 +97,13 @@
         "rank": 33,
         "cadence": "NO_DELAY",
         "constraints": "LENIENT",
-        "exposure_sets": "4x90L",
+        "exposure_sets": [
+            {
+                "num_exp": 4,
+                "exptime": 90,
+                "filt": "L"
+            }
+        ],
         "skymap_contour": 0.95,
         "tile_limit": 200,
         "prob_limit": 0
@@ -70,7 +112,13 @@
         "rank": 44,
         "cadence": "1H_REPEATED",
         "constraints": "LENIENT",
-        "exposure_sets": "4x90L",
+        "exposure_sets": [
+            {
+                "num_exp": 4,
+                "exptime": 90,
+                "filt": "L"
+            }
+        ],
         "skymap_contour": 0.95,
         "tile_limit": 200,
         "prob_limit": 0
@@ -79,7 +127,13 @@
         "rank": 44,
         "cadence": "NO_DELAY",
         "constraints": "LENIENT",
-        "exposure_sets": "4x90L",
+        "exposure_sets": [
+            {
+                "num_exp": 4,
+                "exptime": 90,
+                "filt": "L"
+            }
+        ],
         "skymap_contour": 0.95,
         "tile_limit": 200,
         "prob_limit": 0
@@ -88,7 +142,13 @@
         "rank": 55,
         "cadence": "1H_REPEATED",
         "constraints": "LENIENT",
-        "exposure_sets": "4x90L",
+        "exposure_sets": [
+            {
+                "num_exp": 4,
+                "exptime": 90,
+                "filt": "L"
+            }
+        ],
         "skymap_contour": 0.95,
         "tile_limit": 200,
         "prob_limit": 0
@@ -97,7 +157,13 @@
         "rank": 55,
         "cadence": "NO_DELAY",
         "constraints": "LENIENT",
-        "exposure_sets": "4x90L",
+        "exposure_sets": [
+            {
+                "num_exp": 4,
+                "exptime": 90,
+                "filt": "L"
+            }
+        ],
         "skymap_contour": 0.95,
         "tile_limit": 200,
         "prob_limit": 0
@@ -106,7 +172,13 @@
         "rank": 207,
         "cadence": "EARLY_ONLY",
         "constraints": "NORMAL",
-        "exposure_sets": "4x90L",
+        "exposure_sets": [
+            {
+                "num_exp": 4,
+                "exptime": 90,
+                "filt": "L"
+            }
+        ],
         "skymap_contour": 0.95,
         "tile_limit": 4,
         "prob_limit": 0.05
@@ -115,7 +187,13 @@
         "rank": 208,
         "cadence": "THREE_FIRST",
         "constraints": "NORMAL",
-        "exposure_sets": "8x90L",
+        "exposure_sets": [
+            {
+                "num_exp": 8,
+                "exptime": 90,
+                "filt": "L"
+            }
+        ],
         "skymap_contour": 1,
         "tile_limit": 5,
         "prob_limit": 0.005
@@ -124,7 +202,13 @@
         "rank": 218,
         "cadence": "THREE_FIRST",
         "constraints": "NORMAL",
-        "exposure_sets": "4x90L",
+        "exposure_sets": [
+            {
+                "num_exp": 4,
+                "exptime": 90,
+                "filt": "L"
+            }
+        ],
         "skymap_contour": 1,
         "tile_limit": 10,
         "prob_limit": 0.005
@@ -133,7 +217,13 @@
         "rank": 217,
         "cadence": "THREE_FIRST",
         "constraints": "NORMAL",
-        "exposure_sets": "4x90L",
+        "exposure_sets": [
+            {
+                "num_exp": 4,
+                "exptime": 90,
+                "filt": "L"
+            }
+        ],
         "skymap_contour": 0.95,
         "tile_limit": 5,
         "prob_limit": 0.05
@@ -142,7 +232,13 @@
         "rank": 259,
         "cadence": "TWO_FIRST_ONE_SECOND",
         "constraints": "NORMAL",
-        "exposure_sets": "4x90L",
+        "exposure_sets": [
+            {
+                "num_exp": 4,
+                "exptime": 90,
+                "filt": "L"
+            }
+        ],
         "skymap_contour": 0.95,
         "tile_limit": 3,
         "prob_limit": 0.05
@@ -151,7 +247,13 @@
         "rank": 269,
         "cadence": "TWO_FIRST_ONE_SECOND",
         "constraints": "NORMAL",
-        "exposure_sets": "4x90L",
+        "exposure_sets": [
+            {
+                "num_exp": 4,
+                "exptime": 90,
+                "filt": "L"
+            }
+        ],
         "skymap_contour": 0.95,
         "tile_limit": 3,
         "prob_limit": 0.05
@@ -160,7 +262,13 @@
         "rank": 279,
         "cadence": "TWO_FIRST_ONE_SECOND",
         "constraints": "NORMAL",
-        "exposure_sets": "4x90L",
+        "exposure_sets": [
+            {
+                "num_exp": 4,
+                "exptime": 90,
+                "filt": "L"
+            }
+        ],
         "skymap_contour": 0.95,
         "tile_limit": 8,
         "prob_limit": 0.005
