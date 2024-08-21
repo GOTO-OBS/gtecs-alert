@@ -77,7 +77,11 @@ def send_notice_report(notice, time=None):
     if notice.strategy_dict is not None:
         cadences = ','.join(f'`{cadence}`' for cadence in notice.strategy_dict['cadence'])
         msg += f'Cadence{"s" if cadences.count(",") > 0 else ""}: {cadences}\n'
-        msg += f'Constraints: `{notice.strategy_dict["constraints"]}`\n'
+        msg += 'Constraints: '
+        msg += f'`alt≥{notice.strategy_dict["constraints"]["min_alt"]}°` '
+        msg += f'`sun≤{notice.strategy_dict["constraints"]["max_sunalt"]}°` '
+        msg += f'`moon≤{notice.strategy_dict["constraints"]["max_moon"]}` '
+        msg += f'`moonsep≥{notice.strategy_dict["constraints"]["min_moonsep"]}°`\n'
         msg += 'Exposure sets: '
         for exposure_set in notice.strategy_dict['exposure_sets']:
             msg += f'`{exposure_set["num_exp"]}x{exposure_set["exptime"]}{exposure_set["filt"]}` '
@@ -301,8 +305,8 @@ def send_observing_report(notice, time=None):
     fig = plt.figure(figsize=(9, 4 * len(sites)), dpi=120, facecolor='white', tight_layout=True)
 
     # Find visibility constraints
-    min_alt = float(notice.strategy_dict['constraints_dict']['min_alt']) * u.deg
-    max_sunalt = float(notice.strategy_dict['constraints_dict']['max_sunalt']) * u.deg
+    min_alt = float(notice.strategy_dict['constraints']['min_alt']) * u.deg
+    max_sunalt = float(notice.strategy_dict['constraints']['max_sunalt']) * u.deg
     alt_constraint = AltitudeConstraint(min=min_alt)
     night_constraint = AtNightConstraint(max_solar_altitude=max_sunalt)
     constraints = [alt_constraint, night_constraint]

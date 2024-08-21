@@ -12,9 +12,7 @@ def _load_strategy_files():
         strategies = json.load(f)
     with pkg_resources.path('gtecs.alert.data', 'cadences.json') as path, open(path) as f:
         cadences = json.load(f)
-    with pkg_resources.path('gtecs.alert.data', 'constraints.json') as path, open(path) as f:
-        constraints = json.load(f)
-    return strategies, cadences, constraints
+    return strategies, cadences
 
 
 def get_strategy_details(name='DEFAULT', time=None):
@@ -28,7 +26,7 @@ def get_strategy_details(name='DEFAULT', time=None):
         return None
 
     # Load the strategy files
-    strategies, cadences, constraints = _load_strategy_files()
+    strategies, cadences = _load_strategy_files()
 
     # Get the correct strategy for the given key
     try:
@@ -58,8 +56,5 @@ def get_strategy_details(name='DEFAULT', time=None):
             cadence_dict['start_time'] = time
         cadence_dict['stop_time'] = cadence_dict['start_time'] + cadence_dict['valid_days'] * u.day
         strategy_dict['cadence_dict'].append(cadence_dict)
-
-    # Add other dicts
-    strategy_dict['constraints_dict'] = constraints[strategy_dict['constraints']]
 
     return strategy_dict

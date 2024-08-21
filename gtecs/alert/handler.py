@@ -198,7 +198,7 @@ def add_to_database(notice, time=None, log=None):
                 )
 
             # Create Strategies
-            constraints_dict = notice.strategy_dict['constraints_dict']
+            constraints = notice.strategy_dict['constraints']
             if isinstance(notice.strategy_dict['cadence_dict'], dict):
                 cadence_dicts = [notice.strategy_dict['cadence_dict']]
             else:
@@ -214,10 +214,10 @@ def add_to_database(notice, time=None, log=None):
                         rank_change=cadence_dict['rank_change'],
                         min_time=None,
                         too=True,
-                        min_alt=constraints_dict['min_alt'],
-                        max_sunalt=constraints_dict['max_sunalt'],
-                        max_moon=constraints_dict['max_moon'],
-                        min_moonsep=constraints_dict['min_moonsep'],
+                        min_alt=constraints['min_alt'],
+                        max_sunalt=constraints['max_sunalt'],
+                        max_moon=constraints['max_moon'],
+                        min_moonsep=constraints['min_moonsep'],
                         # TODO: tel_mask?
                     )
                 )
