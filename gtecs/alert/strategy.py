@@ -38,15 +38,21 @@ def get_strategy_details(name='DEFAULT', time=None):
 
     # Fill out the cadence strategy based on the given time
     # NB A list of multiple cadence strategies can be given, which makes this more awkward!
+    # We assume subsequent cadences start after the previous one ends.
     if isinstance(strategy_dict['cadence'], dict):
         cadences = [strategy_dict['cadence']]
     else:
         cadences = strategy_dict['cadence']
-    for cadence in cadences:
-        if 'delay_days' in cadence:
-            cadence['start_time'] = time + cadence['delay_days'] * u.day
-        else:
+    for i, cadence in enumerate(cadences):
+        if i == 0:
+            # Start the first one immediately
             cadence['start_time'] = time
+        else:
+            # Start the next one after the previous one ends
+            cadence['start_time'] = cadences[i - 1]['start_time']
+        if 'delay_days' in cadence:
+            # Delay the start by the given time
+            cadence['start_time'] += cadence['delay_days'] * u.day
         cadence['stop_time'] = cadence['start_time'] + cadence['valid_days'] * u.day
     if len(cadences) == 1:
         strategy_dict['cadence'] = cadences[0]
