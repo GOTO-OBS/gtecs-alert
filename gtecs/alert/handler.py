@@ -199,19 +199,19 @@ def add_to_database(notice, time=None, log=None):
 
             # Create Strategies
             constraints = notice.strategy_dict['constraints']
-            if isinstance(notice.strategy_dict['cadence_dict'], dict):
-                cadence_dicts = [notice.strategy_dict['cadence_dict']]
+            if isinstance(notice.strategy_dict['cadence'], dict):
+                cadences = [notice.strategy_dict['cadence']]
             else:
-                cadence_dicts = notice.strategy_dict['cadence_dict']
+                cadences = notice.strategy_dict['cadence']
             db_strategies = []
-            for cadence_dict in cadence_dicts:
+            for cadence in cadences:
                 db_strategies.append(
                     obs_db.Strategy(
-                        num_todo=cadence_dict['num_todo'],
-                        stop_time=cadence_dict['stop_time'],
-                        wait_time=cadence_dict['wait_hours'] * u.hour,
+                        num_todo=cadence['num_todo'],
+                        stop_time=cadence['stop_time'],
+                        wait_time=cadence['wait_hours'] * u.hour,
                         valid_time=None,  # Pointings are valid up until the stop_time
-                        rank_change=cadence_dict['rank_change'],
+                        rank_change=cadence['rank_change'],
                         min_time=None,
                         too=True,
                         min_alt=constraints['min_alt'],
@@ -223,7 +223,8 @@ def add_to_database(notice, time=None, log=None):
                 )
 
             # Create Targets (this will automatically create Pointings)
-            # NB we take the earliest start time and latest stop time from all cadences
+            # NB we take the earliest start time and latest stop time from all cadences,
+            # in case there's more than one.
             db_targets.append(
                 obs_db.Target(
                     name=f'{notice.event_name}_{tile_name}',
@@ -231,8 +232,8 @@ def add_to_database(notice, time=None, log=None):
                     dec=None,
                     rank=notice.strategy_dict['rank'],
                     weight=float(tile_weight),
-                    start_time=cadence_dicts[0]['start_time'],
-                    stop_time=cadence_dicts[-1]['stop_time'],
+                    start_time=min(c['start_time'] for c in cadences),
+                    stop_time=max(c['stop_time'] for c in cadences),
                     creation_time=time,
                     user=db_user,
                     grid_tile=db_grid_tile,

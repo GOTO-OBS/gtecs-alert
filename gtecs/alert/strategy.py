@@ -7,14 +7,6 @@ import astropy.units as u
 from astropy.time import Time
 
 
-def _load_strategy_files():
-    with pkg_resources.path('gtecs.alert.data', 'strategies.json') as path, open(path) as f:
-        strategies = json.load(f)
-    with pkg_resources.path('gtecs.alert.data', 'cadences.json') as path, open(path) as f:
-        cadences = json.load(f)
-    return strategies, cadences
-
-
 def get_strategy_details(name='DEFAULT', time=None):
     """Get details of the requested strategy."""
     name = name.upper()
@@ -25,8 +17,9 @@ def get_strategy_details(name='DEFAULT', time=None):
         # Special cases
         return None
 
-    # Load the strategy files
-    strategies, cadences = _load_strategy_files()
+    # Load the strategy definitions
+    with pkg_resources.path('gtecs.alert.data', 'strategies.json') as path, open(path) as f:
+        strategies = json.load(f)
 
     # Get the correct strategy for the given key
     try:
@@ -44,17 +37,20 @@ def get_strategy_details(name='DEFAULT', time=None):
         raise ValueError(f'Undefined exposure sets for strategy {name}')
 
     # Fill out the cadence strategy based on the given time
-    # NB A list of multiple cadence strategies can be given
-    if isinstance(strategy_dict['cadence'], str):
-        strategy_dict['cadence'] = [strategy_dict['cadence']]
-    strategy_dict['cadence_dict'] = []
-    for cadence in strategy_dict['cadence']:
-        cadence_dict = cadences[cadence]
-        if 'delay_days' in cadence_dict:
-            cadence_dict['start_time'] = time + cadence_dict['delay_days'] * u.day
+    # NB A list of multiple cadence strategies can be given, which makes this more awkward!
+    if isinstance(strategy_dict['cadence'], dict):
+        cadences = [strategy_dict['cadence']]
+    else:
+        cadences = strategy_dict['cadence']
+    for cadence in cadences:
+        if 'delay_days' in cadence:
+            cadence['start_time'] = time + cadence['delay_days'] * u.day
         else:
-            cadence_dict['start_time'] = time
-        cadence_dict['stop_time'] = cadence_dict['start_time'] + cadence_dict['valid_days'] * u.day
-        strategy_dict['cadence_dict'].append(cadence_dict)
+            cadence['start_time'] = time
+        cadence['stop_time'] = cadence['start_time'] + cadence['valid_days'] * u.day
+    if len(cadences) == 1:
+        strategy_dict['cadence'] = cadences[0]
+    else:
+        strategy_dict['cadence'] = cadences
 
     return strategy_dict

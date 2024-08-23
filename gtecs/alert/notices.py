@@ -628,8 +628,13 @@ class GWNotice(Notice):
             raise ValueError(f'Cannot determine observing strategy for group "{self.group}"')
 
         # Now we alter the cadence based on the skymap area, ~how much GOTO can cover in an hour.
-        # This decides between the NO_DELAY and 1H_REPEATED strategies, so we don't waste time
-        # sitting around for the full hour if the map is already covered.
+        # Ideally we want two epochs of each tile an hour apart. If it's going to take more than
+        # an hour to cover the area, then we schedule targets so a follow-up pointing appears
+        # at the same rank with a 1 hour delay to it's valid time. Once that's done the normal
+        # follow-up pointing appears with a lower rank.
+        # However if the skymap is small enough to cover entirely in an hour then we don't want
+        # to waste time waiting for the second epoch. So just schedule all the targets to be
+        # recreated immediately at a lower rank after they are observed.
         # Ideally this would only consider the visible area, but that's much more complicated!
         if self.skymap.get_contour_area(0.9) < 1000:
             return strategy + '_NARROW'

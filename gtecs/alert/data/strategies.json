@@ -1,7 +1,12 @@
 {
     "DEFAULT": {
         "rank": 309,
-        "cadence": "TWO_NIGHTS",
+        "cadence": {
+            "num_todo": 2,
+            "wait_hours": 12,
+            "rank_change": 10,
+            "valid_days": 3
+        },
         "constraints": {
             "min_alt": 30,
             "max_sunalt": -15,
@@ -21,7 +26,18 @@
     },
     "GW_RANK_1_WIDE": {
         "rank": 11,
-        "cadence": "1H_REPEATED",
+        "cadence": {
+            "num_todo": 99,
+            "wait_hours": [
+                1,
+                0
+            ],
+            "rank_change": [
+                0,
+                10
+            ],
+            "valid_days": 3
+        },
         "constraints": {
             "min_alt": 30,
             "max_sunalt": -12,
@@ -42,7 +58,12 @@
     },
     "GW_RANK_1_NARROW": {
         "rank": 11,
-        "cadence": "NO_DELAY",
+        "cadence": {
+            "num_todo": 99,
+            "wait_hours": 0,
+            "rank_change": 10,
+            "valid_days": 3
+        },
         "constraints": {
             "min_alt": 30,
             "max_sunalt": -12,
@@ -63,7 +84,18 @@
     },
     "GW_RANK_2_WIDE": {
         "rank": 22,
-        "cadence": "1H_REPEATED",
+        "cadence": {
+            "num_todo": 99,
+            "wait_hours": [
+                1,
+                0
+            ],
+            "rank_change": [
+                0,
+                10
+            ],
+            "valid_days": 3
+        },
         "constraints": {
             "min_alt": 30,
             "max_sunalt": -12,
@@ -84,7 +116,12 @@
     },
     "GW_RANK_2_NARROW": {
         "rank": 22,
-        "cadence": "NO_DELAY",
+        "cadence": {
+            "num_todo": 99,
+            "wait_hours": 0,
+            "rank_change": 10,
+            "valid_days": 3
+        },
         "constraints": {
             "min_alt": 30,
             "max_sunalt": -12,
@@ -105,7 +142,18 @@
     },
     "GW_RANK_3_WIDE": {
         "rank": 33,
-        "cadence": "1H_REPEATED",
+        "cadence": {
+            "num_todo": 99,
+            "wait_hours": [
+                1,
+                0
+            ],
+            "rank_change": [
+                0,
+                10
+            ],
+            "valid_days": 3
+        },
         "constraints": {
             "min_alt": 30,
             "max_sunalt": -12,
@@ -125,7 +173,12 @@
     },
     "GW_RANK_3_NARROW": {
         "rank": 33,
-        "cadence": "NO_DELAY",
+        "cadence": {
+            "num_todo": 99,
+            "wait_hours": 0,
+            "rank_change": 10,
+            "valid_days": 3
+        },
         "constraints": {
             "min_alt": 30,
             "max_sunalt": -12,
@@ -145,7 +198,18 @@
     },
     "GW_RANK_4_WIDE": {
         "rank": 44,
-        "cadence": "1H_REPEATED",
+        "cadence": {
+            "num_todo": 99,
+            "wait_hours": [
+                1,
+                0
+            ],
+            "rank_change": [
+                0,
+                10
+            ],
+            "valid_days": 3
+        },
         "constraints": {
             "min_alt": 30,
             "max_sunalt": -12,
@@ -165,7 +229,12 @@
     },
     "GW_RANK_4_NARROW": {
         "rank": 44,
-        "cadence": "NO_DELAY",
+        "cadence": {
+            "num_todo": 99,
+            "wait_hours": 0,
+            "rank_change": 10,
+            "valid_days": 3
+        },
         "constraints": {
             "min_alt": 30,
             "max_sunalt": -12,
@@ -185,7 +254,18 @@
     },
     "GW_RANK_5_WIDE": {
         "rank": 55,
-        "cadence": "1H_REPEATED",
+        "cadence": {
+            "num_todo": 99,
+            "wait_hours": [
+                1,
+                0
+            ],
+            "rank_change": [
+                0,
+                10
+            ],
+            "valid_days": 3
+        },
         "constraints": {
             "min_alt": 30,
             "max_sunalt": -12,
@@ -205,7 +285,12 @@
     },
     "GW_RANK_5_NARROW": {
         "rank": 55,
-        "cadence": "NO_DELAY",
+        "cadence": {
+            "num_todo": 99,
+            "wait_hours": 0,
+            "rank_change": 10,
+            "valid_days": 3
+        },
         "constraints": {
             "min_alt": 30,
             "max_sunalt": -12,
@@ -225,7 +310,12 @@
     },
     "GRB_SWIFT": {
         "rank": 207,
-        "cadence": "EARLY_ONLY",
+        "cadence": {
+            "num_todo": 2,
+            "wait_hours": 1,
+            "rank_change": 10,
+            "valid_days": 0.08333333333333333
+        },
         "constraints": {
             "min_alt": 30,
             "max_sunalt": -15,
@@ -245,7 +335,12 @@
     },
     "GRB_FERMI_NARROW": {
         "rank": 208,
-        "cadence": "THREE_FIRST",
+        "cadence": {
+            "num_todo": 3,
+            "wait_hours": 1,
+            "rank_change": 10,
+            "valid_days": 1
+        },
         "constraints": {
             "min_alt": 30,
             "max_sunalt": -15,
@@ -265,7 +360,12 @@
     },
     "GRB_FERMI_WIDE": {
         "rank": 218,
-        "cadence": "THREE_FIRST",
+        "cadence": {
+            "num_todo": 3,
+            "wait_hours": 1,
+            "rank_change": 10,
+            "valid_days": 1
+        },
         "constraints": {
             "min_alt": 30,
             "max_sunalt": -15,
@@ -285,7 +385,12 @@
     },
     "GRB_OTHER": {
         "rank": 217,
-        "cadence": "THREE_FIRST",
+        "cadence": {
+            "num_todo": 3,
+            "wait_hours": 1,
+            "rank_change": 10,
+            "valid_days": 1
+        },
         "constraints": {
             "min_alt": 30,
             "max_sunalt": -15,
@@ -305,7 +410,15 @@
     },
     "NU_ICECUBE_GOLD": {
         "rank": 259,
-        "cadence": "TWO_FIRST_ONE_SECOND",
+        "cadence": {
+            "num_todo": 3,
+            "wait_hours": [
+                4,
+                12
+            ],
+            "rank_change": 10,
+            "valid_days": 3
+        },
         "constraints": {
             "min_alt": 30,
             "max_sunalt": -15,
@@ -325,7 +438,15 @@
     },
     "NU_ICECUBE_BRONZE": {
         "rank": 269,
-        "cadence": "TWO_FIRST_ONE_SECOND",
+        "cadence": {
+            "num_todo": 3,
+            "wait_hours": [
+                4,
+                12
+            ],
+            "rank_change": 10,
+            "valid_days": 3
+        },
         "constraints": {
             "min_alt": 30,
             "max_sunalt": -15,
@@ -345,7 +466,15 @@
     },
     "NU_ICECUBE_CASCADE": {
         "rank": 279,
-        "cadence": "TWO_FIRST_ONE_SECOND",
+        "cadence": {
+            "num_todo": 3,
+            "wait_hours": [
+                4,
+                12
+            ],
+            "rank_change": 10,
+            "valid_days": 3
+        },
         "constraints": {
             "min_alt": 30,
             "max_sunalt": -15,
