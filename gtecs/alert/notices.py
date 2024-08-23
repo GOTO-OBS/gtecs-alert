@@ -1,5 +1,6 @@
 """Classes to represent transient alert notices."""
 
+import importlib.resources
 import json
 import os
 import re
@@ -9,6 +10,7 @@ from collections import Counter
 from urllib.parse import quote_plus
 from urllib.request import urlopen
 
+import astropy.units as u
 from astropy.coordinates import Angle, SkyCoord
 from astropy.time import Time
 from astropy.utils.data import download_file
@@ -23,7 +25,10 @@ import requests
 
 import voeventdb.remote.apiv1 as vdb
 
-from .strategy import get_strategy_details
+
+# Load the strategy definitions
+with open(importlib.resources.files('gtecs.alert.data').joinpath('strategies.json')) as f:
+    STRATEGIES = json.load(f)
 
 
 def deserialize(raw_payload):
@@ -379,10 +384,60 @@ class Notice:
         """Get the observing strategy key."""
         return 'DEFAULT'
 
+    @staticmethod
+    def get_strategy_details(name='DEFAULT', time=None):
+        """Get details of the requested strategy."""
+        name = name.upper()
+        if time is None:
+            time = Time.now()
+
+        if name in ['IGNORE', 'RETRACTION']:
+            # Special cases
+            return None
+
+        # Get the correct strategy for the given key
+        try:
+            event_strategy = STRATEGIES[name].copy()
+        except KeyError as err:
+            raise ValueError(f'Unknown strategy: {name}') from err
+
+        # Check all the required keys are present
+        if 'cadence' not in event_strategy:
+            raise ValueError(f'Undefined cadence for strategy {name}')
+        if 'constraints' not in event_strategy:
+            raise ValueError(f'Undefined constraints for strategy {name}')
+        if 'exposure_sets' not in event_strategy:
+            raise ValueError(f'Undefined exposure sets for strategy {name}')
+
+        # Fill out the cadence strategy based on the given time
+        # NB A list of multiple cadence strategies can be given, which makes this more awkward!
+        # We assume subsequent cadences start after the previous one ends.
+        if isinstance(event_strategy['cadence'], dict):
+            cadences = [event_strategy['cadence']]
+        else:
+            cadences = event_strategy['cadence']
+        for i, cadence in enumerate(cadences):
+            if i == 0:
+                # Start the first one immediately
+                cadence['start_time'] = time
+            else:
+                # Start the next one after the previous one ends
+                cadence['start_time'] = cadences[i - 1]['start_time']
+            if 'delay_hours' in cadence:
+                # Delay the start by the given time
+                cadence['start_time'] += cadence['delay_hours'] * u.hour
+            cadence['stop_time'] = cadence['start_time'] + cadence['valid_hours'] * u.hour
+        if len(cadences) == 1:
+            event_strategy['cadence'] = cadences[0]
+        else:
+            event_strategy['cadence'] = cadences
+
+        return event_strategy
+
     @property
     def strategy_dict(self):
         """Get the observing strategy details."""
-        return get_strategy_details(self.strategy, time=self.event_time)
+        return self.get_strategy_details(self.strategy, time=self.event_time)
 
     @property
     def slack_details(self):
