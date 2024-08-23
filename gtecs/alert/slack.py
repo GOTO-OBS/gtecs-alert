@@ -81,8 +81,8 @@ def send_notice_report(notice, time=None):
         else:
             cadences = notice.strategy_dict['cadence']
         for i, cadence in enumerate(cadences):
-            if 'delay_days' in cadence:
-                msg += f'wait for {cadence["delay_days"]*24}h; then '
+            if 'delay_hours' in cadence:
+                msg += f'wait for {cadence["delay_hours"]}h; then '
             msg += f'{cadence["num_todo"]} observations'
             if cadence['num_todo'] > 1:
                 if not isinstance(cadence['wait_hours'], list):
@@ -96,7 +96,7 @@ def send_notice_report(notice, time=None):
                 else:
                     waits = "/".join(waits)
                 msg += f', delay{"s" if cadence["num_todo"] > 2 else ""} of {waits}'
-            msg += f', valid for {cadence["valid_days"]*24}h'
+            msg += f', valid for {cadence["valid_hours"]}h'
             if i != len(cadences) - 1:
                 msg += '; then '
         msg += '\n'

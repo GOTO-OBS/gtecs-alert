@@ -50,10 +50,10 @@ def get_strategy_details(name='DEFAULT', time=None):
         else:
             # Start the next one after the previous one ends
             cadence['start_time'] = cadences[i - 1]['start_time']
-        if 'delay_days' in cadence:
+        if 'delay_hours' in cadence:
             # Delay the start by the given time
-            cadence['start_time'] += cadence['delay_days'] * u.day
-        cadence['stop_time'] = cadence['start_time'] + cadence['valid_days'] * u.day
+            cadence['start_time'] += cadence['delay_hours'] * u.hour
+        cadence['stop_time'] = cadence['start_time'] + cadence['valid_hours'] * u.hour
     if len(cadences) == 1:
         strategy_dict['cadence'] = cadences[0]
     else:
