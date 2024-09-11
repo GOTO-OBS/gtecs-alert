@@ -397,25 +397,25 @@ class Notice:
 
         # Get the correct strategy for the given key
         try:
-            event_strategy = STRATEGIES[name].copy()
+            strategy_dict = STRATEGIES[name].copy()
         except KeyError as err:
             raise ValueError(f'Unknown strategy: {name}') from err
 
         # Check all the required keys are present
-        if 'cadence' not in event_strategy:
+        if 'cadence' not in strategy_dict:
             raise ValueError(f'Undefined cadence for strategy {name}')
-        if 'constraints' not in event_strategy:
+        if 'constraints' not in strategy_dict:
             raise ValueError(f'Undefined constraints for strategy {name}')
-        if 'exposure_sets' not in event_strategy:
+        if 'exposure_sets' not in strategy_dict:
             raise ValueError(f'Undefined exposure sets for strategy {name}')
 
         # Fill out the cadence strategy based on the given time
         # NB A list of multiple cadence strategies can be given, which makes this more awkward!
         # We assume subsequent cadences start after the previous one ends.
-        if isinstance(event_strategy['cadence'], dict):
-            cadences = [event_strategy['cadence']]
+        if isinstance(strategy_dict['cadence'], dict):
+            cadences = [strategy_dict['cadence']]
         else:
-            cadences = event_strategy['cadence']
+            cadences = strategy_dict['cadence']
         for i, cadence in enumerate(cadences):
             if i == 0:
                 # Start the first one immediately
@@ -423,16 +423,16 @@ class Notice:
             else:
                 # Start the next one after the previous one ends
                 cadence['start_time'] = cadences[i - 1]['start_time']
-            if 'delay_hours' in event_strategy:
+            if 'delay_hours' in strategy_dict:
                 # Delay the start by the given time
-                cadence['start_time'] += event_strategy['delay_hours'] * u.hour
-            cadence['stop_time'] = cadence['start_time'] + event_strategy['valid_hours'] * u.hour
+                cadence['start_time'] += strategy_dict['delay_hours'] * u.hour
+            cadence['stop_time'] = cadence['start_time'] + strategy_dict['valid_hours'] * u.hour
         if len(cadences) == 1:
-            event_strategy['cadence'] = cadences[0]
+            strategy_dict['cadence'] = cadences[0]
         else:
-            event_strategy['cadence'] = cadences
+            strategy_dict['cadence'] = cadences
 
-        return event_strategy
+        return strategy_dict
 
     @property
     def strategy_dict(self):
