@@ -423,10 +423,10 @@ class Notice:
             else:
                 # Start the next one after the previous one ends
                 cadence['start_time'] = cadences[i - 1]['start_time']
-            if 'delay_hours' in cadence:
+            if 'delay_hours' in event_strategy:
                 # Delay the start by the given time
-                cadence['start_time'] += cadence['delay_hours'] * u.hour
-            cadence['stop_time'] = cadence['start_time'] + cadence['valid_hours'] * u.hour
+                cadence['start_time'] += event_strategy['delay_hours'] * u.hour
+            cadence['stop_time'] = cadence['start_time'] + event_strategy['valid_hours'] * u.hour
         if len(cadences) == 1:
             event_strategy['cadence'] = cadences[0]
         else:

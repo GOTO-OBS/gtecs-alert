@@ -1,11 +1,11 @@
 {
     "DEFAULT": {
         "rank": 309,
+        "valid_hours": 72,
         "cadence": {
             "num_todo": 2,
             "wait_hours": 12,
-            "rank_change": 10,
-            "valid_hours": 72
+            "rank_change": 10
         },
         "constraints": {
             "min_alt": 30,
@@ -26,6 +26,7 @@
     },
     "GW_RANK_1_WIDE": {
         "rank": 11,
+        "valid_hours": 72,
         "cadence": {
             "num_todo": 99,
             "wait_hours": [
@@ -35,8 +36,7 @@
             "rank_change": [
                 0,
                 10
-            ],
-            "valid_hours": 72
+            ]
         },
         "constraints": {
             "min_alt": 30,
@@ -58,11 +58,11 @@
     },
     "GW_RANK_1_NARROW": {
         "rank": 11,
+        "valid_hours": 72,
         "cadence": {
             "num_todo": 99,
             "wait_hours": 0,
-            "rank_change": 10,
-            "valid_hours": 72
+            "rank_change": 10
         },
         "constraints": {
             "min_alt": 30,
@@ -84,6 +84,7 @@
     },
     "GW_RANK_2_WIDE": {
         "rank": 22,
+        "valid_hours": 72,
         "cadence": {
             "num_todo": 99,
             "wait_hours": [
@@ -93,8 +94,7 @@
             "rank_change": [
                 0,
                 10
-            ],
-            "valid_hours": 72
+            ]
         },
         "constraints": {
             "min_alt": 30,
@@ -116,11 +116,11 @@
     },
     "GW_RANK_2_NARROW": {
         "rank": 22,
+        "valid_hours": 72,
         "cadence": {
             "num_todo": 99,
             "wait_hours": 0,
-            "rank_change": 10,
-            "valid_hours": 72
+            "rank_change": 10
         },
         "constraints": {
             "min_alt": 30,
@@ -142,6 +142,7 @@
     },
     "GW_RANK_3_WIDE": {
         "rank": 33,
+        "valid_hours": 72,
         "cadence": {
             "num_todo": 99,
             "wait_hours": [
@@ -151,8 +152,7 @@
             "rank_change": [
                 0,
                 10
-            ],
-            "valid_hours": 72
+            ]
         },
         "constraints": {
             "min_alt": 30,
@@ -173,11 +173,11 @@
     },
     "GW_RANK_3_NARROW": {
         "rank": 33,
+        "valid_hours": 72,
         "cadence": {
             "num_todo": 99,
             "wait_hours": 0,
-            "rank_change": 10,
-            "valid_hours": 72
+            "rank_change": 10
         },
         "constraints": {
             "min_alt": 30,
@@ -198,6 +198,7 @@
     },
     "GW_RANK_4_WIDE": {
         "rank": 44,
+        "valid_hours": 72,
         "cadence": {
             "num_todo": 99,
             "wait_hours": [
@@ -207,8 +208,7 @@
             "rank_change": [
                 0,
                 10
-            ],
-            "valid_hours": 72
+            ]
         },
         "constraints": {
             "min_alt": 30,
@@ -229,11 +229,11 @@
     },
     "GW_RANK_4_NARROW": {
         "rank": 44,
+        "valid_hours": 72,
         "cadence": {
             "num_todo": 99,
             "wait_hours": 0,
-            "rank_change": 10,
-            "valid_hours": 72
+            "rank_change": 10
         },
         "constraints": {
             "min_alt": 30,
@@ -254,6 +254,7 @@
     },
     "GW_RANK_5_WIDE": {
         "rank": 55,
+        "valid_hours": 72,
         "cadence": {
             "num_todo": 99,
             "wait_hours": [
@@ -263,8 +264,7 @@
             "rank_change": [
                 0,
                 10
-            ],
-            "valid_hours": 72
+            ]
         },
         "constraints": {
             "min_alt": 30,
@@ -285,11 +285,11 @@
     },
     "GW_RANK_5_NARROW": {
         "rank": 55,
+        "valid_hours": 72,
         "cadence": {
             "num_todo": 99,
             "wait_hours": 0,
-            "rank_change": 10,
-            "valid_hours": 72
+            "rank_change": 10
         },
         "constraints": {
             "min_alt": 30,
@@ -310,11 +310,11 @@
     },
     "GRB_SWIFT": {
         "rank": 207,
+        "valid_hours": 2,
         "cadence": {
             "num_todo": 2,
             "wait_hours": 1,
-            "rank_change": 10,
-            "valid_hours": 2
+            "rank_change": 10
         },
         "constraints": {
             "min_alt": 30,
@@ -335,11 +335,11 @@
     },
     "GRB_FERMI_NARROW": {
         "rank": 208,
+        "valid_hours": 24,
         "cadence": {
             "num_todo": 3,
             "wait_hours": 1,
-            "rank_change": 10,
-            "valid_hours": 24
+            "rank_change": 10
         },
         "constraints": {
             "min_alt": 30,
@@ -360,11 +360,11 @@
     },
     "GRB_FERMI_WIDE": {
         "rank": 218,
+        "valid_hours": 24,
         "cadence": {
             "num_todo": 3,
             "wait_hours": 1,
-            "rank_change": 10,
-            "valid_hours": 24
+            "rank_change": 10
         },
         "constraints": {
             "min_alt": 30,
@@ -385,11 +385,11 @@
     },
     "GRB_OTHER": {
         "rank": 217,
+        "valid_hours": 24,
         "cadence": {
             "num_todo": 3,
             "wait_hours": 1,
-            "rank_change": 10,
-            "valid_hours": 24
+            "rank_change": 10
         },
         "constraints": {
             "min_alt": 30,
@@ -410,14 +410,14 @@
     },
     "NU_ICECUBE_GOLD": {
         "rank": 259,
+        "valid_hours": 72,
         "cadence": {
             "num_todo": 3,
             "wait_hours": [
                 4,
                 12
             ],
-            "rank_change": 10,
-            "valid_hours": 72
+            "rank_change": 10
         },
         "constraints": {
             "min_alt": 30,
@@ -438,14 +438,14 @@
     },
     "NU_ICECUBE_BRONZE": {
         "rank": 269,
+        "valid_hours": 72,
         "cadence": {
             "num_todo": 3,
             "wait_hours": [
                 4,
                 12
             ],
-            "rank_change": 10,
-            "valid_hours": 72
+            "rank_change": 10
         },
         "constraints": {
             "min_alt": 30,
@@ -466,14 +466,14 @@
     },
     "NU_ICECUBE_CASCADE": {
         "rank": 279,
+        "valid_hours": 72,
         "cadence": {
             "num_todo": 3,
             "wait_hours": [
                 4,
                 12
             ],
-            "rank_change": 10,
-            "valid_hours": 72
+            "rank_change": 10
         },
         "constraints": {
             "min_alt": 30,
