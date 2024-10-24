@@ -335,8 +335,12 @@ def send_observing_report(notice, time=None):
     alt_constraint = AltitudeConstraint(min=min_alt)
     night_constraint = AtNightConstraint(max_solar_altitude=max_sunalt)
     constraints = [alt_constraint, night_constraint]
-    start_time = min(d['start_time'] for d in notice.strategy_dict['cadence_dict'])
-    stop_time = max(d['stop_time'] for d in notice.strategy_dict['cadence_dict'])
+    if isinstance(notice.strategy_dict['cadence'], dict):
+        cadences = [notice.strategy_dict['cadence']]
+    else:
+        cadences = notice.strategy_dict['cadence']
+    start_time = min(c['start_time'] for c in cadences)
+    stop_time = max(c['stop_time'] for c in cadences)
 
     for i, site in enumerate(sites):
         observer = Observer(site)
