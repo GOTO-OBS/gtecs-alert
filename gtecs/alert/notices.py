@@ -1,5 +1,6 @@
 """Classes to represent transient alert notices."""
 
+import importlib.resources
 import json
 import os
 import re
@@ -9,6 +10,7 @@ from collections import Counter
 from urllib.parse import quote_plus
 from urllib.request import urlopen
 
+import astropy.units as u
 from astropy.coordinates import Angle, SkyCoord
 from astropy.time import Time
 from astropy.utils.data import download_file
@@ -23,7 +25,10 @@ import requests
 
 import voeventdb.remote.apiv1 as vdb
 
-from .strategy import get_strategy_details
+
+# Load the strategy definitions
+with open(importlib.resources.files('gtecs.alert.data').joinpath('strategies.json')) as f:
+    STRATEGIES = json.load(f)
 
 
 def deserialize(raw_payload):
@@ -379,10 +384,60 @@ class Notice:
         """Get the observing strategy key."""
         return 'DEFAULT'
 
+    @staticmethod
+    def get_strategy_details(name='DEFAULT', time=None):
+        """Get details of the requested strategy."""
+        name = name.upper()
+        if time is None:
+            time = Time.now()
+
+        if name in ['IGNORE', 'RETRACTION']:
+            # Special cases
+            return None
+
+        # Get the correct strategy for the given key
+        try:
+            strategy_dict = STRATEGIES[name].copy()
+        except KeyError as err:
+            raise ValueError(f'Unknown strategy: {name}') from err
+
+        # Check all the required keys are present
+        if 'cadence' not in strategy_dict:
+            raise ValueError(f'Undefined cadence for strategy {name}')
+        if 'constraints' not in strategy_dict:
+            raise ValueError(f'Undefined constraints for strategy {name}')
+        if 'exposure_sets' not in strategy_dict:
+            raise ValueError(f'Undefined exposure sets for strategy {name}')
+
+        # Fill out the cadence strategy based on the given time
+        # NB A list of multiple cadence strategies can be given, which makes this more awkward!
+        # We assume subsequent cadences start after the previous one ends.
+        if isinstance(strategy_dict['cadence'], dict):
+            cadences = [strategy_dict['cadence']]
+        else:
+            cadences = strategy_dict['cadence']
+        for i, cadence in enumerate(cadences):
+            if i == 0:
+                # Start the first one immediately
+                cadence['start_time'] = time
+            else:
+                # Start the next one after the previous one ends
+                cadence['start_time'] = cadences[i - 1]['start_time']
+            if 'delay_hours' in strategy_dict:
+                # Delay the start by the given time
+                cadence['start_time'] += strategy_dict['delay_hours'] * u.hour
+            cadence['stop_time'] = cadence['start_time'] + strategy_dict['valid_hours'] * u.hour
+        if len(cadences) == 1:
+            strategy_dict['cadence'] = cadences[0]
+        else:
+            strategy_dict['cadence'] = cadences
+
+        return strategy_dict
+
     @property
     def strategy_dict(self):
         """Get the observing strategy details."""
-        return get_strategy_details(self.strategy, time=self.event_time)
+        return self.get_strategy_details(self.strategy, time=self.event_time)
 
     @property
     def slack_details(self):
@@ -628,8 +683,13 @@ class GWNotice(Notice):
             raise ValueError(f'Cannot determine observing strategy for group "{self.group}"')
 
         # Now we alter the cadence based on the skymap area, ~how much GOTO can cover in an hour.
-        # This decides between the NO_DELAY and 1H_REPEATED strategies, so we don't waste time
-        # sitting around for the full hour if the map is already covered.
+        # Ideally we want two epochs of each tile an hour apart. If it's going to take more than
+        # an hour to cover the area, then we schedule targets so a follow-up pointing appears
+        # at the same rank with a 1 hour delay to it's valid time. Once that's done the normal
+        # follow-up pointing appears with a lower rank.
+        # However if the skymap is small enough to cover entirely in an hour then we don't want
+        # to waste time waiting for the second epoch. So just schedule all the targets to be
+        # recreated immediately at a lower rank after they are observed.
         # Ideally this would only consider the visible area, but that's much more complicated!
         if self.skymap.get_contour_area(0.9) < 1000:
             return strategy + '_NARROW'
@@ -842,10 +902,15 @@ class FermiNotice(Notice):
     @property
     def strategy(self):
         """Get the observing strategy key."""
-        if self.duration.lower() in ['short', 'unknown']:  # Safe side for unknown events
-            return 'GRB_FERMI_SHORT'
+        if self.skymap is None:
+            # We need the skymap to know the area
+            raise ValueError('Cannot determine strategy without skymap')
+
+        # Select based on 1sigma area
+        if self.skymap.get_contour_area(0.68) < 100:
+            return 'GRB_FERMI_NARROW'
         else:
-            return 'GRB_FERMI'
+            return 'GRB_FERMI_WIDE'
 
     @property
     def slack_details(self):
@@ -855,6 +920,7 @@ class FermiNotice(Notice):
 
         # Classification info
         text += f'Duration: {self.duration.capitalize()}\n'
+        text += f'1σ probability area: {self.skymap.get_contour_area(0.68):.0f} sq deg\n'
 
         # Position info
         text += f'Position: {self.position.to_string("hmsdms")} ({self.position.to_string()})\n'
@@ -988,7 +1054,7 @@ class GECAMNotice(Notice):
     @property
     def strategy(self):
         """Get the observing strategy key."""
-        return 'GRB_FERMI'  # Just use the default Fermi strategy
+        return 'GRB_OTHER'
 
     @property
     def slack_details(self):
@@ -1051,7 +1117,7 @@ class EinsteinProbeNotice(Notice):
     @property
     def strategy(self):
         """Get the observing strategy key."""
-        return 'GRB_FERMI'  # Just use the default Fermi strategy
+        return 'GRB_OTHER'
 
     @property
     def slack_details(self):

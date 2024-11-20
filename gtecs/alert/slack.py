@@ -75,11 +75,43 @@ def send_notice_report(notice, time=None):
     msg += '\n'
     msg += f'Observing strategy: `{notice.strategy}`\n'
     if notice.strategy_dict is not None:
-        cadences = ','.join(f'`{cadence}`' for cadence in notice.strategy_dict['cadence'])
-        msg += f'Cadence{"s" if cadences.count(",") > 0 else ""}: {cadences}\n'
-        msg += f'Constraints: `{notice.strategy_dict["constraints"]}`\n'
-        msg += f'Exposure sets: `{notice.strategy_dict["exposure_sets"]}`\n'
-        stop_time = max(d['stop_time'] for d in notice.strategy_dict['cadence_dict'])
+        msg += 'Cadence: '
+        if isinstance(notice.strategy_dict['cadence'], dict):
+            cadences = [notice.strategy_dict['cadence']]
+        else:
+            cadences = notice.strategy_dict['cadence']
+        for i, cadence in enumerate(cadences):
+            if 'delay_hours' in notice.strategy_dict:
+                msg += f'wait for {cadence["delay_hours"]}h; then '
+            msg += f'{cadence["num_todo"]} observations'
+            if cadence['num_todo'] > 1:
+                if not isinstance(cadence['wait_hours'], list):
+                    waits = [cadence['wait_hours']]
+                else:
+                    waits = cadence['wait_hours']
+                waits = [f'{waits[i % len(waits)]}h' for i in range(cadence['num_todo'] - 1)]
+                if len(waits) > 3:
+                    # limit to showing 3 observations
+                    waits = "/".join(waits[:3]) + '/...'
+                else:
+                    waits = "/".join(waits)
+                msg += f', delay{"s" if cadence["num_todo"] > 2 else ""} of {waits}'
+            msg += f', valid for {notice.strategy_dict["valid_hours"]}h'
+            if i != len(cadences) - 1:
+                msg += '; then '
+        msg += '\n'
+        msg += 'Constraints: '
+        msg += f'alt>{notice.strategy_dict["constraints"]["min_alt"]}°, '
+        msg += f'sun<{notice.strategy_dict["constraints"]["max_sunalt"]}°, '
+        msg += f'moon≤{notice.strategy_dict["constraints"]["max_moon"]}, '
+        msg += f'moonsep>{notice.strategy_dict["constraints"]["min_moonsep"]}°\n'
+        msg += 'Exposure sets: '
+        for i, exposure_set in enumerate(notice.strategy_dict['exposure_sets']):
+            msg += f'{exposure_set["num_exp"]}x{exposure_set["exptime"]}{exposure_set["filt"]}'
+            if i != len(notice.strategy_dict['exposure_sets']) - 1:
+                msg += ' + '
+        msg += '\n'
+        stop_time = max(c['stop_time'] for c in cadences)
         msg += f'Valid until: {stop_time.iso}'
         if stop_time < time:
             msg += f' _(expired {(time - stop_time).to("day").value:.1f} days ago)_\n'
@@ -298,13 +330,17 @@ def send_observing_report(notice, time=None):
     fig = plt.figure(figsize=(9, 4 * len(sites)), dpi=120, facecolor='white', tight_layout=True)
 
     # Find visibility constraints
-    min_alt = float(notice.strategy_dict['constraints_dict']['min_alt']) * u.deg
-    max_sunalt = float(notice.strategy_dict['constraints_dict']['max_sunalt']) * u.deg
+    min_alt = float(notice.strategy_dict['constraints']['min_alt']) * u.deg
+    max_sunalt = float(notice.strategy_dict['constraints']['max_sunalt']) * u.deg
     alt_constraint = AltitudeConstraint(min=min_alt)
     night_constraint = AtNightConstraint(max_solar_altitude=max_sunalt)
     constraints = [alt_constraint, night_constraint]
-    start_time = min(d['start_time'] for d in notice.strategy_dict['cadence_dict'])
-    stop_time = max(d['stop_time'] for d in notice.strategy_dict['cadence_dict'])
+    if isinstance(notice.strategy_dict['cadence'], dict):
+        cadences = [notice.strategy_dict['cadence']]
+    else:
+        cadences = notice.strategy_dict['cadence']
+    start_time = min(c['start_time'] for c in cadences)
+    stop_time = max(c['stop_time'] for c in cadences)
 
     for i, site in enumerate(sites):
         observer = Observer(site)
