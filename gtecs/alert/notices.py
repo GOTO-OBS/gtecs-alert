@@ -629,7 +629,7 @@ class GWNotice(Notice):
             # External coincidences are always highest priority, regardless of other factors.
             strategy = 'GW_RANK_1'
 
-        if self.group == 'CBC':
+        elif self.group == 'CBC':
             # Reject events if the FAR is > 1/month, the significance cut-off for CBC events.
             # Note we explicitly look at the reported FAR here, not the significance flag
             # since it's sometimes not consistent (see S230615az).
