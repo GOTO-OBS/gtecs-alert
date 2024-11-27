@@ -145,21 +145,15 @@ def add_to_database(notice, time=None, log=None):
     with obs_db.session_manager() as session:
         db_grid = obs_db.get_current_grid(session)
         grid = db_grid.skygrid
-    # If the skymap is too big we regrade before applying it to the grid
-    # (note that we do only this after adding the original skymap to the alert database)
-    if (notice.skymap is not None and notice.skymap.is_moc is False and
-            (notice.skymap.nside > 128 or notice.skymap.order == 'RING')):
-        notice.skymap.regrade(nside=128, order='NESTED')
-    # Apply the skymap to the grid
-    grid.apply_skymap(notice.skymap)
-    # Get the grid tiles covering the skymap for a given contour level
-    selected_tiles = grid.select_tiles(
-        contour=notice.strategy_dict['skymap_contour'],
-        max_tiles=notice.strategy_dict['tile_limit'],
-        min_tile_prob=notice.strategy_dict['prob_limit'],
-    )
-    selected_tiles.sort('prob')
-    selected_tiles.reverse()
+    grid_tiles = notice.get_tiles(grid)
+    # Select tiles within the skymap contour and above the minimum probability threshold
+    mask = ((grid_tiles['contour'] < notice.strategy_dict['skymap_contour']) &
+            (grid_tiles['prob'] > notice.strategy_dict['min_tile_prob']))
+    selected_tiles = grid_tiles[mask]
+    selected_tiles.sort('prob', reverse=True)
+    if len(selected_tiles) > notice.strategy_dict['max_tiles']:
+        # Limit to only the N highest probability tiles
+        selected_tiles = selected_tiles[:notice.strategy_dict['max_tiles']]
     log.debug('Selected {}/{} tiles'.format(len(selected_tiles), grid.ntiles))
     # It's possible no tiles passed the selection criteria,
     # if so then there's nothing else to do (but we still add the "empty" survey above)
@@ -179,7 +173,7 @@ def add_to_database(notice, time=None, log=None):
 
         # Create Targets for each tile
         db_targets = []
-        for tile_name, _, _, tile_weight in selected_tiles:
+        for tile_name, tile_weight in selected_tiles[('tilename', 'prob')]:
             # Find the matching GridTile
             query = session.query(obs_db.GridTile)
             query = query.filter(obs_db.GridTile.grid == db_grid)

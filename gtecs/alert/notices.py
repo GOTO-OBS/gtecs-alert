@@ -15,6 +15,7 @@ from astropy.coordinates import Angle, SkyCoord
 from astropy.time import Time
 from astropy.utils.data import download_file
 
+from gototile.grid import SkyGrid
 from gototile.skymap import SkyMap
 
 from hop.models import AvroBlob, JSONBlob, VOEvent
@@ -234,6 +235,8 @@ class Notice:
         self.skymap = None
         self.skymap_url = None
         self.skymap_file = None
+        self._grid = None
+        self.grid_tiles = None
 
     def __repr__(self):
         return '{}(ivorn={})'.format(self.__class__.__name__, self.ivorn)
@@ -378,6 +381,39 @@ class Notice:
             self.skymap_file = None
 
         return self.skymap
+
+    def get_tiles(self, grid=None, regrade_nside=128):
+        """Apply the skymap for this notice to the given grid."""
+        if self.skymap is None:
+            raise ValueError('Cannot select tiles without a skymap')
+        if self.grid_tiles is not None and (grid is None or self._grid == grid):
+            return self.grid_tiles
+
+        if grid is None or not isinstance(grid, SkyGrid):
+            # If we're not given a grid, try getting it from the ObsDB
+            try:
+                from gtecs.obs import database as obs_db
+                with obs_db.session_manager() as session:
+                    db_grid = obs_db.get_current_grid(session)
+                    grid = db_grid.skygrid
+            except Exception:
+                raise ValueError('No grid provided and cannot get current grid from ObsDB')
+
+        # If the skymap is too big we regrade before applying it to the grid
+        skymap = self.skymap.copy()
+        if skymap.is_moc is False and (skymap.nside > regrade_nside or skymap.order == 'RING'):
+            skymap.regrade(nside=regrade_nside, order='NESTED')
+
+        # Apply to the grid and get the sorted tile table
+        grid.apply_skymap(skymap)
+        grid_tiles = grid.get_table()
+        grid_tiles.sort('prob', reverse=True)
+
+        # Cache the grid and tiles to save time for future calls (especially if we had to regrade)
+        self._grid = grid.copy()
+        self.grid_tiles = grid_tiles.copy()
+
+        return grid_tiles
 
     @property
     def strategy(self):

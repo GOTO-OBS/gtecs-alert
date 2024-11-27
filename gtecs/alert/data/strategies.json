@@ -21,8 +21,8 @@
             }
         ],
         "skymap_contour": 0.95,
-        "tile_limit": 200,
-        "prob_limit": 0
+        "min_tile_prob": 0,
+        "max_tiles": 200
     },
     "GW_RANK_1_WIDE": {
         "rank": 11,
@@ -52,8 +52,8 @@
             }
         ],
         "skymap_contour": 0.95,
-        "tile_limit": 200,
-        "prob_limit": 0,
+        "min_tile_prob": 0,
+        "max_tiles": 200,
         "wakeup_alert": 1
     },
     "GW_RANK_1_NARROW": {
@@ -78,8 +78,8 @@
             }
         ],
         "skymap_contour": 0.95,
-        "tile_limit": 200,
-        "prob_limit": 0,
+        "min_tile_prob": 0,
+        "max_tiles": 200,
         "wakeup_alert": 1
     },
     "GW_RANK_2_WIDE": {
@@ -110,8 +110,8 @@
             }
         ],
         "skymap_contour": 0.95,
-        "tile_limit": 200,
-        "prob_limit": 0,
+        "min_tile_prob": 0,
+        "max_tiles": 200,
         "wakeup_alert": 1
     },
     "GW_RANK_2_NARROW": {
@@ -136,8 +136,8 @@
             }
         ],
         "skymap_contour": 0.95,
-        "tile_limit": 200,
-        "prob_limit": 0,
+        "min_tile_prob": 0,
+        "max_tiles": 200,
         "wakeup_alert": 1
     },
     "GW_RANK_3_WIDE": {
@@ -168,8 +168,8 @@
             }
         ],
         "skymap_contour": 0.95,
-        "tile_limit": 200,
-        "prob_limit": 0
+        "min_tile_prob": 0,
+        "max_tiles": 200
     },
     "GW_RANK_3_NARROW": {
         "rank": 33,
@@ -193,8 +193,8 @@
             }
         ],
         "skymap_contour": 0.95,
-        "tile_limit": 200,
-        "prob_limit": 0
+        "min_tile_prob": 0,
+        "max_tiles": 200
     },
     "GW_RANK_4_WIDE": {
         "rank": 44,
@@ -224,8 +224,8 @@
             }
         ],
         "skymap_contour": 0.95,
-        "tile_limit": 200,
-        "prob_limit": 0
+        "min_tile_prob": 0,
+        "max_tiles": 200
     },
     "GW_RANK_4_NARROW": {
         "rank": 44,
@@ -249,8 +249,8 @@
             }
         ],
         "skymap_contour": 0.95,
-        "tile_limit": 200,
-        "prob_limit": 0
+        "min_tile_prob": 0,
+        "max_tiles": 200
     },
     "GW_RANK_5_WIDE": {
         "rank": 55,
@@ -280,8 +280,8 @@
             }
         ],
         "skymap_contour": 0.95,
-        "tile_limit": 200,
-        "prob_limit": 0
+        "min_tile_prob": 0,
+        "max_tiles": 200
     },
     "GW_RANK_5_NARROW": {
         "rank": 55,
@@ -305,8 +305,8 @@
             }
         ],
         "skymap_contour": 0.95,
-        "tile_limit": 200,
-        "prob_limit": 0
+        "min_tile_prob": 0,
+        "max_tiles": 200
     },
     "GRB_SWIFT": {
         "rank": 207,
@@ -330,8 +330,8 @@
             }
         ],
         "skymap_contour": 0.95,
-        "tile_limit": 4,
-        "prob_limit": 0.05
+        "min_tile_prob": 0.05,
+        "max_tiles": 4
     },
     "GRB_FERMI_NARROW": {
         "rank": 208,
@@ -355,8 +355,8 @@
             }
         ],
         "skymap_contour": 1,
-        "tile_limit": 5,
-        "prob_limit": 0.005
+        "min_tile_prob": 0.005,
+        "max_tiles": 5
     },
     "GRB_FERMI_WIDE": {
         "rank": 218,
@@ -380,8 +380,8 @@
             }
         ],
         "skymap_contour": 1,
-        "tile_limit": 10,
-        "prob_limit": 0.005
+        "min_tile_prob": 0.005,
+        "max_tiles": 10
     },
     "GRB_OTHER": {
         "rank": 217,
@@ -405,8 +405,8 @@
             }
         ],
         "skymap_contour": 0.95,
-        "tile_limit": 5,
-        "prob_limit": 0.05
+        "min_tile_prob": 0.05,
+        "max_tiles": 5
     },
     "NU_ICECUBE_GOLD": {
         "rank": 259,
@@ -433,8 +433,8 @@
             }
         ],
         "skymap_contour": 0.95,
-        "tile_limit": 3,
-        "prob_limit": 0.05
+        "min_tile_prob": 0.05,
+        "max_tiles": 3
     },
     "NU_ICECUBE_BRONZE": {
         "rank": 269,
@@ -461,8 +461,8 @@
             }
         ],
         "skymap_contour": 0.95,
-        "tile_limit": 3,
-        "prob_limit": 0.05
+        "min_tile_prob": 0.05,
+        "max_tiles": 3
     },
     "NU_ICECUBE_CASCADE": {
         "rank": 279,
@@ -489,7 +489,7 @@
             }
         ],
         "skymap_contour": 0.95,
-        "tile_limit": 8,
-        "prob_limit": 0.005
+        "min_tile_prob": 0.005,
+        "max_tiles": 8
     }
 }
