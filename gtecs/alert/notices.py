@@ -545,30 +545,29 @@ class GWNotice(Notice):
                 self.properties = None
             self.event_time = Time(self.content['event']['time'])
             # Load the embedded skymap
-            skymap_bytes = self.content['event']['skymap']
-            if isinstance(skymap_bytes, str):
-                # IGWN JSON skymaps are base46-encoded
-                # https://emfollow.docs.ligo.org/userguide/tutorial/receiving/gcn.html
-                try:
-                    skymap_bytes = b64decode(skymap_bytes)
-                except Exception as err:
-                    raise ValueError('Failed to decode base64-encoded skymap') from err
-            self.skymap = SkyMap.from_fits(skymap_bytes)
+            self.skymap = self._decode_skymap(self.content['event']['skymap'])
+            del self.content['event']['skymap']  # It's still stored in the payload if needed
             # Get external coincidence, if any
             if self.content['external_coinc'] is not None:
                 self.external = self.content['external_coinc'].copy()
                 # Override the original skymap with the combined skymap
-                self.skymap_original = self.skymap
-                skymap_bytes = self.external['combined_skymap']
-                if isinstance(skymap_bytes, str):
-                    try:
-                        skymap_bytes = b64decode(skymap_bytes)
-                    except Exception as err:
-                        raise ValueError('Failed to decode base64-encoded skymap') from err
-                self.skymap = SkyMap.from_fits(skymap_bytes)
+                self.skymap_original = self.skymap.copy()
+                self.skymap = self._decode_skymap(self.external['combined_skymap'])
+                del self.content['external_coinc']['combined_skymap']
                 del self.external['combined_skymap']
             else:
                 self.external = None
+
+    def _decode_skymap(self, skymap_bytes):
+        """Decode the embedded skymap data."""
+        if isinstance(skymap_bytes, str):
+            # IGWN JSON skymaps are base46-encoded
+            # https://emfollow.docs.ligo.org/userguide/tutorial/receiving/gcn.html
+            try:
+                skymap_bytes = b64decode(skymap_bytes)
+            except Exception as err:
+                raise ValueError('Failed to decode base64-encoded skymap') from err
+        return SkyMap.from_fits(skymap_bytes)
 
     @classmethod
     def from_gracedb(cls, name, which_notice='last'):
