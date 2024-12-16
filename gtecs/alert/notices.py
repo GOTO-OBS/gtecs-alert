@@ -605,6 +605,139 @@ class GWNotice(Notice):
                 raise ValueError('Failed to decode base64-encoded skymap') from err
         return SkyMap.from_fits(skymap_bytes)
 
+    def get_gracedb_files(self):
+        """Get a list of files associated with this event in GraceDB."""
+        if hasattr(self, '_gracedb_files'):
+            return self._gracedb_files
+        url = self.gracedb_url.replace('superevents', 'api/superevents').replace('view', 'files')
+        r = requests.get(url)
+        r.raise_for_status()
+        self._gracedb_files = [f for f in r.json().values()]  # JSON is a dict of {filename: url}
+        return self._gracedb_files
+
+    def _get_matching_notice(self, notice_type):
+        """Get the corresponding notice of the given type for this event."""
+        if notice_type.lower() not in ['xml', 'avro', 'json']:
+            raise ValueError('Unknown notice type')
+        # Get the URLs for the matching event type
+        gracedb_files = self.get_gracedb_files()
+        notice_urls = [
+            n for n in gracedb_files
+            if notice_type in n and not n.endswith(notice_type) and  # Exclude symlinks
+            self.type.lower() in n.lower()
+        ]
+        if len(notice_urls) == 0:
+            raise ValueError('No matching notices found')
+        # We can't tell which one is the correct notice,
+        # since Kafka notices don't include the packet number
+        # So we have to download them all and check the creation time
+        # It can be not identical, but hopefully it's within a few seconds
+        matched_notices = []
+        for url in notice_urls:
+            notice = GWNotice.from_url(url)
+            if abs(self.time - notice.time).to("second").value < 2:
+                matched_notices.append(notice)
+        if len(matched_notices) == 0:
+            raise ValueError('No matching notices found')
+        if len(matched_notices) > 1:
+            raise ValueError('Multiple matching notices found')
+        return matched_notices[0]
+
+    def _get_voevent(self):
+        """Get the corresponding VOEvent notice for this Kafka notice from GraceDB."""
+        if hasattr(self, '_matching_xml'):
+            return self._matching_xml
+        self._matching_xml = self._get_matching_notice('xml')
+        return self._matching_xml
+
+    def _get_avro(self):
+        """Get the corresponding Avro notice for this VOEvent notice from GraceDB."""
+        if hasattr(self, '_matching_avro'):
+            return self._matching_avro
+        self._matching_avro = self._get_matching_notice('avro')
+        return self._matching_avro
+
+    def _get_json(self):
+        """Get the corresponding JSON notice for this VOEvent notice from GraceDB."""
+        if hasattr(self, '_matching_json'):
+            return self._matching_json
+        self._matching_json = self._get_matching_notice('json')
+        return self._matching_json
+
+    @property
+    def gwskynet(self):
+        """Get the GWSkyNet details for this event."""
+        if hasattr(self, '_gwskynet'):
+            return self._gwskynet
+        self._gwskynet = self.get_gwskynet()
+        return self._gwskynet
+
+    def get_gwskynet(self):
+        """Download any GWSkyNet details for this notice from GraceDB.
+
+        The GWSkyNet details are stored in a JSON file created after the skymap,
+        so they are not included in the notice. We have to download them separately.
+        """
+        # The GWSkyNet files are hosted on GraceDB.
+        # We want to get the file that corresponds to the skymap for this notice.
+        # Right now that's really awkward...
+        # First off there's no way to know which gwskynet.json file is the correct one,
+        # without downloading them all and checking the skymap name.
+        # But also Kafka notices don't even include the name of skymap file!
+        # So we have to get the matching VOEvent notice, then get the skymap name from that,
+        # then get the matching GWSkyNet file.
+        # This is also very time consuming with all the downloads and queries, so we really don't
+        # want to do it unless we have to.
+        if self.skymap_url is not None and 'bayestar' not in self.skymap_url:
+            # For now only bayestar skymaps have GWSkyNet files
+            return None
+        if self.skymap is not None and self.skymap.header['creator'].lower() != 'bayestar':
+            # As above, but for embedded skymaps
+            return None
+
+        # We need the skymap name to find the correct GWSkyNet file,
+        # and for Kafka notices we have to download the VOEvent notice to get it.
+        # This should be cached, so we only have to do it once.
+        if self.skymap_url is not None:
+            skymap_name = self.skymap_url.split('/')[-1]
+        else:
+            voevent_notice = self._get_voevent()
+            skymap_name = voevent_notice.skymap_url.split('/')[-1]
+        if 'bayestar' not in skymap_name:
+            return None
+
+        gwskynet_urls = [f for f in self.get_gracedb_files() if 'gwskynet' in f]
+        if len(gwskynet_urls) == 0:
+            return None
+        # Ignore the one without a version number, it's just a symlink to the latest file
+        gwskynet_urls = [f for f in gwskynet_urls if not f.endswith('.json')]
+
+        # Now we have to download each file, then check if it matches the skymap for this notice
+        matches = []
+        with requests.Session() as session:
+            for url in gwskynet_urls:
+                try:
+                    r = session.get(url)
+                    r.raise_for_status()
+                except Exception:
+                    continue
+                data = r.json()
+                data['url'] = url
+                if data['file'] == skymap_name:
+                    matches.append(data)
+        if len(matches) == 0:
+            return None
+        # If we have multiple matches we'll select the latest
+        gwskynet_data = matches[-1]
+        # Rename the keys to remove the GWSkyNet prefix (just 'score', 'FAP', 'FNP')
+        # and remove the unnecessary superevent_id
+        gwskynet_data = {
+            k if 'GWSkyNet' not in k else k.split('_')[-1]: v
+            for k, v in gwskynet_data.items()
+        }
+        gwskynet_data.pop('superevent_id', None)
+        return gwskynet_data
+
     @classmethod
     def from_gracedb(cls, name, which_notice='last'):
         """Create a GWNotice by downloading the VOEvent XML from GraceDB."""
@@ -774,6 +907,10 @@ class GWNotice(Notice):
                 text += f'HasRemnant: {self.properties["HasRemnant"]:.0%}\n'
             except KeyError:
                 pass
+        if self.gwskynet is not None:
+            text += f'GWSkyNet score: {self.gwskynet["score"]:.4f}\n'
+        else:
+            text += 'GWSkyNet score: N/A\n'
 
         # Skymap info (only if we have downloaded the skymap)
         if self.skymap is not None:
