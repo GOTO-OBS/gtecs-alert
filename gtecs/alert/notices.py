@@ -789,68 +789,118 @@ class GWNotice(Notice):
     def strategy(self):
         """Get the observing strategy key."""
         if self.skymap is None:
-            # This is very annoying, but we need to get the skymap to get the distance.
-            # TODO: We could assume it is far, would that be better?
             raise ValueError('Cannot determine strategy without skymap')
 
-        if self.external is not None:
+        def isCoincident(notice):
+            """Test for if this notice is coincident with another event.
+
+            We will always prioritise the notices with RAVEN external coincidence data.
+            """
+            if notice.external is not None:
+                return True
+            return False
+
+        def isReal(notice, far_factor=1, skynet_cutoff=0.5):
+            """Test for if this event is likely to be significant.
+
+            The primary test is the False Alarm Rate (FAR), which has a different
+            significance threshold for CBC and Burst events.
+            We also select any notices with the significant flag set, since there are some cases
+            where they are not consistent (see S230615az).
+
+            Finally, if a notice is not significant we will still select it based on its
+            GWSkyNet score. Currently this requires the GWSkyNet details to be downloaded
+            separately, which can take a while, especially for Kafka alerts which don't
+            contain the skymap names (see get_gwskynet() for details).
+
+            """
+            if notice.significant:
+                return True
+            elif notice.group == 'CBC' and notice.far < 12 * far_factor:
+                return True
+            elif notice.group == 'Burst' and notice.far < 1 * far_factor:
+                return True
+            elif notice.gwskynet is not None and notice.gwskynet['score'] > skynet_cutoff:
+                return True
+            return False
+
+        def isBright(notice, prob_cutoff=0.5, ns_dist_cutoff=250, bh_dist_cutoff=250):
+            """Test for if GOTO could likely observe a counterpart to this notice.
+
+            This depends on the progenitors (for CBC events), plus distance.
+            We first use the NS probability (pBNS+pNSBH) over the probability that the event is
+            non-terrestrial (1-pTerrestrial, or pBNS+pNSBH+pBBH). This is essentially the
+            HasNS property, but it seems more reliable.
+            We then have two different distance cutoffs, which are used in the NS-like and
+            BH-like cases (the latter also applying to Bursts with no classification info).
+
+            """
+            if notice.classification is not None:
+                prob_NS = notice.classification['BNS'] + notice.classification['NSBH']
+                prob_astro = 1 - notice.classification['Terrestrial']
+                if (prob_NS / prob_astro) > prob_cutoff:
+                    if notice.distance:
+                        if notice.distance < ns_dist_cutoff:
+                            return True
+                        else:
+                            return False
+                    else:
+                        return True  # We shouldn't really get CBCs with no dist, but just in case
+            if notice.distance and notice.distance < bh_dist_cutoff:
+                # For BH-like and Bursts, we just select on the distance
+                return True
+            return False
+
+        def isQuick(notice, selection_contour=0.95, tile_cutoff=120):
+            """Test for if we could observe this notice quickly.
+
+            This is clearly more subjective and specific to GOTO. Area (aka number of tiles)
+            is the main factor. We could consider the exposure time per tile, but assuming that's
+            constant (aside from slew time) it's not really necessary.
+            Basic rule of thumb is 5 minutes per tile, so 120 tiles in an average 10 hour night.
+
+            """
+            grid_tiles = notice.get_tiles()
+            mask = grid_tiles['contour'] < selection_contour
+            if sum(mask) < tile_cutoff:
+                return True
+            return False
+
+        # Strategy parameters
+        FAR_FACTOR = 2
+        SKYNET_CUTOFF = 0.5
+        PROB_CUTOFF = 0.5
+        NS_DIST_CUTOFF = 400
+        BH_DIST_CUTOFF = 200
+        SELECTION_CONTOUR = 0.95
+        TILE_CUTOFF = 120
+
+        if isCoincident(self):
             # External coincidences are always highest priority, regardless of other factors.
             strategy = 'GW_RANK_1'
-
-        elif self.group == 'CBC':
-            # Reject events if the FAR is > 1/month, the significance cut-off for CBC events.
-            # Note we explicitly look at the reported FAR here, not the significance flag
-            # since it's sometimes not consistent (see S230615az).
-            if (self.far * 60 * 60 * 24 * 365) > 12 and not self.significant:
-                return 'IGNORE'
-
-            # For deciding if an event is observable we use the HasRemnant property,
-            # but multiply by the probability it is a BNS or NSBH to downgrade terrestrial events.
-            # This is because some events can have HasRemnant=100% but still high terrestrial
-            # (although the FAR cut above should have removed most of them).
-            observable_metric = self.properties['HasRemnant']
-            observable_metric *= (self.classification['BNS'] + self.classification['NSBH'])
-            # Other factors we use:
-            #  the 90% contour area (ideally the visible area, but that's tricky to calculate)
-            #  the distance (the mean - 1 stddev, since the errors can be very large)
-            if 'distmean' in self.skymap.header:
-                distance = self.skymap.header['distmean'] - self.skymap.header['diststd']
-            else:
-                # Some CBC pipelines don't include distance information
-                # https://git.ligo.org/emfollow/userguide/-/issues/368
-                # So we'll just assume it's far
-                distance = np.inf
-            if observable_metric > 0.5:
-                # These are the ones we always want to follow up.
-                # The choice here just affects the scheduler ranking and if we send a WAKEUP alert.
-                if self.skymap.get_contour_area(0.9) < 5000 and distance < 250:
-                    strategy = 'GW_RANK_2'
-                else:
-                    strategy = 'GW_RANK_3'
-            else:
-                # These are most likly BBH events, which we only want to follow up if they are
-                # well localised and nearby.
-                if self.skymap.get_contour_area(0.9) < 5000 and distance < 250:
-                    strategy = 'GW_RANK_5'
-                else:
-                    return 'IGNORE'
-
-        elif self.group == 'Burst':
-            # Reject events if the FAR is > 1/year, the significance cut-off for Burst events.
-            if (self.far * 60 * 60 * 24 * 365) > 1 and not self.significant:
-                return 'IGNORE'
-
-            # Just like BBH events, we only want to follow up if they are well localised and nearby.
-            # However Bursts don't include any distance information, so we just decide on the area.
-            if self.skymap.get_contour_area(0.9) < 5000:
-                strategy = 'GW_RANK_4'
-            else:
-                return 'IGNORE'
-
         else:
-            raise ValueError(f'Cannot determine observing strategy for group "{self.group}"')
+            if not isReal(self, FAR_FACTOR, SKYNET_CUTOFF):
+                # Ignore non-significant events
+                return 'IGNORE'
+            else:
+                if isBright(self, PROB_CUTOFF, NS_DIST_CUTOFF, BH_DIST_CUTOFF):
+                    # Select bright events for follow-up
+                    if isQuick(self, SELECTION_CONTOUR, TILE_CUTOFF):
+                        # Bright events that we can observe quickly are top priority
+                        strategy = 'RANK_2'
+                    else:
+                        # Bright but will take longer to observe, so don't trigger WAKEUP
+                        strategy = 'RANK_3'
+                else:
+                    if isQuick(self, SELECTION_CONTOUR, TILE_CUTOFF):
+                        # Non-bright events that we can observe quickly are still worth selecting
+                        strategy = 'RANK_4'
+                    else:
+                        # Not bright or quick, so just ignore
+                        return 'IGNORE'
 
         # Now we alter the cadence based on the skymap area, ~how much GOTO can cover in an hour.
+        # Roughly 5 mins per tile, so 12 tiles per hour.
         # Ideally we want two epochs of each tile an hour apart. If it's going to take more than
         # an hour to cover the area, then we schedule targets so a follow-up pointing appears
         # at the same rank with a 1 hour delay to it's valid time. Once that's done the normal
@@ -859,7 +909,7 @@ class GWNotice(Notice):
         # to waste time waiting for the second epoch. So just schedule all the targets to be
         # recreated immediately at a lower rank after they are observed.
         # Ideally this would only consider the visible area, but that's much more complicated!
-        if self.skymap.get_contour_area(0.9) < 1000:
+        if isQuick(self, selection_contour=0.95, tile_cutoff=12):
             return strategy + '_NARROW'
         else:
             return strategy + '_WIDE'
