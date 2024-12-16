@@ -835,18 +835,23 @@ class GWNotice(Notice):
             BH-like cases (the latter also applying to Bursts with no classification info).
 
             """
+            if 'distmean' in notice.skymap.header:
+                # subtract one sigma from the distance, so we're at the closest edge
+                distance = notice.skymap.header['distmean'] - notice.skymap.header['diststd']
+            else:
+                distance = None
             if notice.classification is not None:
                 prob_NS = notice.classification['BNS'] + notice.classification['NSBH']
                 prob_astro = 1 - notice.classification['Terrestrial']
                 if (prob_NS / prob_astro) > prob_cutoff:
-                    if notice.distance:
-                        if notice.distance < ns_dist_cutoff:
+                    if distance is not None:
+                        if distance < ns_dist_cutoff:
                             return True
                         else:
                             return False
                     else:
                         return True  # We shouldn't really get CBCs with no dist, but just in case
-            if notice.distance and notice.distance < bh_dist_cutoff:
+            if distance is not None and distance < bh_dist_cutoff:
                 # For BH-like and Bursts, we just select on the distance
                 return True
             return False
