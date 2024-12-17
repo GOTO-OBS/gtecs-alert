@@ -666,7 +666,7 @@ class GWNotice(Notice):
 
     @property
     def gwskynet(self):
-        """Get the GWSkyNet details for this event."""
+        """Get the GWSkyNet details for this notice."""
         if hasattr(self, '_gwskynet'):
             return self._gwskynet
         self._gwskynet = self.get_gwskynet()
@@ -706,7 +706,9 @@ class GWNotice(Notice):
         if 'bayestar' not in skymap_name:
             return None
 
-        gwskynet_urls = [f for f in self.get_gracedb_files() if 'gwskynet' in f]
+        # Now we need all the GWSkyNet files for this event, to find the matching one
+        gracedb_files = self.get_gracedb_files()
+        gwskynet_urls = [f for f in gracedb_files if 'gwskynet' in f]
         if len(gwskynet_urls) == 0:
             return None
         # Ignore the one without a version number, it's just a symlink to the latest file
@@ -787,6 +789,12 @@ class GWNotice(Notice):
 
     @property
     def strategy(self):
+        """Get the observing strategy key."""
+        if not hasattr(self, '_strategy'):
+            self._strategy = self.get_strategy()
+        return self._strategy
+
+    def get_strategy(self):
         """Get the observing strategy key."""
         if self.skymap is None:
             raise ValueError('Cannot determine strategy without skymap')
