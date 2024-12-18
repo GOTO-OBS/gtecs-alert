@@ -955,14 +955,14 @@ class GWNotice(Notice):
                     # Select bright events for follow-up
                     if isQuick(self, SELECTION_CONTOUR, TILE_CUTOFF):
                         # Bright events that we can observe quickly are top priority
-                        strategy = 'RANK_2'
+                        strategy = 'GW_RANK_2'
                     else:
                         # Bright but will take longer to observe, so don't trigger WAKEUP
-                        strategy = 'RANK_3'
+                        strategy = 'GW_RANK_3'
                 else:
                     if isQuick(self, SELECTION_CONTOUR, TILE_CUTOFF):
                         # Non-bright events that we can observe quickly are still worth selecting
-                        strategy = 'RANK_4'
+                        strategy = 'GW_RANK_4'
                     else:
                         # Not bright or quick, so just ignore
                         return 'IGNORE'
