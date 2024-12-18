@@ -935,13 +935,14 @@ class GWNotice(Notice):
             return False
 
         # Strategy parameters
+        # TODO: add to params?
         FAR_FACTOR = 2
         SKYNET_CUTOFF = 0.5
         PROB_CUTOFF = 0.5
         NS_DIST_CUTOFF = 400
         BH_DIST_CUTOFF = 200
         SELECTION_CONTOUR = 0.95
-        TILE_CUTOFF = 120
+        TILE_CUTOFF = 60
 
         if isCoincident(self):
             # External coincidences are always highest priority, regardless of other factors.
