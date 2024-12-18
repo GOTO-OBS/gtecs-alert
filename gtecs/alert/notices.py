@@ -773,12 +773,13 @@ class GWNotice(Notice):
                 if gwskynet_data['skymap'] == skymap_name:
                     matched_logs.append(gwskynet_data)
         if len(matched_logs) == 0:
-            raise ValueError('No matching GWSkyNet file found')
+            return None
         if len(matched_logs) > 1:
             # Not an error, apparently this can happen
             # e.g. https://gracedb.ligo.org/api/superevents/S241125n/files/gwskynet.json,0
             #  and https://gracedb.ligo.org/api/superevents/S241125n/files/gwskynet.json,1
             # They're identical files, I don't know why it was uploaded twice
+            # We'll just use the latest one in case it was updated for some reason
             pass
         gwskynet_data = matched_logs[-1]
         return gwskynet_data
