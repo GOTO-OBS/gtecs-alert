@@ -813,6 +813,8 @@ class GWNotice(Notice):
 
             The primary test is the False Alarm Rate (FAR), which has a different
             significance threshold for CBC and Burst events.
+            The default is 1/month (12/year) for CBCs and 1/year for Bursts, but it
+            can be increased by the far_factor parameter.
             We also select any notices with the significant flag set, since there are some cases
             where they are not consistent (see S230615az).
 
@@ -824,9 +826,9 @@ class GWNotice(Notice):
             """
             if notice.significant:
                 return True
-            elif notice.group == 'CBC' and notice.far < 12 * far_factor:
+            elif notice.group == 'CBC' and (notice.far * 60 * 60 * 24 * 365) < (12 * far_factor):
                 return True
-            elif notice.group == 'Burst' and notice.far < 1 * far_factor:
+            elif notice.group == 'Burst' and (notice.far * 60 * 60 * 24 * 365) < (1 * far_factor):
                 return True
             elif notice.gwskynet is not None and notice.gwskynet['score'] > skynet_cutoff:
                 return True
