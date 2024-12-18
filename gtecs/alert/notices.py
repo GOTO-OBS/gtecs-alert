@@ -725,6 +725,15 @@ class GWNotice(Notice):
             # As above, but for embedded skymaps
             return None
 
+        # Now we'll get the log files from GraceDB, and check if there are any
+        # GWSkyNet files. This is an initial check to save time, we'd have to
+        # get the logs anyway but if there aren't any files we might as well
+        # return None now before getting the VOEvent for Kafka alerts.
+        # And the logs are cached so this doesn't waste time.
+        gracedb_logs = self.get_gracedb_logs()
+        if not any(['gwskynet' in log['filename'] for log in gracedb_logs]):
+            return None
+
         # We need the skymap name to find the correct GWSkyNet file,
         # and for Kafka notices we have to download the VOEvent notice to get it.
         # This should be cached, so we only have to do it once, plus it also caches the
