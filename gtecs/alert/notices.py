@@ -904,19 +904,18 @@ class GWNotice(Notice):
             else:
                 distance = None
             if notice.classification is not None:
-                prob_NS = notice.classification['BNS'] + notice.classification['NSBH']
+                prob_ns = notice.classification['BNS'] + notice.classification['NSBH']
                 prob_astro = 1 - notice.classification['Terrestrial']
-                if (prob_NS / prob_astro) > prob_cutoff:
-                    if distance is not None:
-                        if distance < ns_dist_cutoff:
-                            return True
-                        else:
-                            return False
-                    else:
-                        return True  # We shouldn't really get CBCs with no dist, but just in case
-            if distance is not None and distance < bh_dist_cutoff:
-                # For BH-like and Bursts, we just select on the distance
-                return True
+                weighted_pns = prob_ns / prob_astro
+            else:
+                weighted_pns = 0
+
+            if weighted_pns > prob_cutoff:
+                if distance is not None and distance < ns_dist_cutoff:
+                    return True
+            else:
+                if distance is not None and distance < bh_dist_cutoff:
+                    return True
             return False
 
         def isQuick(notice, selection_contour=0.95, tile_cutoff=120):
