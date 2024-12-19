@@ -962,6 +962,7 @@ class GWNotice(Notice):
                 else:
                     if isQuick(self, SELECTION_CONTOUR, TILE_CUTOFF):
                         # Non-bright events that we can observe quickly are still worth selecting
+                        # We'll only do two passes with a reduced exposure time, just in case
                         strategy = 'GW_RANK_4'
                     else:
                         # Not bright or quick, so just ignore

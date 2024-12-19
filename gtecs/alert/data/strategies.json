@@ -197,7 +197,7 @@
         "max_tiles": 200
     },
     "GW_RANK_4_WIDE": {
-        "rank": 44,
+        "rank": 344,
         "valid_hours": 72,
         "cadence": {
             "num_todo": 99,
@@ -219,7 +219,7 @@
         "exposure_sets": [
             {
                 "num_exp": 4,
-                "exptime": 90,
+                "exptime": 45,
                 "filt": "L"
             }
         ],
@@ -228,7 +228,7 @@
         "max_tiles": 200
     },
     "GW_RANK_4_NARROW": {
-        "rank": 44,
+        "rank": 344,
         "valid_hours": 72,
         "cadence": {
             "num_todo": 99,
@@ -244,63 +244,7 @@
         "exposure_sets": [
             {
                 "num_exp": 4,
-                "exptime": 90,
-                "filt": "L"
-            }
-        ],
-        "skymap_contour": 0.95,
-        "min_tile_prob": 0,
-        "max_tiles": 200
-    },
-    "GW_RANK_5_WIDE": {
-        "rank": 55,
-        "valid_hours": 72,
-        "cadence": {
-            "num_todo": 99,
-            "wait_hours": [
-                1,
-                0
-            ],
-            "rank_change": [
-                0,
-                10
-            ]
-        },
-        "constraints": {
-            "min_alt": 30,
-            "max_sunalt": -12,
-            "max_moon": "B",
-            "min_moonsep": 10
-        },
-        "exposure_sets": [
-            {
-                "num_exp": 4,
-                "exptime": 90,
-                "filt": "L"
-            }
-        ],
-        "skymap_contour": 0.95,
-        "min_tile_prob": 0,
-        "max_tiles": 200
-    },
-    "GW_RANK_5_NARROW": {
-        "rank": 55,
-        "valid_hours": 72,
-        "cadence": {
-            "num_todo": 99,
-            "wait_hours": 0,
-            "rank_change": 10
-        },
-        "constraints": {
-            "min_alt": 30,
-            "max_sunalt": -12,
-            "max_moon": "B",
-            "min_moonsep": 10
-        },
-        "exposure_sets": [
-            {
-                "num_exp": 4,
-                "exptime": 90,
+                "exptime": 45,
                 "filt": "L"
             }
         ],
