@@ -311,12 +311,11 @@ def send_observing_report(notice, time=None):
 
     if len(survey_tiles) == 0:
         # This might be because no tiles passed the filter
-        all_tiles = grid.get_table()
-        if (notice.strategy_dict['prob_limit'] > 0 and
-                max(all_tiles['prob']) < notice.strategy_dict['prob_limit']):
+        if (notice.strategy_dict['min_tile_prob'] > 0 and
+                max(grid.prob) < notice.strategy_dict['min_tile_prob']):
             msg += '- No tiles passed the probability limit '
-            msg += f'({notice.strategy_dict["prob_limit"]:.1%}, '
-            msg += f'highest had {max(all_tiles["prob"]):.1%})\n'
+            msg += f'({notice.strategy_dict["min_tile_prob"]:.1%}, '
+            msg += f'highest had {max(grid.prob):.1%})\n'
         else:
             # Uh-oh, something went wrong when inserting?
             msg += '- *ERROR: No targets found in database*\n'
