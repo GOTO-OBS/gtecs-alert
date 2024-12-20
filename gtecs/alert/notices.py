@@ -935,8 +935,8 @@ class GWNotice(Notice):
 
         # Strategy parameters
         # TODO: add to params?
-        FAR_FACTOR = 2
-        SKYNET_CUTOFF = 0.5
+        FAR_FACTOR = 1
+        SKYNET_CUTOFF = 0.9
         PROB_CUTOFF = 0.5
         NS_DIST_CUTOFF = 400
         BH_DIST_CUTOFF = 200
