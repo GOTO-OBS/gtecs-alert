@@ -953,16 +953,16 @@ class GWNotice(Notice):
             else:
                 if isBright(self, PROB_CUTOFF, NS_DIST_CUTOFF, BH_DIST_CUTOFF):
                     # Select bright events for follow-up
-                    if isQuick(self, SELECTION_CONTOUR, TILE_CUTOFF):
-                        # Bright events that we can observe quickly are top priority
+                    if self.significant:
+                        # Trigger WAKEUP if significant
                         strategy = 'GW_RANK_2'
                     else:
-                        # Bright but will take longer to observe, so don't trigger WAKEUP
+                        # Identical strategy to GW_RANK_2, but no WAKEUP (and lower pointing rank)
                         strategy = 'GW_RANK_3'
                 else:
                     if isQuick(self, SELECTION_CONTOUR, TILE_CUTOFF):
                         # Non-bright events that we can observe quickly are still worth selecting
-                        # We'll only do two passes with a reduced exposure time, just in case
+                        # We'll only do a lower exposure time, same as the all-sky survey
                         strategy = 'GW_RANK_4'
                     else:
                         # Not bright or quick, so just ignore
