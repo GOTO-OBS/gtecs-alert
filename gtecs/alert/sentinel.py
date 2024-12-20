@@ -430,6 +430,25 @@ class Sentinel:
                     self.processed_notices += 1
                     send_slack_msg('Sentinel successfully processed notice')
 
+                    # Start a followup thread to wait for GWSkyNet scores
+                    # Note we only check if the notice was already ignored
+                    # (which also filters out RETRACTIONs) and has no GWSkyNet scores yet.
+                    # It's also only valid for BAYESTAR skymaps (for now).
+                    if (notice.source == 'LVC' and not notice.ivorn.endswith('_gwskynet') and
+                            notice.strategy == 'IGNORE' and
+                            notice.gwskynet is None and
+                            notice.skymap is not None and  # it should always be there by now?
+                            notice.skymap.header['creator'].lower() == 'bayestar'):
+                        # The scores haven't been uploaded yet,
+                        # but once they are it could be promoted
+                        self.log.debug('Starting GWSkyNet listener thread')
+                        t = threading.Thread(
+                            target=self._gwskynet_thread,
+                            args=[notice, 300]  # 5 mins should be enough
+                        )
+                        t.daemon = True
+                        t.start()
+
                     # Start a followup thread to wait for the skymap of Fermi notices
                     if notice.source == 'Fermi' and not notice.ivorn.endswith('_new_skymap'):
                         try:
@@ -438,8 +457,10 @@ class Sentinel:
                         except URLError:
                             # The skymap hasn't been uploaded yet
                             self.log.debug('Starting Fermi skymap listener thread')
-                            t = threading.Thread(target=self._fermi_skymap_thread,
-                                                 args=[notice, 600])
+                            t = threading.Thread(
+                                target=self._fermi_skymap_thread,
+                                args=[notice, 600]
+                            )
                             t.daemon = True
                             t.start()
 
@@ -454,6 +475,46 @@ class Sentinel:
             time.sleep(0.1)
 
         self.log.info('Alert handler thread stopped')
+
+    def _gwskynet_thread(self, notice, timeout=600):
+        """Listen for the GWSkyNet scores for LVC notices."""
+        self.log.info('{} GWSkyNet listener thread started'.format(notice.event_name))
+
+        try:
+            start_time = time.time()
+            found_gwskynet = False
+            timed_out = False
+            while self.running and not found_gwskynet and not timed_out:
+                try:
+                    gwskynet = notice.get_gwskynet()
+                    if gwskynet is not None:
+                        found_gwskynet = True
+                        notice.ivorn = notice.ivorn + '_gwskynet'  # create a new ivorn for the DB
+                    else:
+                        # no score file yet, sleep for 30s
+                        time.sleep(30)
+                except Exception:
+                    time.sleep(30)
+                if time.time() - start_time > timeout:
+                    msg = '{} GWSkyNet listener thread timed out'.format(notice.event_name)
+                    self.log.warning(msg)
+                    # send_slack_msg(msg)  # This isn't worth a Slack message
+                    timed_out = True
+
+            if found_gwskynet:
+                self.log.info('{} GWSkyNet listener thread successful'.format(notice.event_name))
+                send_slack_msg('Re-ingesting LVC notice {}'.format(notice.event_name))
+                self.notice_queue.append(notice)
+                self.log.info('{} GWSkyNet listener thread finished'.format(notice.event_name))
+            else:
+                # Thread was shutdown before we found the score file, or timed out
+                self.log.warning('{} GWSkyNet listener thread aborted'.format(notice.event_name))
+
+        except Exception as err:
+            self.log.exception('Error in {} GWSkyNet listener thread'.format(notice.event_name))
+            msg = 'Sentinel reports ERROR in {} GWSkyNet listener thread'.format(notice.event_name)
+            msg += f' ("{err.__class__.__name__}: {err}")'
+            send_slack_msg(msg)
 
     def _fermi_skymap_thread(self, notice, timeout=600):
         """Listen for the official skymap for Fermi notices."""
