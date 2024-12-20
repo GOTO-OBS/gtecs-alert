@@ -485,16 +485,13 @@ class Sentinel:
             found_gwskynet = False
             timed_out = False
             while self.running and not found_gwskynet and not timed_out:
-                try:
-                    gwskynet = notice.get_gwskynet()
-                    if gwskynet is not None:
-                        found_gwskynet = True
-                        notice._gwskynet = gwskynet  # overwrite the cache
-                        notice.ivorn = notice.ivorn + '_gwskynet'  # create a new ivorn for the DB
-                    else:
-                        # no score file yet, sleep for 30s
-                        time.sleep(30)
-                except Exception:
+                gwskynet = notice.get_gwskynet()
+                if gwskynet is not None:
+                    found_gwskynet = True
+                    notice._gwskynet = gwskynet  # overwrite the cache
+                    notice.ivorn = notice.ivorn + '_gwskynet'  # create a new ivorn for the DB
+                else:
+                    # no score file yet, sleep for 30s
                     time.sleep(30)
                 if time.time() - start_time > timeout:
                     msg = '{} GWSkyNet listener thread timed out'.format(notice.event_name)
