@@ -489,6 +489,7 @@ class Sentinel:
                     gwskynet = notice.get_gwskynet()
                     if gwskynet is not None:
                         found_gwskynet = True
+                        notice._gwskynet = gwskynet  # overwrite the cache
                         notice.ivorn = notice.ivorn + '_gwskynet'  # create a new ivorn for the DB
                     else:
                         # no score file yet, sleep for 30s
