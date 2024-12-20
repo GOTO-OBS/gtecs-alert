@@ -485,6 +485,9 @@ class Sentinel:
             found_gwskynet = False
             timed_out = False
             while self.running and not found_gwskynet and not timed_out:
+                # The logs are cached, so we need to delete them to redownload the list
+                if hasattr(notice, '_gracedb_logs'):
+                    delattr(notice, '_gracedb_logs')
                 gwskynet = notice.get_gwskynet()
                 if gwskynet is not None:
                     found_gwskynet = True
