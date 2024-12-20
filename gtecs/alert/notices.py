@@ -759,7 +759,7 @@ class GWNotice(Notice):
             if url_match and scores_match:
                 data = {
                     'url': log['file'],
-                    'created': log['created'],
+                    'created': Time.strptime(log['created'], '%Y-%m-%d %H:%M:%S %Z'),
                     'skymap': url_match.group(1).split('/')[-1],
                     'skymap_url': 'https://gracedb.ligo.org' + url_match.group(1),
                     'score': float(scores_match.group(1)),
