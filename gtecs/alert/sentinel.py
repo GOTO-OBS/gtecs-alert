@@ -505,6 +505,12 @@ class Sentinel:
         self.notice_queue.append(notice)
         return f'Notice {notice.ivorn} added to queue'
 
+    def ingest_from_url(self, url):
+        """Ingest a notice payload from a url."""
+        notice = Notice.from_url(url)
+        self.notice_queue.append(notice)
+        return f'Notice {notice.ivorn} added to queue'
+
     def ingest_from_ivorn(self, ivorn):
         """Ingest a notice payload from its IVORN.
 
