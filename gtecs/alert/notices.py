@@ -721,8 +721,15 @@ class GWNotice(Notice):
         if self.skymap_url is not None and 'bayestar' not in self.skymap_url:
             # For now only bayestar skymaps have GWSkyNet files
             return None
-        if self.skymap is not None and self.skymap.header['creator'].lower() != 'bayestar':
+        if (self.skymap is not None and
+                ('creator' not in self.skymap.header or
+                 ('creator' in self.skymap.header and
+                  self.skymap.header['creator'].lower() != 'bayestar'
+                  ))):
             # As above, but for embedded skymaps
+            # Apparently not all skymaps have a CREATOR card, e.g.
+            # https://gracedb.ligo.org/api/superevents/S241216gg/files/mly.multiorder.fits,0
+            # But BAYESTAR skymaps should always have one (and it should be 'BAYESTAR', obviously)
             return None
 
         # Now we'll get the log files from GraceDB, and check if there are any
