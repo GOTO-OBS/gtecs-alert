@@ -438,6 +438,7 @@ class Sentinel:
                             notice.strategy == 'IGNORE' and
                             notice.gwskynet is None and
                             notice.skymap is not None and  # it should always be there by now?
+                            'creator' in notice.skymap.header and
                             notice.skymap.header['creator'].lower() == 'bayestar'):
                         # The scores haven't been uploaded yet,
                         # but once they are it could be promoted
