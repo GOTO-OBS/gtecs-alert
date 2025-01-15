@@ -200,10 +200,10 @@
         "rank": 344,
         "valid_hours": 72,
         "cadence": {
-            "num_todo": 99,
+            "num_todo": 12,
             "wait_hours": [
                 1,
-                0
+                12
             ],
             "rank_change": [
                 0,
@@ -231,8 +231,11 @@
         "rank": 344,
         "valid_hours": 72,
         "cadence": {
-            "num_todo": 99,
-            "wait_hours": 0,
+            "num_todo": 12,
+            "wait_hours": [
+                0,
+                12
+            ],
             "rank_change": 10
         },
         "constraints": {
