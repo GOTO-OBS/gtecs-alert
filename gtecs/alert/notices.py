@@ -925,6 +925,19 @@ class GWNotice(Notice):
                     return True
             return False
 
+        def isClose(notice, dist_cufoff=2000):
+            """Test for if this notice meets the distance cutoff.
+
+            Some notices don't include distance infomation, we return False for them.
+
+            """
+            if 'distmean' in notice.skymap.header:
+                # subtract one sigma from the distance, so we're at the closest edge
+                distance = notice.skymap.header['distmean'] - notice.skymap.header['diststd']
+                if distance < dist_cufoff:
+                    return True
+            return False
+
         def isQuick(notice, selection_contour=0.95, tile_cutoff=120):
             """Test for if we could observe this notice quickly.
 
@@ -947,6 +960,7 @@ class GWNotice(Notice):
         PROB_CUTOFF = 0.5
         NS_DIST_CUTOFF = 400
         BH_DIST_CUTOFF = 200
+        DIST_CUTOFF = 2000
         SELECTION_CONTOUR = 0.95
         TILE_CUTOFF = 60
 
@@ -967,8 +981,10 @@ class GWNotice(Notice):
                         # Identical strategy to GW_RANK_2, but no WAKEUP (and lower pointing rank)
                         strategy = 'GW_RANK_3'
                 else:
-                    if isQuick(self, SELECTION_CONTOUR, TILE_CUTOFF):
-                        # Non-bright events that we can observe quickly are still worth selecting
+                    if (isQuick(self, SELECTION_CONTOUR, TILE_CUTOFF)
+                            and isClose(self, DIST_CUTOFF)):
+                        # Non-bright events that we can observe quickly are still worth selecting,
+                        # as long as they're also within a minimum luminosity distance.
                         # We'll only do a lower exposure time, same as the all-sky survey
                         strategy = 'GW_RANK_4'
                     else:
