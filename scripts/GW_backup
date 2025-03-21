@@ -100,8 +100,7 @@ def get_tile_table(skymap, log):
 
     # Get the table of tiles and contained probability
     table = grid.get_table()
-    table.sort('prob')
-    table.reverse()
+    table.sort('prob', reverse=True)
 
     # Mask the table based on tile probs (just using some default strategy)
     mask = table['prob'] > 0.01
@@ -154,7 +153,7 @@ def add_to_db(grid, tile_table, log):
         # This is basically the same as in gtecs.alert.database, but because we don't have
         # an Event class or strategy we use a load of defaults
         db_targets = []
-        for tile_name, _, _, tile_weight in tile_table:
+        for tile_name, tile_weight in tile_table[('tilename', 'prob')]:
             # Find the matching GridTile
             query = session.query(db.GridTile)
             query = query.filter(db.GridTile.grid == db_grid)

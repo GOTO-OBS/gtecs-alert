@@ -15,6 +15,7 @@ from astropy.coordinates import Angle, SkyCoord
 from astropy.time import Time
 from astropy.utils.data import download_file
 
+from gototile.grid import SkyGrid
 from gototile.skymap import SkyMap
 
 from hop.models import AvroBlob, JSONBlob, VOEvent
@@ -234,6 +235,8 @@ class Notice:
         self.skymap = None
         self.skymap_url = None
         self.skymap_file = None
+        self._grid = None
+        self.grid_tiles = None
 
     def __repr__(self):
         return '{}(ivorn={})'.format(self.__class__.__name__, self.ivorn)
@@ -378,6 +381,39 @@ class Notice:
             self.skymap_file = None
 
         return self.skymap
+
+    def get_tiles(self, grid=None, regrade_nside=128):
+        """Apply the skymap for this notice to the given grid."""
+        if self.skymap is None:
+            raise ValueError('Cannot select tiles without a skymap')
+        if self.grid_tiles is not None and (grid is None or self._grid == grid):
+            return self.grid_tiles
+
+        if grid is None or not isinstance(grid, SkyGrid):
+            # If we're not given a grid, try getting it from the ObsDB
+            try:
+                from gtecs.obs import database as obs_db
+                with obs_db.session_manager() as session:
+                    db_grid = obs_db.get_current_grid(session)
+                    grid = db_grid.skygrid
+            except Exception:
+                raise ValueError('No grid provided and cannot get current grid from ObsDB')
+
+        # If the skymap is too big we regrade before applying it to the grid
+        skymap = self.skymap.copy()
+        if skymap.is_moc is False and (skymap.nside > regrade_nside or skymap.order == 'RING'):
+            skymap.regrade(nside=regrade_nside, order='NESTED')
+
+        # Apply to the grid and get the sorted tile table
+        grid.apply_skymap(skymap)
+        grid_tiles = grid.get_table()
+        grid_tiles.sort('prob', reverse=True)
+
+        # Cache the grid and tiles to save time for future calls (especially if we had to regrade)
+        self._grid = grid.copy()
+        self.grid_tiles = grid_tiles.copy()
+
+        return grid_tiles
 
     @property
     def strategy(self):
@@ -545,30 +581,224 @@ class GWNotice(Notice):
                 self.properties = None
             self.event_time = Time(self.content['event']['time'])
             # Load the embedded skymap
-            skymap_bytes = self.content['event']['skymap']
-            if isinstance(skymap_bytes, str):
-                # IGWN JSON skymaps are base46-encoded
-                # https://emfollow.docs.ligo.org/userguide/tutorial/receiving/gcn.html
-                try:
-                    skymap_bytes = b64decode(skymap_bytes)
-                except Exception as err:
-                    raise ValueError('Failed to decode base64-encoded skymap') from err
-            self.skymap = SkyMap.from_fits(skymap_bytes)
+            self.skymap = self._decode_skymap(self.content['event']['skymap'])
+            del self.content['event']['skymap']  # It's still stored in the payload if needed
             # Get external coincidence, if any
             if self.content['external_coinc'] is not None:
                 self.external = self.content['external_coinc'].copy()
                 # Override the original skymap with the combined skymap
-                self.skymap_original = self.skymap
-                skymap_bytes = self.external['combined_skymap']
-                if isinstance(skymap_bytes, str):
-                    try:
-                        skymap_bytes = b64decode(skymap_bytes)
-                    except Exception as err:
-                        raise ValueError('Failed to decode base64-encoded skymap') from err
-                self.skymap = SkyMap.from_fits(skymap_bytes)
+                self.skymap_original = self.skymap.copy()
+                self.skymap = self._decode_skymap(self.external['combined_skymap'])
+                del self.content['external_coinc']['combined_skymap']
                 del self.external['combined_skymap']
             else:
                 self.external = None
+
+    def _decode_skymap(self, skymap_bytes):
+        """Decode the embedded skymap data."""
+        if isinstance(skymap_bytes, str):
+            # IGWN JSON skymaps are base46-encoded
+            # https://emfollow.docs.ligo.org/userguide/tutorial/receiving/gcn.html
+            try:
+                skymap_bytes = b64decode(skymap_bytes)
+            except Exception as err:
+                raise ValueError('Failed to decode base64-encoded skymap') from err
+        return SkyMap.from_fits(skymap_bytes)
+
+    def get_gracedb_files(self):
+        """Get a list of files associated with this event in GraceDB."""
+        if hasattr(self, '_gracedb_files'):
+            return self._gracedb_files
+        url = self.gracedb_url.replace('superevents', 'api/superevents').replace('view', 'files')
+        r = requests.get(url)
+        r.raise_for_status()
+        self._gracedb_files = [f for f in r.json().values()]  # JSON is a dict of {filename: url}
+        return self._gracedb_files
+
+    def get_gracedb_logs(self):
+        """Get the logs associated with this event from GraceDB."""
+        if hasattr(self, '_gracedb_logs'):
+            return self._gracedb_logs
+        url = self.gracedb_url.replace('superevents', 'api/superevents').replace('view', 'logs')
+        r = requests.get(url)
+        r.raise_for_status()
+        self._gracedb_logs = r.json()['log']
+        return self._gracedb_logs
+
+    @property
+    def _filename(self):
+        """Reproduce the notice filename."""
+        # Note we can't include the GraceDB version number for Kafka alerts,
+        # since that's not included in the message
+        if isinstance(self.message, VOEvent):
+            filename = self.attrib['ivorn'].split("#")[-1] + '.xml'
+        elif isinstance(self.message, JSONBlob):
+            filename = f'{self.event_id}-{self.type.lower()}.json'
+        elif isinstance(self.message, AvroBlob):
+            filename = f'{self.event_id}-{self.type.lower()}.avro'
+        return filename
+
+    def _get_matching_notice(self, notice_type):
+        """Get the corresponding notice of the given type for this event."""
+        if notice_type.lower() not in ['xml', 'avro', 'json']:
+            raise ValueError('Unknown notice type')
+        # Check the logs for the notices released around the same time
+        gracedb_logs = self.get_gracedb_logs()
+
+        # We can't just check the filename, because Kafka notices of the same alert type share
+        # the same filename (just adding the version number afterwards) and we don't know
+        # which version this is.
+        # So we need to match the name and the time.
+        # But apparently the log created time doesn't necessarily match the creation time in the
+        # event, so we check to within a few seconds. Hopefully that's good enough.
+        matched_logs = []
+        for log in gracedb_logs:
+            log_time = Time.strptime(log['created'], '%Y-%m-%d %H:%M:%S %Z')
+            if (log['filename'].endswith(notice_type.lower()) and
+                    self.type.lower() in log['filename'].lower() and
+                    abs(log_time - self.time).to('second').value < 5):
+                matched_logs.append(log)
+        if len(matched_logs) == 0:
+            raise ValueError("No matching log line found")
+        if len(matched_logs) > 1:
+            raise ValueError("Multiple matching log lines found")
+        notice_log = matched_logs[0]
+
+        # Now we can get the file URL from the log and download it
+        notice_url = notice_log['file']
+        return GWNotice.from_url(notice_url)
+
+    def _get_voevent(self):
+        """Get the corresponding VOEvent notice for this Kafka notice from GraceDB."""
+        if hasattr(self, '_matching_xml'):
+            return self._matching_xml
+        self._matching_xml = self._get_matching_notice('xml')
+        return self._matching_xml
+
+    def _get_avro(self):
+        """Get the corresponding Avro notice for this VOEvent notice from GraceDB."""
+        if hasattr(self, '_matching_avro'):
+            return self._matching_avro
+        self._matching_avro = self._get_matching_notice('avro')
+        return self._matching_avro
+
+    def _get_json(self):
+        """Get the corresponding JSON notice for this VOEvent notice from GraceDB."""
+        if hasattr(self, '_matching_json'):
+            return self._matching_json
+        self._matching_json = self._get_matching_notice('json')
+        return self._matching_json
+
+    @property
+    def gwskynet(self):
+        """Get the GWSkyNet details for this notice."""
+        if hasattr(self, '_gwskynet'):
+            return self._gwskynet
+        self._gwskynet = self.get_gwskynet()
+        return self._gwskynet
+
+    def get_gwskynet(self):
+        """Download any GWSkyNet details for this notice from GraceDB.
+
+        The GWSkyNet details are stored in a JSON file created after the skymap,
+        so they are not included in the notice. We have to download them separately.
+        """
+        # The GWSkyNet files are hosted on GraceDB.
+        # We want to get the file that corresponds to the skymap for this notice.
+        # Right now that's really awkward...
+        # First off there's no way to know which gwskynet.json file is the correct one,
+        # without downloading them all and checking the skymap name.
+        # But also Kafka notices don't even include the name of skymap file!
+        # So we have to get the matching VOEvent notice, then get the skymap name from that,
+        # then get the matching GWSkyNet file.
+        # This is also very time consuming with all the downloads and queries, so we really don't
+        # want to do it unless we have to.
+        # However, there's a shortcut: we can read the event logs and get the GWSkyNet params from
+        # there. It's hacky, and they only log to 3 dp, but it's a lot quicker.
+
+        # First, we check if the skymap was generated by BAYESTAR, since GWSkyNet is only run
+        # ont those for now.
+        if self.skymap_url is not None and 'bayestar' not in self.skymap_url:
+            # For now only bayestar skymaps have GWSkyNet files
+            return None
+        if (self.skymap is not None and
+                ('creator' not in self.skymap.header or
+                 ('creator' in self.skymap.header and
+                  self.skymap.header['creator'].lower() != 'bayestar'
+                  ))):
+            # As above, but for embedded skymaps
+            # Apparently not all skymaps have a CREATOR card, e.g.
+            # https://gracedb.ligo.org/api/superevents/S241216gg/files/mly.multiorder.fits,0
+            # But BAYESTAR skymaps should always have one (and it should be 'BAYESTAR', obviously)
+            return None
+
+        # Now we'll get the log files from GraceDB, and check if there are any
+        # GWSkyNet files. This is an initial check to save time, we'd have to
+        # get the logs anyway but if there aren't any files we might as well
+        # return None now before getting the VOEvent for Kafka alerts.
+        # And the logs are cached so this doesn't waste time.
+        gracedb_logs = self.get_gracedb_logs()
+        if not any(['gwskynet' in log['filename'] for log in gracedb_logs]):
+            return None
+
+        # We need the skymap name to find the correct GWSkyNet file,
+        # and for Kafka notices we have to download the VOEvent notice to get it.
+        # This should be cached, so we only have to do it once, plus it also caches the
+        # GraceDB logs for when we use them below.
+        if self.skymap_url is not None:
+            skymap_name = self.skymap_url.split('/')[-1]
+        else:
+            voevent_notice = self._get_voevent()
+            skymap_name = voevent_notice.skymap_url.split('/')[-1]
+        if 'bayestar' not in skymap_name:
+            return None
+
+        # Now look through the GraceDB logs for the GWSkyNet log that matches the skymap name
+        # We can get the skymap and the score values (to 3dp) from the log without having to
+        # download the file, but it takes a bit of parsing...
+        def get_gwskynet_from_log(log):
+            """Extract the GWSkyNet score and skymap name from the log comment."""
+            comment = log['comment']
+            url_pattern = r'href="([^"]+)"'
+            url_match = re.search(url_pattern, comment)
+            scores_pattern = r'score:\s*([\d.]+),.*?FAP:\s*([\d.]+),.*?FNP:\s*([\d.]+)\.'
+            scores_match = re.search(scores_pattern, comment)
+            if url_match and scores_match:
+                data = {
+                    'url': log['file'],
+                    'created': Time.strptime(log['created'], '%Y-%m-%d %H:%M:%S %Z'),
+                    'skymap': url_match.group(1).split('/')[-1],
+                    'skymap_url': 'https://gracedb.ligo.org' + url_match.group(1),
+                    'score': float(scores_match.group(1)),
+                    'fap': float(scores_match.group(2)),
+                    'fnp': float(scores_match.group(3)),
+                }
+                return data
+            else:
+                return None
+
+        gracedb_logs = self.get_gracedb_logs()
+        matched_logs = []
+        for log in gracedb_logs:
+            if log['filename'] == 'gwskynet.json' and log['comment'].startswith(
+                'GWSkyNet annotation'
+            ):
+                gwskynet_data = get_gwskynet_from_log(log)
+                if gwskynet_data is None:
+                    continue
+                if gwskynet_data['skymap'] == skymap_name:
+                    matched_logs.append(gwskynet_data)
+        if len(matched_logs) == 0:
+            return None
+        if len(matched_logs) > 1:
+            # Not an error, apparently this can happen
+            # e.g. https://gracedb.ligo.org/api/superevents/S241125n/files/gwskynet.json,0
+            #  and https://gracedb.ligo.org/api/superevents/S241125n/files/gwskynet.json,1
+            # They're identical files, I don't know why it was uploaded twice
+            # We'll just use the latest one in case it was updated for some reason
+            pass
+        gwskynet_data = matched_logs[-1]
+        return gwskynet_data
 
     @classmethod
     def from_gracedb(cls, name, which_notice='last'):
@@ -620,69 +850,149 @@ class GWNotice(Notice):
     @property
     def strategy(self):
         """Get the observing strategy key."""
+        if not hasattr(self, '_strategy'):
+            self._strategy = self.get_strategy()
+        return self._strategy
+
+    def get_strategy(self):
+        """Get the observing strategy key."""
         if self.skymap is None:
-            # This is very annoying, but we need to get the skymap to get the distance.
-            # TODO: We could assume it is far, would that be better?
             raise ValueError('Cannot determine strategy without skymap')
 
-        if self.external is not None:
+        def isCoincident(notice):
+            """Test for if this notice is coincident with another event.
+
+            We will always prioritise the notices with RAVEN external coincidence data.
+            """
+            if notice.external is not None:
+                return True
+            return False
+
+        def isReal(notice, far_factor=1, skynet_cutoff=0.5):
+            """Test for if this event is likely to be significant.
+
+            The primary test is the False Alarm Rate (FAR), which has a different
+            significance threshold for CBC and Burst events.
+            The default is 1/month (12/year) for CBCs and 1/year for Bursts, but it
+            can be increased by the far_factor parameter.
+            We also select any notices with the significant flag set, since there are some cases
+            where they are not consistent (see S230615az).
+
+            Finally, if a notice is not significant we will still select it based on its
+            GWSkyNet score. Currently this requires the GWSkyNet details to be downloaded
+            separately, which can take a while, especially for Kafka alerts which don't
+            contain the skymap names (see get_gwskynet() for details).
+
+            """
+            if notice.significant:
+                return True
+            elif notice.group == 'CBC' and (notice.far * 60 * 60 * 24 * 365) < (12 * far_factor):
+                return True
+            elif notice.group == 'Burst' and (notice.far * 60 * 60 * 24 * 365) < (1 * far_factor):
+                return True
+            elif notice.gwskynet is not None and notice.gwskynet['score'] > skynet_cutoff:
+                return True
+            return False
+
+        def isBright(notice, prob_cutoff=0.5, ns_dist_cutoff=250, bh_dist_cutoff=250):
+            """Test for if GOTO could likely observe a counterpart to this notice.
+
+            This depends on the progenitors (for CBC events), plus distance.
+            We first use the NS probability (pBNS+pNSBH) over the probability that the event is
+            non-terrestrial (1-pTerrestrial, or pBNS+pNSBH+pBBH). This is essentially the
+            HasNS property, but it seems more reliable.
+            We then have two different distance cutoffs, which are used in the NS-like and
+            BH-like cases (the latter also applying to Bursts with no classification info).
+
+            """
+            if 'distmean' in notice.skymap.header:
+                # subtract one sigma from the distance, so we're at the closest edge
+                distance = notice.skymap.header['distmean'] - notice.skymap.header['diststd']
+            else:
+                distance = None
+            if notice.classification is not None:
+                prob_ns = notice.classification['BNS'] + notice.classification['NSBH']
+                prob_astro = 1 - notice.classification['Terrestrial']
+                weighted_pns = prob_ns / prob_astro
+            else:
+                weighted_pns = 0
+
+            if weighted_pns > prob_cutoff:
+                if distance is not None and distance < ns_dist_cutoff:
+                    return True
+            else:
+                if distance is not None and distance < bh_dist_cutoff:
+                    return True
+            return False
+
+        def isClose(notice, dist_cufoff=2000):
+            """Test for if this notice meets the distance cutoff.
+
+            Some notices don't include distance infomation, we return False for them.
+
+            """
+            if 'distmean' in notice.skymap.header:
+                # subtract one sigma from the distance, so we're at the closest edge
+                distance = notice.skymap.header['distmean'] - notice.skymap.header['diststd']
+                if distance < dist_cufoff:
+                    return True
+            return False
+
+        def isQuick(notice, selection_contour=0.95, tile_cutoff=120):
+            """Test for if we could observe this notice quickly.
+
+            This is clearly more subjective and specific to GOTO. Area (aka number of tiles)
+            is the main factor. We could consider the exposure time per tile, but assuming that's
+            constant (aside from slew time) it's not really necessary.
+            Basic rule of thumb is 5 minutes per tile, so 120 tiles in an average 10 hour night.
+
+            """
+            grid_tiles = notice.get_tiles()
+            mask = grid_tiles['contour'] < selection_contour
+            if sum(mask) < tile_cutoff:
+                return True
+            return False
+
+        # Strategy parameters
+        # TODO: add to params?
+        FAR_FACTOR = 1
+        SKYNET_CUTOFF = 0.9
+        PROB_CUTOFF = 0.5
+        NS_DIST_CUTOFF = 400
+        BH_DIST_CUTOFF = 200
+        DIST_CUTOFF = 2000
+        SELECTION_CONTOUR = 0.95
+        TILE_CUTOFF = 60
+
+        if isCoincident(self):
             # External coincidences are always highest priority, regardless of other factors.
             strategy = 'GW_RANK_1'
-
-        if self.group == 'CBC':
-            # Reject events if the FAR is > 1/month, the significance cut-off for CBC events.
-            # Note we explicitly look at the reported FAR here, not the significance flag
-            # since it's sometimes not consistent (see S230615az).
-            if (self.far * 60 * 60 * 24 * 365) > 12 and not self.significant:
-                return 'IGNORE'
-
-            # For deciding if an event is observable we use the HasRemnant property,
-            # but multiply by the probability it is a BNS or NSBH to downgrade terrestrial events.
-            # This is because some events can have HasRemnant=100% but still high terrestrial
-            # (although the FAR cut above should have removed most of them).
-            observable_metric = self.properties['HasRemnant']
-            observable_metric *= (self.classification['BNS'] + self.classification['NSBH'])
-            # Other factors we use:
-            #  the 90% contour area (ideally the visible area, but that's tricky to calculate)
-            #  the distance (the mean - 1 stddev, since the errors can be very large)
-            if 'distmean' in self.skymap.header:
-                distance = self.skymap.header['distmean'] - self.skymap.header['diststd']
-            else:
-                # Some CBC pipelines don't include distance information
-                # https://git.ligo.org/emfollow/userguide/-/issues/368
-                # So we'll just assume it's far
-                distance = np.inf
-            if observable_metric > 0.5:
-                # These are the ones we always want to follow up.
-                # The choice here just affects the scheduler ranking and if we send a WAKEUP alert.
-                if self.skymap.get_contour_area(0.9) < 5000 and distance < 250:
-                    strategy = 'GW_RANK_2'
-                else:
-                    strategy = 'GW_RANK_3'
-            else:
-                # These are most likly BBH events, which we only want to follow up if they are
-                # well localised and nearby.
-                if self.skymap.get_contour_area(0.9) < 5000 and distance < 250:
-                    strategy = 'GW_RANK_5'
-                else:
-                    return 'IGNORE'
-
-        elif self.group == 'Burst':
-            # Reject events if the FAR is > 1/year, the significance cut-off for Burst events.
-            if (self.far * 60 * 60 * 24 * 365) > 1 and not self.significant:
-                return 'IGNORE'
-
-            # Just like BBH events, we only want to follow up if they are well localised and nearby.
-            # However Bursts don't include any distance information, so we just decide on the area.
-            if self.skymap.get_contour_area(0.9) < 5000:
-                strategy = 'GW_RANK_4'
-            else:
-                return 'IGNORE'
-
         else:
-            raise ValueError(f'Cannot determine observing strategy for group "{self.group}"')
+            if not isReal(self, FAR_FACTOR, SKYNET_CUTOFF):
+                # Ignore non-significant events
+                return 'IGNORE'
+            else:
+                if isBright(self, PROB_CUTOFF, NS_DIST_CUTOFF, BH_DIST_CUTOFF):
+                    # Select bright events for follow-up
+                    if self.significant:
+                        # Trigger WAKEUP if significant
+                        strategy = 'GW_RANK_2'
+                    else:
+                        # Identical strategy to GW_RANK_2, but no WAKEUP (and lower pointing rank)
+                        strategy = 'GW_RANK_3'
+                else:
+                    if (isQuick(self, SELECTION_CONTOUR, TILE_CUTOFF)
+                            and isClose(self, DIST_CUTOFF)):
+                        # Non-bright events that we can observe quickly are still worth selecting,
+                        # as long as they're also within a minimum luminosity distance.
+                        # We'll only do a lower exposure time, same as the all-sky survey
+                        strategy = 'GW_RANK_4'
+                    else:
+                        # Not bright or quick, so just ignore
+                        return 'IGNORE'
 
         # Now we alter the cadence based on the skymap area, ~how much GOTO can cover in an hour.
+        # Roughly 5 mins per tile, so 12 tiles per hour.
         # Ideally we want two epochs of each tile an hour apart. If it's going to take more than
         # an hour to cover the area, then we schedule targets so a follow-up pointing appears
         # at the same rank with a 1 hour delay to it's valid time. Once that's done the normal
@@ -691,7 +1001,7 @@ class GWNotice(Notice):
         # to waste time waiting for the second epoch. So just schedule all the targets to be
         # recreated immediately at a lower rank after they are observed.
         # Ideally this would only consider the visible area, but that's much more complicated!
-        if self.skymap.get_contour_area(0.9) < 1000:
+        if isQuick(self, selection_contour=0.95, tile_cutoff=12):
             return strategy + '_NARROW'
         else:
             return strategy + '_WIDE'
@@ -739,6 +1049,10 @@ class GWNotice(Notice):
                 text += f'HasRemnant: {self.properties["HasRemnant"]:.0%}\n'
             except KeyError:
                 pass
+        if self.gwskynet is not None:
+            text += f'GWSkyNet score: {self.gwskynet["score"]:.4f}\n'
+        else:
+            text += 'GWSkyNet score: N/A\n'
 
         # Skymap info (only if we have downloaded the skymap)
         if self.skymap is not None:
