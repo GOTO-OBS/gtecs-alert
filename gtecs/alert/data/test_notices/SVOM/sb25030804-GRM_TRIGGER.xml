@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<voe:VOEvent xmlns:voe="http://www.ivoa.net/xml/VOEvent/v2.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.ivoa.net/xml/VOEvent/v2.0 http://www.ivoa.net/xml/VOEvent/VOEvent-v2.0.xsd" role="observation" version="2.0" ivorn="ivo://org.svom/fsc#sb25030804_grm-trigger">
+    <Who>
+        <AuthorIVORN>ivo://org.svom/FSC</AuthorIVORN>
+        <Date>2025-03-08T18:16:59</Date>
+        <Author>
+            <title>SVOM French Science Center</title>
+            <shortName>FSC</shortName>
+            <contactName>Timothe Roland</contactName>
+            <contactEmail>svom-contact@cea.fr</contactEmail>
+        </Author>
+    </Who>
+    <What>
+        <Param name="Packet_Type" value="201" ucd="meta.id"/>
+        <Param name="Pkt_Ser_Num" value="1" ucd="meta.id"/>
+        <Param name="Instrument" value="GRM" ucd="instr"/>
+        <Group name="Svom_Identifiers">
+            <Param name="Notice_Level" value="N1g" ucd="meta.id"/>
+            <Param name="Burst_Id" value="sb25030804" ucd="meta.id"/>
+        </Group>
+        <Group name="Detection_Info">
+            <Param name="SNR" value="40.10" unit="sigma" ucd="stat.snr"/>
+            <Param name="Timescale" value="0.1" unit="s" ucd="time.interval"/>
+            <Param name="Time_Window_Start" value="2025-03-08T18:06:30.900Z" ucd="time.start"/>
+            <Param name="Time_Window_End" value="2025-03-08T18:06:31.000Z" ucd="time.end"/>
+            <Param name="Lower_Energy_Bound" value="51.236435" unit="keV" ucd="em.energy"/>
+            <Param name="Upper_Energy_Bound" value="264.7216" unit="keV" ucd="em.energy"/>
+            <Param name="Triggered_GRDs" value="111" ucd="instr.param"/>
+        </Group>
+        <Group name="Target_Info">
+            <Param name="Galactic_Lon" value="233.93" unit="deg" ucd="pos.galactic.lon"/>
+            <Param name="Galactic_Lat" value="50.54" unit="deg" ucd="pos.galactic.lat"/>
+            <Param name="Moon_Angle" value="51.03" unit="deg" ucd="pos.angDistance"/>
+            <Param name="Sun_Angle" value="166.48" unit="deg" ucd="pos.angDistance"/>
+        </Group>
+        <Group name="Satellite_Info">
+            <Param name="Attitude_Ra" value="210.89" unit="deg" ucd="instr.param"/>
+            <Param name="Attitude_Dec" value="21.64" unit="deg" ucd="instr.param"/>
+            <Param name="Attitude_Roll" value="286.21" unit="deg" ucd="instr.param"/>
+        </Group>
+    </What>
+    <WhereWhen>
+        <ObsDataLocation>
+            <ObservatoryLocation id="GEOLEO"/>
+            <ObservationLocation>
+                <AstroCoordSystem id="UTC-ICRS-GEO"/>
+                <AstroCoords coord_system_id="UTC-ICRS-GEO">
+                    <Time unit="s">
+                        <TimeInstant>
+                            <ISOTime>2025-03-08T18:06:30.900000</ISOTime>
+                        </TimeInstant>
+                    </Time>
+                    <Position2D unit="deg">
+                        <Name1>RA</Name1>
+                        <Name2>Dec</Name2>
+                        <Value2>
+                            <C1>155.9861</C1>
+                            <C2>8.5888</C2>
+                        </Value2>
+                        <Error2Radius>-1.0000</Error2Radius>
+                    </Position2D>
+                </AstroCoords>
+            </ObservationLocation>
+        </ObsDataLocation>
+    </WhereWhen>
+    <Why importance="1.00">
+        <Inference probability="1.00">
+            <Concept>process.variation.burst;em.gamma</Concept>
+        </Inference>
+    </Why>
+    <How>
+        <Description>N1g notice, data from GRM</Description>
+        <Reference uri="https://www.svom.eu/en/grm-gamma-ray-burst-monitor-en/"/>
+    </How>
+</voe:VOEvent>

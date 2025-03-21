@@ -265,6 +265,9 @@ class Notice:
                 return GECAMNotice(message)
             elif base_notice.source.upper() == 'EINSTEIN_PROBE':
                 return EinsteinProbeNotice(message)
+            elif base_notice.source.upper() == 'FSC':
+                # FSC is the "French Science Center" for SVOM notices.
+                return SVOMNotice(message)
             elif base_notice.source.upper() == 'AMON':
                 # AMON is the "Astrophysical Multimessenger Observatory Network",
                 # and there are several different types of notices they produce.
@@ -479,7 +482,8 @@ class Notice:
     def slack_details(self):
         """Get details for Slack messages."""
         text = f'Event: {self.event_name}\n'
-        text += f'Detection time: {self.event_time.iso}\n'
+        if self.event_time is not None:
+            text += f'Detection time: {self.event_time.iso}\n'
         return text
 
 
@@ -1441,6 +1445,105 @@ class EinsteinProbeNotice(Notice):
 
         # Classification info
         text += f'SNR: {self.properties["image_snr"]:.1f}\n'
+
+        # Position info
+        text += f'Position: {self.position.to_string("hmsdms")} ({self.position.to_string()})\n'
+        text += f'Position error: {self.position_error:.3f}\n'
+
+        return text
+
+
+class SVOMNotice(Notice):
+    """A class to represent a SVOM detection notice."""
+
+    def __init__(self, payload):
+        super().__init__(payload)
+
+        # Check source
+        if self.source.upper() != 'FSC':
+            raise InvalidNoticeError(f'Invalid source for SVOM notice: "{self.source}"')
+        self.source = 'SVOM'  # For nice formatting
+
+        # Event properties
+        self.event_type = 'GRB'
+        if hasattr(self, 'top_params'):
+            # VOEvent format, get type from the packet ID
+            packet_id = int(self.top_params['Packet_Type']['value'])
+            if packet_id == 201:
+                self.type = 'GRM_TRIGGER'
+            elif packet_id == 202:
+                self.type = 'ECLAIRS_WAKEUP'
+            else:
+                msg = f'Unrecognised packet type {packet_id} for SVOM notice'
+                raise InvalidNoticeError(msg)
+            self.instrument = self.top_params['Instrument']['value']
+            self.event_id = self.group_params['Svom_Identifiers']['Burst_Id']['value']
+            self.properties = {
+                k: v['value']
+                for k, v in self.group_params['Detection_Info'].items()
+                if 'value' in v
+            }
+
+            # Format properties
+            for key in self.properties:
+                if key == 'Triggered_GRDs':
+                    # Each digit correspond to one of the 3 GRDs: true means it triggers, false not
+                    self.properties[key] = [bool(int(x)) for x in self.properties[key]]
+                elif 'Time_' in key:
+                    self.properties[key] = Time(self.properties[key])
+                else:
+                    try:
+                        self.properties[key] = float(self.properties[key])
+                    except ValueError:
+                        pass
+
+            # Time and position
+            event_location = self.message.WhereWhen['ObsDataLocation']['ObservationLocation']
+            event_time = event_location['AstroCoords']['Time']['TimeInstant']['ISOTime']
+            self.event_time = Time(event_time)
+            if 'Position2D' not in event_location['AstroCoords']:
+                # Throw out events that don't have localisations
+                msg = 'SVOM {} notice does not include a position '.format(self.type)
+                raise InvalidNoticeError(msg)
+            event_position = event_location['AstroCoords']['Position2D']
+            self.position = SkyCoord(
+                ra=float(event_position['Value2']['C1']),
+                dec=float(event_position['Value2']['C2']),
+                unit=event_position['unit'])
+            self.position_error = Angle(
+                float(event_position['Error2Radius']),
+                unit=event_position['unit'])
+            if self.position_error.value == -1:
+                # Early GRM notices haven't included error values since it's still being calibrated.
+                # For now we'll just assume a 10 degree large error region (radius=5),
+                # since that's what's given on the NASA GCN page.
+                self.position_error = Angle(5 * u.deg)
+            self.skymap_url = None
+        else:
+            # For now we only process VOEvents
+            raise InvalidNoticeError('SVOM notices must be VOEvents')
+
+    @property
+    def strategy(self):
+        """Get the observing strategy key."""
+        if self.instrument == 'ECLAIRs':
+            # ECLAIRs has a narrow field of view, so we use the Swift strategy
+            return 'GRB_SWIFT'
+        elif self.instrument == 'GRM':
+            # GRM has a wider field of view, so match the wide Fermi strategy
+            return 'GRB_FERMI_WIDE'
+        else:
+            raise ValueError(f'Unknown SVOM instrument: {self.instrument}')
+
+    @property
+    def slack_details(self):
+        """Get details for Slack messages."""
+        text = f'Event: {self.event_name}\n'
+        text += f'Detection time: {self.event_time.iso}\n'
+        text += f'Instrument: {self.instrument}\n'
+
+        # Classification info
+        text += f'SNR: {self.properties["SNR"]:.1f}\n'
 
         # Position info
         text += f'Position: {self.position.to_string("hmsdms")} ({self.position.to_string()})\n'
