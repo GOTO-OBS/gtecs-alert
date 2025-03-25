@@ -63,12 +63,18 @@ def send_notice_report(notice, time=None):
 
     if notice.role != 'observation':
         msg += f'*NOTE: THIS IS A {notice.role.upper()} EVENT*\n'
+    msg += '\n'
 
     # Make sure we have the skymap downloaded
     notice.get_skymap()
 
-    # Get event-specific details from the notice class
-    msg += '\n'
+    # Basic event details (retractions don't have an event_time)
+    msg += f'Event: {notice.event_name}\n'
+    if notice.event_time is not None:
+        msg += f'Detection time: {notice.event_time.iso}'
+        msg += f' _({(time - notice.event_time).to(u.hour).value:.1f}h ago)_\n'
+
+    # Add event-specific details from the notice class
     msg += notice.slack_details
 
     # Get strategy details (a short version compared to the full notice)
