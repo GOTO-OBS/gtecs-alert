@@ -251,6 +251,11 @@ class Sentinel:
             topics += [
                 'gcn.notices.einstein_probe.wxt.alert',
             ]
+            # SVOM notices
+            topics += [
+                'gcn.notices.svom.voevent.grm',
+                'gcn.notices.svom.voevent.eclairs',
+            ]
             # IceCube notices
             topics += [
                 'gcn.classic.voevent.ICECUBE_ASTROTRACK_BRONZE',
