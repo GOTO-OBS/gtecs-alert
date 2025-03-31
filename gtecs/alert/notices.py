@@ -265,6 +265,9 @@ class Notice:
                 return GECAMNotice(message)
             elif base_notice.source.upper() == 'EINSTEIN_PROBE':
                 return EinsteinProbeNotice(message)
+            elif base_notice.source.upper() == 'FSC':
+                # FSC is the "French Science Center" for SVOM notices.
+                return SVOMNotice(message)
             elif base_notice.source.upper() == 'AMON':
                 # AMON is the "Astrophysical Multimessenger Observatory Network",
                 # and there are several different types of notices they produce.
@@ -478,9 +481,8 @@ class Notice:
     @property
     def slack_details(self):
         """Get details for Slack messages."""
-        text = f'Event: {self.event_name}\n'
-        text += f'Detection time: {self.event_time.iso}\n'
-        return text
+        msg = ''
+        return msg
 
 
 class GWNotice(Notice):
@@ -1009,23 +1011,23 @@ class GWNotice(Notice):
     @property
     def slack_details(self):
         """Get details for Slack messages."""
-        text = f'Event: {self.event_name}\n'
-        text += f'Detection time: {self.event_time.iso}\n'
-        text += f'Pipeline: {self.pipeline}\n'
-        text += f'Instruments: {self.instruments}\n'
-        text += f'GraceDB page: {self.gracedb_url}\n'
+        msg = ''
+
+        msg += f'Pipeline: {self.pipeline}\n'
+        msg += f'Instruments: {self.instruments}\n'
+        msg += f'GraceDB page: {self.gracedb_url}\n'
 
         # Classification info
         far_years = self.far * 60 * 60 * 24 * 365  # convert from /s to /yr
         if far_years > 1:
-            text += f'FAR: ~{far_years:.0f} per year'
+            msg += f'FAR: ~{far_years:.0f} per year'
         else:
-            text += f'FAR: ~1 per {1 / far_years:.1f} years'
+            msg += f'FAR: ~1 per {1 / far_years:.1f} years'
         if self.significant:
-            text += ' (significant=True)\n'
+            msg += ' (significant=True)\n'
         else:
-            text += ' (significant=False)\n'
-        text += f'Group: {self.group}\n'
+            msg += ' (significant=False)\n'
+        msg += f'Group: {self.group}\n'
         if self.classification is not None:
             sorted_classification = sorted(
                 self.classification.keys(),
@@ -1037,74 +1039,74 @@ class GWNotice(Notice):
                 for key in sorted_classification
                 if self.classification[key] > 0.0005
             ]
-            text += f'Classification: {", ".join(class_list)}\n'
+            msg += f'Classification: {", ".join(class_list)}\n'
         elif self.group == 'Burst':
             # Burst events aren't classified
-            text += 'Classification: N/A\n'
+            msg += 'Classification: N/A\n'
         else:
-            text += 'Classification: *UNKNOWN*\n'
+            msg += 'Classification: *UNKNOWN*\n'
         if self.properties is not None:
-            text += f'HasNS: {self.properties["HasNS"]:.0%}\n'
+            msg += f'HasNS: {self.properties["HasNS"]:.0%}\n'
             try:
-                text += f'HasRemnant: {self.properties["HasRemnant"]:.0%}\n'
+                msg += f'HasRemnant: {self.properties["HasRemnant"]:.0%}\n'
             except KeyError:
                 pass
         if self.gwskynet is not None:
-            text += f'GWSkyNet score: {self.gwskynet["score"]:.4f}\n'
+            msg += f'GWSkyNet score: {self.gwskynet["score"]:.4f}\n'
         else:
-            text += 'GWSkyNet score: N/A\n'
+            msg += 'GWSkyNet score: N/A\n'
 
         # Skymap info (only if we have downloaded the skymap)
         if self.skymap is not None:
             if 'distmean' in self.skymap.header:
                 distance = self.skymap.header['distmean']
                 distance_error = self.skymap.header['diststd']
-                text += f'Distance: {distance:.0f}+/-{distance_error:.0f} Mpc\n'
+                msg += f'Distance: {distance:.0f}+/-{distance_error:.0f} Mpc\n'
             elif self.group == 'Burst':
                 # We don't expect a distance for burst events
-                text += 'Distance: N/A\n'
+                msg += 'Distance: N/A\n'
             else:
-                text += 'Distance: *UNKNOWN*\n'
+                msg += 'Distance: *UNKNOWN*\n'
             area = self.skymap.get_contour_area(0.9)
-            text += f'90% probability area: {area:.0f} sq deg\n'
+            msg += f'90% probability area: {area:.0f} sq deg\n'
         else:
-            text += '*NO SKYMAP FOUND*\n'
+            msg += '*NO SKYMAP FOUND*\n'
 
         # Coincidence info
         if self.external is not None:
-            text += '\n'
-            text += '*External event coincidence detected!*\n'
-            text += f'Source: {self.external["observatory"]}\n'
-            text += f'IVORN: {self.external["ivorn"]}\n'
+            msg += '\n'
+            msg += '*External event coincidence detected!*\n'
+            msg += f'Source: {self.external["observatory"]}\n'
+            msg += f'IVORN: {self.external["ivorn"]}\n'
             far_years = self.external['time_sky_position_coincidence_far'] * 60 * 60 * 24 * 365
             if far_years > 1:
-                text += f'FAR: ~{far_years:.0f} per year\n'
+                msg += f'FAR: ~{far_years:.0f} per year\n'
             else:
-                text += f'FAR: ~1 per {1 / far_years:.1f} years\n'
+                msg += f'FAR: ~1 per {1 / far_years:.1f} years\n'
 
-        return text
+        return msg
 
     @property
     def short_details(self):
         """Get a short one-line summary to include when forwarding Slack messages."""
-        text = f'{self.group}'
+        msg = f'{self.group}'
         if self.properties is not None and 'HasRemnant' in self.properties:
-            text += f' (HasRemnant={self.properties["HasRemnant"]:.0%}), '
+            msg += f' (HasRemnant={self.properties["HasRemnant"]:.0%}), '
         else:
-            text += ', '
+            msg += ', '
         if self.skymap is not None:
             if 'distmean' in self.skymap.header:
-                text += f'{self.skymap.header["distmean"]:.0f} Mpc, '
-            text += f'{self.skymap.get_contour_area(0.9):.0f} sq deg, '
+                msg += f'{self.skymap.header["distmean"]:.0f} Mpc, '
+            msg += f'{self.skymap.get_contour_area(0.9):.0f} sq deg, '
         far_years = self.far * 60 * 60 * 24 * 365  # convert from /s to /yr
         if far_years > 1:
-            text += f'FAR: ~{far_years:.0f} per year, '
+            msg += f'FAR: ~{far_years:.0f} per year, '
         else:
-            text += f'FAR: ~1 per {1 / far_years:.1f} years, '
-        text += f'strategy: `{self.strategy}`'
+            msg += f'FAR: ~1 per {1 / far_years:.1f} years, '
+        msg += f'strategy: `{self.strategy}`'
         if self.external is not None:
-            text += '\n*External event coincidence detected!*'
-        return text
+            msg += '\n*External event coincidence detected!*'
+        return msg
 
 
 class GWRetractionNotice(Notice):
@@ -1137,12 +1139,10 @@ class GWRetractionNotice(Notice):
     @property
     def slack_details(self):
         """Get details for Slack messages."""
-        text = f'Event: {self.event_name}\n'
-        text += f'GraceDB page: {self.gracedb_url}\n'
-
-        text += f'*THIS IS A RETRACTION OF EVENT {self.event_name}*\n'
-
-        return text
+        msg = ''
+        msg += f'GraceDB page: {self.gracedb_url}\n'
+        msg += f'*THIS IS A RETRACTION OF EVENT {self.event_name}*\n'
+        return msg
 
 
 class FermiNotice(Notice):
@@ -1229,18 +1229,17 @@ class FermiNotice(Notice):
     @property
     def slack_details(self):
         """Get details for Slack messages."""
-        text = f'Event: {self.event_name}\n'
-        text += f'Detection time: {self.event_time.iso}\n'
+        msg = ''
 
         # Classification info
-        text += f'Duration: {self.duration.capitalize()}\n'
-        text += f'1σ probability area: {self.skymap.get_contour_area(0.68):.0f} sq deg\n'
+        msg += f'Duration: {self.duration.capitalize()}\n'
+        msg += f'1σ probability area: {self.skymap.get_contour_area(0.68):.0f} sq deg\n'
 
         # Position info
-        text += f'Position: {self.position.to_string("hmsdms")} ({self.position.to_string()})\n'
-        text += f'Position error: {self.position_error:.3f}\n'
+        msg += f'Position: {self.position.to_string("hmsdms")} ({self.position.to_string()})\n'
+        msg += f'Position error: {self.position_error:.3f}\n'
 
-        return text
+        return msg
 
 
 class SwiftNotice(Notice):
@@ -1304,14 +1303,13 @@ class SwiftNotice(Notice):
     @property
     def slack_details(self):
         """Get details for Slack messages."""
-        text = f'Event: {self.event_name}\n'
-        text += f'Detection time: {self.event_time.iso}\n'
+        msg = ''
 
         # Position info
-        text += f'Position: {self.position.to_string("hmsdms")} ({self.position.to_string()})\n'
-        text += f'Position error: {self.position_error:.3f}\n'
+        msg += f'Position: {self.position.to_string("hmsdms")} ({self.position.to_string()})\n'
+        msg += f'Position error: {self.position_error:.3f}\n'
 
-        return text
+        return msg
 
 
 class GECAMNotice(Notice):
@@ -1373,14 +1371,13 @@ class GECAMNotice(Notice):
     @property
     def slack_details(self):
         """Get details for Slack messages."""
-        text = f'Event: {self.event_name}\n'
-        text += f'Detection time: {self.event_time.iso}\n'
+        msg = ''
 
         # Position info
-        text += f'Position: {self.position.to_string("hmsdms")} ({self.position.to_string()})\n'
-        text += f'Position error: {self.position_error:.3f}\n'
+        msg += f'Position: {self.position.to_string("hmsdms")} ({self.position.to_string()})\n'
+        msg += f'Position error: {self.position_error:.3f}\n'
 
-        return text
+        return msg
 
 
 class EinsteinProbeNotice(Notice):
@@ -1436,17 +1433,114 @@ class EinsteinProbeNotice(Notice):
     @property
     def slack_details(self):
         """Get details for Slack messages."""
-        text = f'Event: {self.event_name}\n'
-        text += f'Detection time: {self.event_time.iso}\n'
+        msg = ''
 
         # Classification info
-        text += f'SNR: {self.properties["image_snr"]:.1f}\n'
+        msg += f'SNR: {self.properties["image_snr"]:.1f}\n'
 
         # Position info
-        text += f'Position: {self.position.to_string("hmsdms")} ({self.position.to_string()})\n'
-        text += f'Position error: {self.position_error:.3f}\n'
+        msg += f'Position: {self.position.to_string("hmsdms")} ({self.position.to_string()})\n'
+        msg += f'Position error: {self.position_error:.3f}\n'
 
-        return text
+        return msg
+
+
+class SVOMNotice(Notice):
+    """A class to represent a SVOM detection notice."""
+
+    def __init__(self, payload):
+        super().__init__(payload)
+
+        # Check source
+        if self.source.upper() != 'FSC':
+            raise InvalidNoticeError(f'Invalid source for SVOM notice: "{self.source}"')
+        self.source = 'SVOM'  # For nice formatting
+
+        # Event properties
+        self.event_type = 'GRB'
+        if hasattr(self, 'top_params'):
+            # VOEvent format, get type from the packet ID
+            packet_id = int(self.top_params['Packet_Type']['value'])
+            if packet_id == 201:
+                self.type = 'GRM_TRIGGER'
+            elif packet_id == 202:
+                self.type = 'ECLAIRS_WAKEUP'
+            else:
+                msg = f'Unrecognised packet type {packet_id} for SVOM notice'
+                raise InvalidNoticeError(msg)
+            self.instrument = self.top_params['Instrument']['value']
+            self.event_id = self.group_params['Svom_Identifiers']['Burst_Id']['value']
+            self.properties = {
+                k: v['value']
+                for k, v in self.group_params['Detection_Info'].items()
+                if 'value' in v
+            }
+
+            # Format properties
+            for key in self.properties:
+                if key == 'Triggered_GRDs':
+                    # Each digit correspond to one of the 3 GRDs: true means it triggers, false not
+                    self.properties[key] = [bool(int(x)) for x in self.properties[key]]
+                elif 'Time_' in key:
+                    self.properties[key] = Time(self.properties[key])
+                else:
+                    try:
+                        self.properties[key] = float(self.properties[key])
+                    except ValueError:
+                        pass
+
+            # Time and position
+            event_location = self.message.WhereWhen['ObsDataLocation']['ObservationLocation']
+            event_time = event_location['AstroCoords']['Time']['TimeInstant']['ISOTime']
+            self.event_time = Time(event_time)
+            if 'Position2D' not in event_location['AstroCoords']:
+                # Throw out events that don't have localisations
+                msg = 'SVOM {} notice does not include a position '.format(self.type)
+                raise InvalidNoticeError(msg)
+            event_position = event_location['AstroCoords']['Position2D']
+            self.position = SkyCoord(
+                ra=float(event_position['Value2']['C1']),
+                dec=float(event_position['Value2']['C2']),
+                unit=event_position['unit'])
+            self.position_error = Angle(
+                float(event_position['Error2Radius']),
+                unit=event_position['unit'])
+            if self.position_error.value == -1:
+                # Early GRM notices haven't included error values since it's still being calibrated.
+                # For now we'll just assume a 10 degree large error region (radius=5),
+                # since that's what's given on the NASA GCN page.
+                self.position_error = Angle(5 * u.deg)
+            self.skymap_url = None
+        else:
+            # For now we only process VOEvents
+            raise InvalidNoticeError('SVOM notices must be VOEvents')
+
+    @property
+    def strategy(self):
+        """Get the observing strategy key."""
+        if self.instrument == 'ECLAIRs':
+            # ECLAIRs has a narrow field of view, so we use the Swift strategy
+            return 'GRB_SWIFT'
+        elif self.instrument == 'GRM':
+            # GRM has a wider field of view, so match the wide Fermi strategy
+            return 'GRB_FERMI_WIDE'
+        else:
+            raise ValueError(f'Unknown SVOM instrument: {self.instrument}')
+
+    @property
+    def slack_details(self):
+        """Get details for Slack messages."""
+        msg = ''
+        msg += f'Instrument: {self.instrument}\n'
+
+        # Classification info
+        msg += f'SNR: {self.properties["SNR"]:.1f}\n'
+
+        # Position info
+        msg += f'Position: {self.position.to_string("hmsdms")} ({self.position.to_string()})\n'
+        msg += f'Position error: {self.position_error:.3f}\n'
+
+        return msg
 
 
 class IceCubeNotice(Notice):
@@ -1519,15 +1613,14 @@ class IceCubeNotice(Notice):
     @property
     def slack_details(self):
         """Get details for Slack messages."""
-        text = f'Event: {self.event_name}\n'
-        text += f'Detection time: {self.event_time.iso}\n'
+        msg = ''
 
         # Classification info
-        text += f'Signalness: {self.signalness:.0%} probability to be astrophysical in origin\n'
-        text += f'FAR: ~1 per {1 / self.far:.1f} yrs\n'
+        msg += f'Signalness: {self.signalness:.0%} probability to be astrophysical in origin\n'
+        msg += f'FAR: ~1 per {1 / self.far:.1f} yrs\n'
 
         # Position info
-        text += f'Position: {self.position.to_string("hmsdms")} ({self.position.to_string()})\n'
-        text += f'Position error: {self.position_error:.3f}\n'
+        msg += f'Position: {self.position.to_string("hmsdms")} ({self.position.to_string()})\n'
+        msg += f'Position error: {self.position_error:.3f}\n'
 
-        return text
+        return msg

@@ -1,0 +1,80 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<voe:VOEvent xmlns:voe="http://www.ivoa.net/xml/VOEvent/v2.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.ivoa.net/xml/VOEvent/v2.0 http://www.ivoa.net/xml/VOEvent/VOEvent-v2.0.xsd" role="observation" version="2.0" ivorn="ivo://org.svom/fsc#sb25031101_eclairs-wakeup">
+    <Who>
+        <AuthorIVORN>ivo://org.svom/FSC</AuthorIVORN>
+        <Date>2025-03-11T07:26:09</Date>
+        <Author>
+            <title>SVOM French Science Center</title>
+            <shortName>FSC</shortName>
+            <contactName>Timothe Roland</contactName>
+            <contactEmail>svom-contact@cea.fr</contactEmail>
+        </Author>
+    </Who>
+    <What>
+        <Param name="Packet_Type" value="202" ucd="meta.id"/>
+        <Param name="Pkt_Ser_Num" value="1" ucd="meta.id"/>
+        <Param name="Instrument" value="ECLAIRs" ucd="instr"/>
+        <Group name="Svom_Identifiers">
+            <Param name="Notice_Level" value="N1e" ucd="meta.id"/>
+            <Param name="Burst_Id" value="sb25031101" ucd="meta.id"/>
+        </Group>
+        <Group name="Detection_Info">
+            <Param name="SNR" value="7.45" unit="sigma" ucd="stat.snr"/>
+            <Param name="Timescale" value="10.2" unit="s" ucd="time.interval"/>
+            <Param name="Time_Window_Start" value="2025-03-11T07:08:05.065Z" ucd="time.start"/>
+            <Param name="Time_Window_End" value="2025-03-11T07:08:15.265Z" ucd="time.end"/>
+            <Param name="Lower_Energy_Bound" value="8" unit="keV" ucd="em.energy"/>
+            <Param name="Upper_Energy_Bound" value="120" unit="keV" ucd="em.energy"/>
+            <Param name="Trigger_Type" value="CRT" ucd="instr.param"/>
+        </Group>
+        <Group name="Target_Info">
+            <Param name="Galactic_Lon" value="197.78" unit="deg" ucd="pos.galactic.lon"/>
+            <Param name="Galactic_Lat" value="49.77" unit="deg" ucd="pos.galactic.lat"/>
+            <Param name="Moon_Angle" value="12.36" unit="deg" ucd="pos.angDistance"/>
+            <Param name="Sun_Angle" value="145.05" unit="deg" ucd="pos.angDistance"/>
+        </Group>
+        <Group name="Satellite_Info">
+            <Param name="Slew_Status" value="not-requested" ucd="meta.code.status"/>
+            <Param name="Attitude_Ra" value="163.06" unit="deg" ucd="instr.param"/>
+            <Param name="Attitude_Dec" value="5.92" unit="deg" ucd="instr.param"/>
+            <Param name="Attitude_Roll" value="75.57" unit="deg" ucd="instr.param"/>
+            <Param name="Sat_Longitude" value="-132.08" unit="deg" ucd="pos.earth.lon"/>
+            <Param name="Sat_Latitude" value="-8.21" unit="deg" ucd="pos.earth.lat"/>
+            <Param name="Sat_Altitude" value="620.29" unit="km" ucd="pos.earth.altitude"/>
+        </Group>
+    </What>
+    <WhereWhen>
+        <ObsDataLocation>
+            <ObservatoryLocation id="GEOLEO"/>
+            <ObservationLocation>
+                <AstroCoordSystem id="UTC-ICRS-GEO"/>
+                <AstroCoords coord_system_id="UTC-ICRS-GEO">
+                    <Time unit="s">
+                        <TimeInstant>
+                            <ISOTime>2025-03-11T07:08:05.065000</ISOTime>
+                        </TimeInstant>
+                    </Time>
+                    <Position2D unit="deg">
+                        <Name1>RA</Name1>
+                        <Name2>Dec</Name2>
+                        <Value2>
+                            <C1>146.8848</C1>
+                            <C2>29.8907</C2>
+                        </Value2>
+                        <Error2Radius>0.1755</Error2Radius>
+                    </Position2D>
+                </AstroCoords>
+            </ObservationLocation>
+        </ObsDataLocation>
+    </WhereWhen>
+    <Why importance="0.74">
+        <Inference probability="0.74">
+            <Concept>process.variation.burst;em.gamma</Concept>
+        </Inference>
+    </Why>
+    <How>
+        <Description>N1e notice, data from ECLAIRs</Description>
+        <Reference uri="https://www.svom.eu/en/telescope-eclairs-en/"/>
+    </How>
+</voe:VOEvent>
