@@ -21,20 +21,13 @@ def already_in_database(notice):
             return True
     return False
 
+def add_notice_to_database(notice):
+    """Add an entry for the given Notice to the alert database.
 
-def add_to_database(notice, time=None, log=None):
-    """Add entries for this notice into the database(s)."""
-    if time is None:
-        time = Time.now()
-    if log is None:
-        log = logging.getLogger('database')
-        log.setLevel(level=logging.DEBUG)
+    If a matching Event already exists, the Notice will be linked to it.
+    If not, a new Event will be created.
+    """
 
-    # First make sure we have the skymap
-    if notice.skymap is None:
-        notice.get_skymap()  # May still be None if it's a retraction
-
-    # Add to the alert database
     with alert_db.session_manager() as session:
         # Get any matching Event from the database, or make one if it's new
         query = session.query(alert_db.Event)
@@ -48,7 +41,14 @@ def add_to_database(notice, time=None, log=None):
                 time=notice.event_time,
             )
 
-        # Now add the Notice (we'll update the survey ID later)
+        # Make sure we have the notice skymap
+        if notice.skymap is None:
+            notice.get_skymap()  # May still be None if it's a retraction
+
+        # Now add the Notice (no Survey ID for now, we'll update that later if we add one)
+        # TODO: We should store the Skymap in its own table
+        # TODO: Also we should store other supplementary data like the GWSkyNet scores somewhere
+        #       Could its own table, or as an extra field in the Notice table
         db_notice = alert_db.Notice.from_gcn(notice)
         db_notice.event = db_event
         try:
@@ -60,106 +60,144 @@ def add_to_database(notice, time=None, log=None):
             else:
                 raise
 
-        # Find how many previous surveys there have been for this event
-        event_surveys = [survey.db_id for survey in db_event.surveys]
-        log.debug(f'Found {len(event_surveys)} previous surveys for this event')
+        return db_notice.db_id
 
-        if len(event_surveys) > 0:
+
+def add_survey_to_database(notice, time=None, log=None):
+    """Add a Survey for the given Notice to the observation database.
+
+    This assumes we've already added the Notice to the alert database.
+
+    If the Event for this notice has any previous surveys, then
+    we'll check if the skymap or strategy has changed.
+    If so, we'll create a new Survey and delete the Targets for all previous ones.
+
+    If the notice has the IGNORE or RETRACTION strategy then no new Survey is created,
+    but we'll still delete any incomplete Targets from previous Surveys.
+    """
+    if time is None:
+        time = Time.now()
+    if log is None:
+        log = logging.getLogger('database')
+        log.setLevel(level=logging.DEBUG)
+
+    with alert_db.session_manager() as session:
+        # First get the Event from the database
+        db_notice = session.query(alert_db.Notice).filter_by(ivorn=notice.ivorn).one()
+
+        # Now find how many previous Surveys have been defined for this Event (if any)
+        db_event = db_notice.event
+        log.debug(f'Found {len(db_event.surveys)} previous surveys for this event')
+
+        requires_update = False
+        if len(db_event.surveys) == 0:
+            # There are no previous Surveys, so we'll want to create one.
+            requires_update = True
+        else:
+            # There are existing Surveys for this Event.
             # We want to see if the skymap or strategy has changed from the previous notice.
-            # If it has, we'll want to create a new survey.
-            # If there are previous surveys for this event, there should be previous notices.
-            last_dbnotice = db_event.notices[-2]  # (-1 would be the one we just created)
-            last_notice = last_dbnotice.gcn
+            # If it has, we'll want to create a new survey and targets and remove the old one.
+            last_db_notice = db_event.notices[-2]  # (-1 should be this one)
+            last_notice = last_db_notice.gcn
             log.debug(f'Previous notice {last_notice.ivorn} was received at {last_notice.time}')
-            requires_update = False
+
+            # Check if the skymap has changed
             if last_notice.skymap != notice.skymap:
                 log.info('Event skymap has been updated')
                 requires_update = True
             else:
                 log.info('Event skymap has not changed')
+
+            # Check if the strategy has changed
             if last_notice.strategy != notice.strategy:
-                msg = f'Event strategy has changed from {last_notice.strategy} to {notice.strategy}'
+                msg = 'Event strategy has changed'
+                msg += f' from {last_notice.strategy} to {notice.strategy}'
                 log.info(msg)
                 requires_update = True
             else:
                 log.info(f'Event strategy remains as {notice.strategy}')
 
-            if requires_update:
-                # Go through previous Surveys for this Event and "delete" any incomplete Targets.
-                # Using target.mark_deleted() will also delete any pending Pointings,
-                # but won't interrupt one if it's currently running.
-                # If there are multiple previous Surveys then all but the latest should have already
-                # been deleted, but we might as well go through and check to be sure.
-                for db_survey in db_event.surveys:
-                    num_deleted = 0
-                    for db_target in db_survey.targets:
-                        statuses = ['deleted', 'expired', 'completed']
-                        if db_target.status_at_time(time) not in statuses:
-                            db_target.mark_deleted(time=time)
-                            num_deleted += 1
-                    if num_deleted > 0:
-                        log.debug(f'Deleted {num_deleted} Targets for Survey {db_survey.name}')
-                    session.commit()
-        else:
-            # If there are no previous surveys, we'll want to create one.
-            requires_update = True
+        if requires_update:
+            # Go through any previous Surveys for this Event and "delete" any incomplete Targets.
+            # Using target.mark_deleted() will also delete any pending Pointings,
+            # but won't interrupt one if it's currently running.
+            # If there are multiple previous Surveys then all but the latest should have already
+            # been deleted, but we might as well go through and check to be sure.
+            for db_survey in db_event.surveys:
+                num_deleted = 0
+                for db_target in db_survey.targets:
+                    statuses = ['deleted', 'expired', 'completed']
+                    if db_target.status_at_time(time) not in statuses:
+                        db_target.mark_deleted(time=time)
+                        num_deleted += 1
+                if num_deleted > 0:
+                    log.debug(f'Deleted {num_deleted} Targets for Survey {db_survey.name}')
+                session.commit()
 
-    if notice.strategy in ['IGNORE', ' RETRACTION'] or notice.strategy_dict is None:
-        # Either it's an event we don't care about, or it's an explicit retraction notice.
-        # We've added it to the AlertDB and deleted the previous Targets, nothing else to do.
-        log.info(f'{notice.strategy} notice processed')
-        return
-    elif notice.skymap is None:
-        # We have a strategy but no skymap, so we can't do anything?
-        raise ValueError('Notice has a strategy but no skymap')
+        if notice.strategy in ['IGNORE', ' RETRACTION'] or notice.strategy_dict is None:
+            # We've added the Notice to the database, but we don't need to add a new Survey.
+            # After deleting any old Targets above there's nothing else to do here.
+            return None
 
-    if requires_update is True:
-        # We know this notice has a new skymap (or strategy) so we want to create a new Survey.
-        with obs_db.session_manager() as session:
-            db_survey = obs_db.Survey(
-                name=f'{notice.event_name}_{len(event_surveys) + 1}',
-            )
-            log.debug('Adding Survey {} to database'.format(db_survey.name))
-            session.add(db_survey)
-            session.commit()
-            survey_id = db_survey.db_id
-    else:
-        # The existing Survey is fine, just get the ID.
-        with obs_db.session_manager() as session:
-            query = session.query(obs_db.Survey)
-            query = query.filter_by(name=f'{notice.event_name}_{len(event_surveys)}')
-            db_survey = query.one()
-            survey_id = db_survey.db_id
+        if not requires_update:
+            # Nothing new to add, we just need to link this Notice to the latest Survey.
+            db_notice.survey_id = db_event.surveys[-1].db_id
+            return None
 
-    # Update the Survey ID in the alert database, so we can map between the objects
-    with alert_db.session_manager() as session:
-        db_notice = session.query(alert_db.Notice).filter_by(ivorn=notice.ivorn).one()
+        # Otherwise we know this notice has a new skymap (or strategy),
+        # so we want to create a new Survey.
+        db_survey = obs_db.Survey(name=f'{notice.event_name}_{len(db_event.surveys) + 1}')
+        log.debug('Adding Survey {} to database'.format(db_survey.name))
+        session.add(db_survey)
+        session.commit()
+        survey_id = db_survey.db_id
+
+        # Finally link the Notice to the new Survey.
         db_notice.survey_id = survey_id
 
-    if requires_update is False:
-        log.info('No changes to the skymap or strategy, so no update to the database required')
-        return
+    return survey_id
 
-    # Now select the grid tiles covering the skymap
-    log.debug('Selecting grid tiles')
+def select_tiles(notice):
+    """Select grid tiles for the given notice."""
     with obs_db.session_manager() as session:
         db_grid = obs_db.get_current_grid(session)
         grid = db_grid.skygrid
     grid_tiles = notice.get_tiles(grid)
+
     # Select tiles within the skymap contour and above the minimum probability threshold
     mask = ((grid_tiles['contour'] < notice.strategy_dict['skymap_contour']) &
             (grid_tiles['prob'] > notice.strategy_dict['min_tile_prob']))
     selected_tiles = grid_tiles[mask]
     selected_tiles.sort('prob', reverse=True)
+
     if len(selected_tiles) > notice.strategy_dict['max_tiles']:
         # Limit to only the N highest probability tiles
         selected_tiles = selected_tiles[:notice.strategy_dict['max_tiles']]
+
+    return selected_tiles, grid
+
+def add_targets_to_database(notice, time=None, log=None):
+    """Add Targets for the given notice to the observation database.
+
+    This assumes we've already added the Notice to the alert database,
+    and created a new Survey for it.
+
+    """
+    if time is None:
+        time = Time.now()
+    if log is None:
+        log = logging.getLogger('database')
+        log.setLevel(level=logging.DEBUG)
+
+    log.debug('Selecting grid tiles')
+    selected_tiles, grid = select_tiles(notice)
     log.debug('Selected {}/{} tiles'.format(len(selected_tiles), grid.ntiles))
+
     # It's possible no tiles passed the selection criteria,
-    # if so then there's nothing else to do (but we still add the "empty" survey above)
+    # if so then there's nothing else to do.
     if len(selected_tiles) < 1:
         log.warning('Nothing to add to the database')
-        return
+        return []
 
     # Create and add new Targets (and related entries) into the observation database
     with obs_db.session_manager() as session:
@@ -171,7 +209,11 @@ def add_to_database(notice, time=None, log=None):
             db_user = obs_db.User('sentinel', '', 'Sentinel alert Listener')
         db_grid = obs_db.get_current_grid(session)
 
-        # Create Targets for each tile
+        # Get the survey ID from the notice
+        db_notice = session.query(alert_db.Notice).filter_by(ivorn=notice.ivorn).one()
+        survey_id = db_notice.survey_id
+
+        # Create entries for each tile
         db_targets = []
         for tile_name, tile_weight in selected_tiles[('tilename', 'prob')]:
             # Find the matching GridTile
@@ -249,6 +291,8 @@ def add_to_database(notice, time=None, log=None):
             session.rollback()
             raise
 
+        return [target.db_id for target in db_targets]
+
 
 def handle_notice(notice, send_messages=False, log=None, time=None):
     """Handle a new transient notice.
@@ -299,7 +343,22 @@ def handle_notice(notice, send_messages=False, log=None, time=None):
                 log.exception('Error sending error report')
 
     log.info('Adding notice to the alert database')
-    add_to_database(notice, time=time, log=log)
+    # First, add the Notice to the alert database (and create a new Event if needed)
+    add_notice_to_database(notice)
+
+    # Then create a new Survey, deleting any previous targets if needed
+    survey_id = add_survey_to_database(notice, time, log)
+    if survey_id is None:
+        # We didn't add a new Survey, either it's a retraction or there have been no changes
+        if notice.strategy in ['IGNORE', ' RETRACTION'] or notice.strategy_dict is None:
+            log.info(f'{notice.strategy} notice processed')
+            return
+        else:
+            log.info('No changes to the skymap or strategy, so no update to the database required')
+            return
+
+    # Finally add the Targets
+    add_targets_to_database(notice, time, log)
 
     if send_messages:
         log.debug('Sending Slack observing report')
