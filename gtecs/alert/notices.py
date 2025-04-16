@@ -479,7 +479,9 @@ class Notice:
     @property
     def strategy_dict(self):
         """Get the observing strategy details."""
-        return self.get_strategy_details(self.strategy, time=self.event_time)
+        if not hasattr(self, '_strategy_dict'):
+            self._strategy_dict = self.get_strategy_details(self.strategy)
+        return self._strategy_dict
 
     @property
     def slack_details(self):
