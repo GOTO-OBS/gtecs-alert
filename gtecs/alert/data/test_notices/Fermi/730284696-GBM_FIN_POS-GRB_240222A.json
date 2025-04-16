@@ -1,0 +1,315 @@
+{
+    "ivorn": "ivo://nasa.gsfc.gcn/Fermi#GBM_Fin_Pos2024-02-22T08:51:31.47_730284696_0-924",
+    "role": "observation",
+    "version": "2.0",
+    "Who": {
+        "AuthorIVORN": "ivo://nasa.gsfc.tan/gcn",
+        "Author": {
+            "shortName": "Fermi (via VO-GCN)",
+            "contactName": "Julie McEnery",
+            "contactPhone": "+1-301-286-1632",
+            "contactEmail": "Julie.E.McEnery@nasa.gov"
+        },
+        "Date": "2024-02-22T09:00:56",
+        "Description": "This VOEvent message was created with GCN VOE version: 15.08 17jun22"
+    },
+    "What": {
+        "Param": [
+            {
+                "name": "Packet_Type",
+                "value": "115"
+            },
+            {
+                "name": "Pkt_Ser_Num",
+                "value": "8"
+            },
+            {
+                "name": "TrigID",
+                "value": "730284696",
+                "ucd": "meta.id"
+            },
+            {
+                "name": "Sequence_Num",
+                "value": "0",
+                "ucd": "meta.id.part"
+            },
+            {
+                "name": "Burst_TJD",
+                "value": "20362",
+                "unit": "days",
+                "ucd": "time"
+            },
+            {
+                "name": "Burst_SOD",
+                "value": "31891.47",
+                "unit": "sec",
+                "ucd": "time"
+            },
+            {
+                "name": "Burst_Inten",
+                "value": "0",
+                "unit": "cts",
+                "ucd": "phot.count"
+            },
+            {
+                "name": "Data_Integ",
+                "value": "0.000",
+                "unit": "sec",
+                "ucd": "time.interval"
+            },
+            {
+                "name": "Burst_Signif",
+                "value": "0.00",
+                "unit": "sigma",
+                "ucd": "stat.snr"
+            },
+            {
+                "name": "Phi",
+                "value": "109.00",
+                "unit": "deg",
+                "ucd": "pos.az.azi"
+            },
+            {
+                "name": "Theta",
+                "value": "109.00",
+                "unit": "deg",
+                "ucd": "pos.az.zd"
+            },
+            {
+                "name": "Algorithm",
+                "value": "41731",
+                "unit": "dn"
+            },
+            {
+                "name": "Lo_Energy",
+                "value": "44032",
+                "unit": "keV"
+            },
+            {
+                "name": "Hi_Energy",
+                "value": "279965",
+                "unit": "keV"
+            },
+            {
+                "name": "Trigger_ID",
+                "value": "0x20000000"
+            },
+            {
+                "name": "Misc_flags",
+                "value": "0x40000000"
+            },
+            {
+                "name": "LightCurve_URL",
+                "value": "http://heasarc.gsfc.nasa.gov/FTP/fermi/data/gbm/triggers/2024/bn240222369/quicklook/glg_lc_medres34_bn240222369.gif",
+                "ucd": "meta.ref.url"
+            },
+            {
+                "name": "LocationMap_URL",
+                "value": "http://heasarc.gsfc.nasa.gov/FTP/fermi/data/gbm/triggers/2024/bn240222369/quicklook/glg_locplot_all_bn240222369.png",
+                "ucd": "meta.ref.url"
+            },
+            {
+                "name": "Coords_Type",
+                "value": "1",
+                "unit": "dn"
+            },
+            {
+                "name": "Coords_String",
+                "value": "source_object"
+            }
+        ],
+        "Group": [
+            {
+                "name": "Trigger_ID",
+                "Param": [
+                    {
+                        "name": "Def_NOT_a_GRB",
+                        "value": "false"
+                    },
+                    {
+                        "name": "Target_in_Blk_Catalog",
+                        "value": "false"
+                    },
+                    {
+                        "name": "Human_generated",
+                        "value": "false"
+                    },
+                    {
+                        "name": "Robo_generated",
+                        "value": "true"
+                    },
+                    {
+                        "name": "Long_short",
+                        "value": "unknown"
+                    },
+                    {
+                        "name": "Spatial_Prox_Match",
+                        "value": "false"
+                    },
+                    {
+                        "name": "Temporal_Prox_Match",
+                        "value": "true"
+                    },
+                    {
+                        "name": "Test_Submission",
+                        "value": "false"
+                    }
+                ]
+            },
+            {
+                "name": "Misc_Flags",
+                "Param": [
+                    {
+                        "name": "Values_Out_of_Range",
+                        "value": "false"
+                    },
+                    {
+                        "name": "Flt_Generated",
+                        "value": "false"
+                    },
+                    {
+                        "name": "Gnd_Generated",
+                        "value": "true"
+                    },
+                    {
+                        "name": "CRC_Error",
+                        "value": "false"
+                    }
+                ]
+            },
+            {
+                "name": "Obs_Support_Info",
+                "Description": "The Sun and Moon values are valid at the time the VOEvent XML message was created.",
+                "Param": [
+                    {
+                        "name": "Sun_RA",
+                        "value": "335.16",
+                        "unit": "deg",
+                        "ucd": "pos.eq.ra"
+                    },
+                    {
+                        "name": "Sun_Dec",
+                        "value": "-10.32",
+                        "unit": "deg",
+                        "ucd": "pos.eq.dec"
+                    },
+                    {
+                        "name": "Sun_Distance",
+                        "value": "108.58",
+                        "unit": "deg",
+                        "ucd": "pos.angDistance"
+                    },
+                    {
+                        "name": "Sun_Hr_Angle",
+                        "value": "-11.22",
+                        "unit": "hr"
+                    },
+                    {
+                        "name": "Moon_RA",
+                        "value": "133.41",
+                        "unit": "deg",
+                        "ucd": "pos.eq.ra"
+                    },
+                    {
+                        "name": "Moon_Dec",
+                        "value": "22.38",
+                        "unit": "deg",
+                        "ucd": "pos.eq.dec"
+                    },
+                    {
+                        "name": "MOON_Distance",
+                        "value": "83.27",
+                        "unit": "deg",
+                        "ucd": "pos.angDistance"
+                    },
+                    {
+                        "name": "Moon_Illum",
+                        "value": "95.81",
+                        "unit": "%",
+                        "ucd": "arith.ratio"
+                    },
+                    {
+                        "name": "Galactic_Long",
+                        "value": "280.68",
+                        "unit": "deg",
+                        "ucd": "pos.galactic.lon"
+                    },
+                    {
+                        "name": "Galactic_Lat",
+                        "value": "-6.39",
+                        "unit": "deg",
+                        "ucd": "pos.galactic.lat"
+                    },
+                    {
+                        "name": "Ecliptic_Long",
+                        "value": "190.66",
+                        "unit": "deg",
+                        "ucd": "pos.ecliptic.lon"
+                    },
+                    {
+                        "name": "Ecliptic_Lat",
+                        "value": "-66.23",
+                        "unit": "deg",
+                        "ucd": "pos.ecliptic.lat"
+                    }
+                ]
+            }
+        ],
+        "Description": "The Fermi-GBM location of a transient."
+    },
+    "WhereWhen": {
+        "ObsDataLocation": {
+            "ObservatoryLocation": {
+                "id": "GEOLUN"
+            },
+            "ObservationLocation": {
+                "AstroCoordSystem": {
+                    "id": "UTC-FK5-GEO"
+                },
+                "AstroCoords": {
+                    "coord_system_id": "UTC-FK5-GEO",
+                    "Time": {
+                        "unit": "s",
+                        "TimeInstant": {
+                            "ISOTime": "2024-02-22T08:51:31.47"
+                        }
+                    },
+                    "Position2D": {
+                        "unit": "deg",
+                        "Name1": "RA",
+                        "Name2": "Dec",
+                        "Value2": {
+                            "C1": "143.2600",
+                            "C2": "-60.3800"
+                        },
+                        "Error2Radius": "9.0700"
+                    }
+                }
+            }
+        },
+        "Description": "The RA,Dec coordinates are of the type: source_object."
+    },
+    "How": {
+        "Description": "Fermi Satellite, GBM Instrument",
+        "Reference": {
+            "uri": "http://gcn.gsfc.nasa.gov/fermi.html",
+            "type": "url"
+        }
+    },
+    "Why": {
+        "importance": "0.95",
+        "Inference": {
+            "probability": "1.0",
+            "Concept": "process.variation.burst;em.gamma"
+        }
+    },
+    "Citations": {
+        "EventIVORN": {
+            "cite": "followup",
+            "#text": "ivo://nasa.gsfc.gcn/Fermi#GBM_Alert_2024-02-22T08:51:31.47_730284696_1-866"
+        },
+        "Description": "This is an updated position to the original trigger."
+    },
+    "Description": null,
+    "Reference": {}
+}
