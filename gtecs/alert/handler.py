@@ -7,6 +7,8 @@ from astropy.time import Time
 
 from gtecs.obs import database as obs_db
 
+import numpy as np
+
 from . import database as alert_db
 from .slack import send_notice_report, send_observing_report, send_slack_msg
 
@@ -21,12 +23,15 @@ def already_in_database(notice):
             return True
     return False
 
-def add_notice_to_database(notice):
+def add_notice_to_database(notice, log=None):
     """Add an entry for the given Notice to the alert database.
 
     If a matching Event already exists, the Notice will be linked to it.
     If not, a new Event will be created.
     """
+    if log is None:
+        log = logging.getLogger('database')
+        log.setLevel(level=logging.DEBUG)
 
     with alert_db.session_manager() as session:
         # Get any matching Event from the database, or make one if it's new
@@ -40,6 +45,9 @@ def add_notice_to_database(notice):
                 origin=notice.source,
                 time=notice.event_time,
             )
+            log.debug(f'Adding event {db_event.name} to database')
+        else:
+            log.debug(f'Matching to existing event {db_event.name}')
 
         # Make sure we have the notice skymap
         if notice.skymap is None:
@@ -61,6 +69,26 @@ def add_notice_to_database(notice):
                 raise
 
         return db_notice.db_id
+
+
+def delete_survey_targets(db_survey, time=None, log=None):
+    """Delete all Targets for the given Survey."""
+    if time is None:
+        time = Time.now()
+    if log is None:
+        log = logging.getLogger('database')
+        log.setLevel(level=logging.DEBUG)
+
+    with alert_db.session_manager() as session:
+        num_deleted = 0
+        for db_target in db_survey.targets:
+            statuses = ['deleted', 'expired', 'completed']
+            if db_target.status_at_time(time) not in statuses:
+                db_target.mark_deleted(time=time)
+                num_deleted += 1
+        if num_deleted > 0:
+            log.debug(f'Deleted {num_deleted} Targets for Survey {db_survey.name}')
+        session.commit()
 
 
 def add_survey_to_database(notice, time=None, log=None):
@@ -124,15 +152,7 @@ def add_survey_to_database(notice, time=None, log=None):
             # If there are multiple previous Surveys then all but the latest should have already
             # been deleted, but we might as well go through and check to be sure.
             for db_survey in db_event.surveys:
-                num_deleted = 0
-                for db_target in db_survey.targets:
-                    statuses = ['deleted', 'expired', 'completed']
-                    if db_target.status_at_time(time) not in statuses:
-                        db_target.mark_deleted(time=time)
-                        num_deleted += 1
-                if num_deleted > 0:
-                    log.debug(f'Deleted {num_deleted} Targets for Survey {db_survey.name}')
-                session.commit()
+                delete_survey_targets(db_survey, time, log)
 
         if notice.strategy in ['IGNORE', ' RETRACTION'] or notice.strategy_dict is None:
             # We've added the Notice to the database, but we don't need to add a new Survey.
@@ -147,7 +167,7 @@ def add_survey_to_database(notice, time=None, log=None):
         # Otherwise we know this notice has a new skymap (or strategy),
         # so we want to create a new Survey.
         db_survey = obs_db.Survey(name=f'{notice.event_name}_{len(db_event.surveys) + 1}')
-        log.debug('Adding Survey {} to database'.format(db_survey.name))
+        log.debug(f'Adding survey {db_survey.name} to database')
         session.add(db_survey)
         session.commit()
         survey_id = db_survey.db_id
@@ -156,6 +176,7 @@ def add_survey_to_database(notice, time=None, log=None):
         db_notice.survey_id = survey_id
 
     return survey_id
+
 
 def select_tiles(notice):
     """Select grid tiles for the given notice."""
@@ -176,6 +197,133 @@ def select_tiles(notice):
 
     return selected_tiles, grid
 
+
+def get_skymap_overlap(skymap1, skymap2, contour=0.95, regrade_nside=128):
+    """Get the overlap fraction between two skymaps at a given contour level.
+
+    TODO: This could be a method on the gototile.SkyMap class
+    """
+    # Regrade each skymap to the same nside
+    # TODO: It would be nice if it returned a new skymap (with inplace=False)
+    #       instead of modifying the original one.
+    if skymap1.nside != regrade_nside:
+        skymap1 = skymap1.copy()
+        skymap1.regrade(nside=regrade_nside)
+    if skymap2.nside != regrade_nside:
+        skymap2 = skymap2.copy()
+        skymap2.regrade(nside=regrade_nside)
+
+    # Get the pixel indices within the contour level
+    contour_ipix1 = set(np.where(skymap1.contours<contour)[0])
+    contour_ipix2 = set(np.where(skymap2.contours<contour)[0])
+    intersection = contour_ipix1.intersection(contour_ipix2)
+    if len(intersection) == 0:
+        return 0.0
+
+    # We want to return the biggest overlap fraction
+    # (i.e. the fraction of the smaller skymap that overlaps with the larger one)
+    return len(intersection) / min(len(contour_ipix1), len(contour_ipix2))
+
+
+def check_coincident_events(notice, time_window=10, skymap_contour=0.95, time=None, log=None):
+    """Check the AlertDB for any events with matching times and tile sets.
+
+    Returns True if a better event was found, False if not.
+
+    If any overlapping events are found we check which notice covers the fewest tiles.
+    If the new notice covers fewer tiles: delete the older notice and its targets,
+    and return False.
+    If the new notice covers the same or more tiles: keep the older targets and return True
+    (to signify no new Targets need to be added).
+
+    If no overlapping events are found then also return False.
+
+    """
+    if time is None:
+        time = Time.now()
+    if log is None:
+        log = logging.getLogger('database')
+        log.setLevel(level=logging.DEBUG)
+
+    # We should have already selected the tiles for this notice
+    if not hasattr(notice, 'selected_tiles'):
+        selected_tiles, _ = select_tiles(notice)
+    else:
+        selected_tiles = notice.selected_tiles
+    tile_set = set(selected_tiles['tilename'])
+
+    found_better_event = False
+    with alert_db.session_manager() as session:
+        # Get any Events from the database that have a matching event time
+        query = session.query(alert_db.Event)
+        query = query.filter(alert_db.Event.time >= notice.event_time - time_window * u.second)
+        query = query.filter(alert_db.Event.time <= notice.event_time + time_window * u.second)
+        query = query.filter(alert_db.Event.name != notice.event_name) # Don't include this event!
+        db_events = query.all()
+
+        # If there are no matching events then we just want to add this one, so return False
+        if len(db_events) == 0:
+            log.debug('No matching events found')
+            return found_better_event
+
+        log.debug(f'Found {len(db_events)} events within {time_window:.0f}s of {notice.event_time}')
+
+        # Now check if any of the events  overlap with this notice
+        # We want to check both the notice skymaps and the selected tiles,
+        # as either overlapping should trigger a match.
+        for db_event in db_events:
+            # We only care about the latest notice for each event,
+            # any previous ones should have already been deleted.
+            db_notice = db_event.notices[-1]
+            log.info(f'Coincident notice: {db_notice.ivorn}')
+            if len(db_notice.targets) == 0:
+                # No targets for this notice (might have been below min_prob), so we can ignore it
+                log.info('Notice has no targets defined')
+                continue
+
+            # Check if either of the notice skymaps overlap
+            skymap_overlap = get_skymap_overlap(
+                notice.skymap, db_notice.gcn.skymap, contour=skymap_contour
+            )
+            log.debug(f'Skymap overlap = {skymap_overlap > 0} ({skymap_overlap:.0%})')
+
+            # Check if any of the selected tiles overlap
+            old_tiles = [target.grid_tile.name for target in db_notice.targets]
+            old_tile_set = set(old_tiles)
+            tile_overlap = len(tile_set.intersection(old_tile_set))
+            tile_overlap /= min(len(tile_set), len(old_tile_set))
+            log.debug(f'Tile overlap = {tile_overlap > 0} ({tile_overlap:.0%})')
+
+            if tile_overlap == 0 and skymap_overlap == 0:
+                # Neither overlap, so the time must have been a coincidence
+                log.info('No overlap detected')
+                continue
+
+            # We have a match!
+            log.info('Overlap detected')
+
+            # Now we want to decide which notice is best to observe.
+            # It's not actually that obvious. We could compare the size of the skymaps or
+            # the number of tiles, but thanks to different selection limits you could have a
+            # case where a smaller skymap had more tiles added to the ObsDB.
+            # Easiest is just to go with the skymap area for which event better localised and
+            # therefore closer to the "real" position.
+            old_area = db_notice.gcn.skymap.get_contour_area(skymap_contour)
+            new_area = notice.skymap.get_contour_area(skymap_contour)
+            if new_area < old_area:
+                # This new notice is smaller, so we want to keep it and delete the old targets.
+                # If there are multiple previous Surveys then all but the latest should have already
+                # been deleted, but we might as well go through and check to be sure.
+                log.info('New notice skymap is smaller, deleting existing targets')
+                for db_survey in db_event.surveys:
+                    delete_survey_targets(db_survey, time, log)
+            else:
+                # The new notice is worse, so we want to ignore it and keep the existing targets.
+                log.info('New notice skymap is larger, leaving existing targets')
+                found_better_event = True
+
+        return found_better_event
+
 def add_targets_to_database(notice, time=None, log=None):
     """Add Targets for the given notice to the observation database.
 
@@ -189,9 +337,11 @@ def add_targets_to_database(notice, time=None, log=None):
         log = logging.getLogger('database')
         log.setLevel(level=logging.DEBUG)
 
-    log.debug('Selecting grid tiles')
-    selected_tiles, grid = select_tiles(notice)
-    log.debug('Selected {}/{} tiles'.format(len(selected_tiles), grid.ntiles))
+    # We should have already selected the tiles for this notice
+    if not hasattr(notice, 'selected_tiles'):
+        selected_tiles, _ = select_tiles(notice)
+    else:
+        selected_tiles = notice.selected_tiles
 
     # It's possible no tiles passed the selection criteria,
     # if so then there's nothing else to do.
@@ -283,7 +433,7 @@ def add_targets_to_database(notice, time=None, log=None):
             session.add(db_targets[-1])
 
         # Commit changes
-        log.debug('Adding {} Targets to the database'.format(len(db_targets)))
+        log.info(f'Adding {len(db_targets)} targets to the database')
         try:
             session.commit()
         except Exception:
@@ -320,7 +470,7 @@ def handle_notice(notice, send_messages=False, log=None, time=None):
     if time is None:
         time = Time.now()
 
-    log.info('Handling notice {}'.format(notice.ivorn))
+    log.info(f'Handling notice {notice.ivorn}')
 
     # Check if the notice is already in the database.
     # Do this before fetching the skymap to save time.
@@ -344,10 +494,10 @@ def handle_notice(notice, send_messages=False, log=None, time=None):
 
     log.info('Adding notice to the alert database')
     # First, add the Notice to the alert database (and create a new Event if needed)
-    add_notice_to_database(notice)
+    add_notice_to_database(notice, log=log)
 
     # Then create a new Survey, deleting any previous targets if needed
-    survey_id = add_survey_to_database(notice, time, log)
+    survey_id = add_survey_to_database(notice, time=time, log=log)
     if survey_id is None:
         # We didn't add a new Survey, either it's a retraction or there have been no changes
         if notice.strategy in ['IGNORE', ' RETRACTION'] or notice.strategy_dict is None:
@@ -357,8 +507,22 @@ def handle_notice(notice, send_messages=False, log=None, time=None):
             log.info('No changes to the skymap or strategy, so no update to the database required')
             return
 
-    # Finally add the Targets
-    add_targets_to_database(notice, time, log)
+    # Select the grid tiles for this notice
+    log.debug('Selecting grid tiles')
+    selected_tiles, grid = select_tiles(notice)
+    log.debug(f'Selected {len(selected_tiles)}/{grid.ntiles} tiles')
+    notice.selected_tiles = selected_tiles
+    notice.grid = grid
+
+    # Now check for overlaps
+    found_better_event = check_coincident_events(notice, time=time, log=log)
+    if found_better_event:
+        # There was a matching event in the database that covers fewer tiles,
+        # so we don't want to add this one.
+        log.info('Ignoring notice in favor of previous event')
+    else:
+        # Add new Targets for the survey
+        add_targets_to_database(notice, time=time, log=log)
 
     if send_messages:
         log.debug('Sending Slack observing report')
@@ -372,5 +536,5 @@ def handle_notice(notice, send_messages=False, log=None, time=None):
             except Exception:
                 log.exception('Error sending error report')
 
-    log.info('Notice {} successfully processed'.format(notice.ivorn))
+    log.info(f'Notice {notice.ivorn} successfully processed')
     return
