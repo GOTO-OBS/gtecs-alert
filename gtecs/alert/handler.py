@@ -223,7 +223,13 @@ def get_tile_overlap(notice1, notice2):
     return len(intersection) / min(len(tile_set1), len(tile_set2))
 
 
-def find_coincident_events(notice, time_window=10, skymap_contour=0.95, type_limit=True):
+def find_coincident_events(
+        notice,
+        time_window=10,
+        skymap_contour=0.95,
+        type_limit=True,
+        return_parameters=False
+    ):
     """Check the AlertDB for any other events with matching times and positions.
 
     Parameters
@@ -240,12 +246,23 @@ def find_coincident_events(notice, time_window=10, skymap_contour=0.95, type_lim
     type_limit : bool, optional
         If True, only check for events of the same type as the given notice.
         Default is True.
+    return_parameters : bool, optional
+        If True, return the time difference, skymap overlap, and tile overlap
+        for each matching event.
+        Default is False.
+        If False, only return the matching event IDs.
 
     Returns
     -------
-    matching_events : list of int
-        A list of database IDs for any matching events.
+    matching_events : list of int or list of tuples
+        If `return_parameters` is False, a list of database IDs for any matching events.
+        If `return_parameters` is True, a list of tuples containing the database ID,
+        time difference, skymap overlap, and tile overlap for each matching event.
+        Each tuple is of the form (db_id, time_diff, skymap_overlap, tile_overlap).
+        The time difference is in seconds, and the skymap and tile overlaps are fractions
+        between 0 and 1.
         If no matches are found, an empty list is returned.
+
     """
     with alert_db.session_manager() as session:
         # Get any Events from the database that have a matching event time
@@ -269,6 +286,7 @@ def find_coincident_events(notice, time_window=10, skymap_contour=0.95, type_lim
             # We only care about the latest notice for each event,
             # any previous ones should have already been deleted.
             event_notice = db_event.notices[-1].gcn
+            time_diff = (event_notice.event_time - notice.event_time).value
 
             # Check if either of the notice skymaps or tilesets overlap
             skymap_overlap = get_skymap_overlap(
@@ -280,7 +298,17 @@ def find_coincident_events(notice, time_window=10, skymap_contour=0.95, type_lim
                 continue
 
             # We have a match!
-            matching_events.append(db_event.db_id)
+            if return_parameters:
+                params = (
+                    db_event.db_id,
+                    time_diff,
+                    skymap_overlap,
+                    tile_overlap
+                )
+                matching_events.append(params)
+            else:
+                # Just append the event ID
+                matching_events.append(db_event.db_id)
 
     return matching_events
 
@@ -306,7 +334,7 @@ def check_coincident_events(notice, time_window=10, skymap_contour=0.95, time=No
 
     # Find any overlapping events
     coincident_events = find_coincident_events(
-        notice, time_window=time_window, skymap_contour=skymap_contour
+        notice, time_window=time_window, skymap_contour=skymap_contour, return_parameters=True
     )
     if len(coincident_events) == 0:
         # No matching events found, so nothing to do
@@ -318,7 +346,10 @@ def check_coincident_events(notice, time_window=10, skymap_contour=0.95, time=No
     # are "better" than this one.
     with alert_db.session_manager() as session:
         found_better = False
-        for db_event_id in coincident_events:
+        for event_parameters in coincident_events:
+            # Get the event ID and parameters
+            db_event_id, time_diff, skymap_overlap, tile_overlap = event_parameters
+
             # Get the event ant latest notice from the database
             db_event = session.query(alert_db.Event).filter_by(db_id=db_event_id).one()
             event_notice = db_event.notices[-1].gcn
@@ -331,17 +362,11 @@ def check_coincident_events(notice, time_window=10, skymap_contour=0.95, time=No
                 log.info('Notice has no targets defined')
                 continue
 
-            # Get the parameters
-            # Yes this is duplicating what happens in find_coincident_notices(),
-            # but that doesn't include logging.
-            time_diff = abs(event_notice.event_time - notice.event_time)
-            skymap_overlap = get_skymap_overlap(
-                notice.skymap, event_notice.skymap, contour=skymap_contour
-            )
-            tile_overlap = get_tile_overlap(notice, event_notice)
-            log.debug(f'Time difference: {time_diff.value:.1f}s')
+            log.debug(f'Time difference: {time_diff:.3f}s')
             log.debug(f'Skymap overlap: {skymap_overlap:.0%}')
             log.debug(f'Tile overlap: {tile_overlap:.0%}')
+
+            # TODO: ADD SLACK MESSAGE
 
             # Now we want to decide which notice is best to observe.
             # It's not actually that obvious. We could compare the size of the skymaps or
