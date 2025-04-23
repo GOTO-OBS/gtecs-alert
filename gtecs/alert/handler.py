@@ -178,26 +178,6 @@ def add_survey_to_database(notice, time=None, log=None):
     return survey_id
 
 
-def select_tiles(notice):
-    """Select grid tiles for the given notice."""
-    with obs_db.session_manager() as session:
-        db_grid = obs_db.get_current_grid(session)
-        grid = db_grid.skygrid
-    grid_tiles = notice.get_tiles(grid)
-
-    # Select tiles within the skymap contour and above the minimum probability threshold
-    mask = ((grid_tiles['contour'] < notice.strategy_dict['skymap_contour']) &
-            (grid_tiles['prob'] > notice.strategy_dict['min_tile_prob']))
-    selected_tiles = grid_tiles[mask]
-    selected_tiles.sort('prob', reverse=True)
-
-    if len(selected_tiles) > notice.strategy_dict['max_tiles']:
-        # Limit to only the N highest probability tiles
-        selected_tiles = selected_tiles[:notice.strategy_dict['max_tiles']]
-
-    return selected_tiles, grid
-
-
 def get_skymap_overlap(skymap1, skymap2, contour=0.95, regrade_nside=128):
     """Get the overlap fraction between two skymaps at a given contour level.
 
@@ -246,10 +226,7 @@ def check_coincident_events(notice, time_window=10, skymap_contour=0.95, time=No
         log.setLevel(level=logging.DEBUG)
 
     # We should have already selected the tiles for this notice
-    if not hasattr(notice, 'selected_tiles'):
-        selected_tiles, _ = select_tiles(notice)
-    else:
-        selected_tiles = notice.selected_tiles
+    selected_tiles = notice.select_tiles()
     tile_set = set(selected_tiles['tilename'])
 
     found_better_event = False
@@ -338,10 +315,7 @@ def add_targets_to_database(notice, time=None, log=None):
         log.setLevel(level=logging.DEBUG)
 
     # We should have already selected the tiles for this notice
-    if not hasattr(notice, 'selected_tiles'):
-        selected_tiles, _ = select_tiles(notice)
-    else:
-        selected_tiles = notice.selected_tiles
+    selected_tiles = notice.select_tiles()
 
     # It's possible no tiles passed the selection criteria,
     # if so then there's nothing else to do.
@@ -509,10 +483,8 @@ def handle_notice(notice, send_messages=False, log=None, time=None):
 
     # Select the grid tiles for this notice
     log.debug('Selecting grid tiles')
-    selected_tiles, grid = select_tiles(notice)
-    log.debug(f'Selected {len(selected_tiles)}/{grid.ntiles} tiles')
-    notice.selected_tiles = selected_tiles
-    notice.grid = grid
+    selected_tiles = notice.select_tiles()
+    log.debug(f'Selected {len(selected_tiles)} tiles')
 
     # Now check for overlaps
     found_better_event = check_coincident_events(notice, time=time, log=log)

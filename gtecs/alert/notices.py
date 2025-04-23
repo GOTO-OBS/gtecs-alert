@@ -240,6 +240,7 @@ class Notice:
         self.skymap_file = None
         self._grid = None
         self.grid_tiles = None
+        self.selected_tiles = None
 
     def __repr__(self):
         return '{}(ivorn={})'.format(self.__class__.__name__, self.ivorn)
@@ -390,8 +391,6 @@ class Notice:
 
     def get_tiles(self, grid=None, regrade_nside=128):
         """Apply the skymap for this notice to the given grid."""
-        if self.skymap is None:
-            raise ValueError('Cannot select tiles without a skymap')
         if self.grid_tiles is not None and (grid is None or self._grid == grid):
             return self.grid_tiles
 
@@ -404,6 +403,10 @@ class Notice:
                     grid = db_grid.skygrid
             except Exception:
                 raise ValueError('No grid provided and cannot get current grid from ObsDB')
+
+        # We need a skymap to select tiles
+        if self.skymap is None:
+            raise ValueError('Cannot select tiles without a skymap')
 
         # If the skymap is too big we regrade before applying it to the grid
         skymap = self.skymap.copy()
@@ -419,7 +422,47 @@ class Notice:
         self._grid = grid.copy()
         self.grid_tiles = grid_tiles.copy()
 
-        return grid_tiles
+        return self.grid_tiles
+
+    def select_tiles(self, grid=None):
+        """Select grid tiles for this notice using the strategy limits."""
+        if self.selected_tiles is not None and (grid is None or self._grid == grid):
+            return self.selected_tiles
+
+        if grid is None or not isinstance(grid, SkyGrid):
+            # If we're not given a grid, try getting it from the ObsDB
+            try:
+                from gtecs.obs import database as obs_db
+                with obs_db.session_manager() as session:
+                    db_grid = obs_db.get_current_grid(session)
+                    grid = db_grid.skygrid
+            except Exception:
+                raise ValueError('No grid provided and cannot get current grid from ObsDB')
+
+        # Get the full tile table (this will require the skymap, and will also cache the grid)
+        grid_tiles = self.get_tiles(grid)
+
+        # We need a strategy to select tiles, retraction or ignore notices won't have one.
+        # Retractions will have already failed to get the skymap above, so this is just
+        # if we're ignoring the notice.
+        # We could raise an error, but returning an empty table seems cleaner.
+        if self.strategy_dict is None:
+            return grid_tiles[0:0]
+
+        # Select tiles within the skymap contour and above the minimum probability threshold
+        mask = ((grid_tiles['contour'] < self.strategy_dict['skymap_contour']) &
+                (grid_tiles['prob'] > self.strategy_dict['min_tile_prob']))
+        selected_tiles = grid_tiles[mask]
+        selected_tiles.sort('prob', reverse=True)
+
+        if len(selected_tiles) > self.strategy_dict['max_tiles']:
+            # Limit to only the N highest probability tiles
+            selected_tiles = selected_tiles[:self.strategy_dict['max_tiles']]
+
+        # Cache the selected tiles to save time for future calls
+        self.selected_tiles = selected_tiles.copy()
+
+        return self.selected_tiles
 
     @property
     def strategy(self):
@@ -952,6 +995,10 @@ class GWNotice(Notice):
             is the main factor. We could consider the exposure time per tile, but assuming that's
             constant (aside from slew time) it's not really necessary.
             Basic rule of thumb is 5 minutes per tile, so 120 tiles in an average 10 hour night.
+
+            And note we just filter the full tile list, not the notice.selected_tiles() which
+            requires the notice strategy. Obviously at this point we're trying to decide the
+            strategy, so we can't use that here!
 
             """
             grid_tiles = notice.get_tiles()
