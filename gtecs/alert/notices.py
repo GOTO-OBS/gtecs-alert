@@ -467,6 +467,17 @@ class Notice:
     @property
     def strategy(self):
         """Get the observing strategy key."""
+        if not hasattr(self, '_strategy'):
+            self._strategy = self.get_strategy()
+        return self._strategy
+
+    @strategy.setter
+    def strategy(self, value):
+        """Override the default observing strategy key."""
+        self._strategy = value
+
+    def get_strategy(self):
+        """Get the observing strategy key."""
         return 'DEFAULT'
 
     @staticmethod
@@ -904,6 +915,11 @@ class GWNotice(Notice):
             self._strategy = self.get_strategy()
         return self._strategy
 
+    @strategy.setter
+    def strategy(self, value):
+        """Override the default observing strategy key."""
+        self._strategy = value
+
     def get_strategy(self):
         """Get the observing strategy key."""
         if self.skymap is None:
@@ -1186,6 +1202,17 @@ class GWRetractionNotice(Notice):
     @property
     def strategy(self):
         """Get the observing strategy key."""
+        if not hasattr(self, '_strategy'):
+            self._strategy = self.get_strategy()
+        return self._strategy
+
+    @strategy.setter
+    def strategy(self, value):
+        """Override the default observing strategy key."""
+        self._strategy = value
+
+    def get_strategy(self):
+        """Get the observing strategy key."""
         return 'RETRACTION'
 
     @property
@@ -1267,6 +1294,17 @@ class FermiNotice(Notice):
 
     @property
     def strategy(self):
+        """Get the observing strategy key."""
+        if not hasattr(self, '_strategy'):
+            self._strategy = self.get_strategy()
+        return self._strategy
+
+    @strategy.setter
+    def strategy(self, value):
+        """Override the default observing strategy key."""
+        self._strategy = value
+
+    def get_strategy(self):
         """Get the observing strategy key."""
         if self.skymap is None:
             # We need the skymap to know the area
@@ -1350,6 +1388,17 @@ class SwiftNotice(Notice):
     @property
     def strategy(self):
         """Get the observing strategy key."""
+        if not hasattr(self, '_strategy'):
+            self._strategy = self.get_strategy()
+        return self._strategy
+
+    @strategy.setter
+    def strategy(self, value):
+        """Override the default observing strategy key."""
+        self._strategy = value
+
+    def get_strategy(self):
+        """Get the observing strategy key."""
         return 'GRB_SWIFT'
 
     @property
@@ -1418,6 +1467,17 @@ class GECAMNotice(Notice):
     @property
     def strategy(self):
         """Get the observing strategy key."""
+        if not hasattr(self, '_strategy'):
+            self._strategy = self.get_strategy()
+        return self._strategy
+
+    @strategy.setter
+    def strategy(self, value):
+        """Override the default observing strategy key."""
+        self._strategy = value
+
+    def get_strategy(self):
+        """Get the observing strategy key."""
         return 'GRB_OTHER'
 
     @property
@@ -1479,6 +1539,17 @@ class EinsteinProbeNotice(Notice):
 
     @property
     def strategy(self):
+        """Get the observing strategy key."""
+        if not hasattr(self, '_strategy'):
+            self._strategy = self.get_strategy()
+        return self._strategy
+
+    @strategy.setter
+    def strategy(self, value):
+        """Override the default observing strategy key."""
+        self._strategy = value
+
+    def get_strategy(self):
         """Get the observing strategy key."""
         return 'GRB_OTHER'
 
@@ -1570,6 +1641,17 @@ class SVOMNotice(Notice):
     @property
     def strategy(self):
         """Get the observing strategy key."""
+        if not hasattr(self, '_strategy'):
+            self._strategy = self.get_strategy()
+        return self._strategy
+
+    @strategy.setter
+    def strategy(self, value):
+        """Override the default observing strategy key."""
+        self._strategy = value
+
+    def get_strategy(self):
+        """Get the observing strategy key."""
         if self.instrument == 'ECLAIRs':
             # ECLAIRs has a narrow field of view, so we use the Swift strategy
             return 'GRB_SWIFT'
@@ -1651,6 +1733,17 @@ class IceCubeNotice(Notice):
 
     @property
     def strategy(self):
+        """Get the observing strategy key."""
+        if not hasattr(self, '_strategy'):
+            self._strategy = self.get_strategy()
+        return self._strategy
+
+    @strategy.setter
+    def strategy(self, value):
+        """Override the default observing strategy key."""
+        self._strategy = value
+
+    def get_strategy(self):
         """Get the observing strategy key."""
         if self.type == 'ASTROTRACK_GOLD':
             return 'NU_ICECUBE_GOLD'
