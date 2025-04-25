@@ -74,7 +74,7 @@ def session_manager(**kwargs):
 
 
 class Event(Base):
-    """A class to represent a transient astrophysical Event.
+    """A class to represent a transient detection of an astrophysical Event.
 
     Events can be linked to Notices, with a specific event (e.g. GW170817)
     potentially producing multiple Notices as the skymap is updated.
@@ -98,6 +98,8 @@ class Event(Base):
     ---------------------
     notices : list of `Notice`, optional
         the Notices relating to this Event, if any
+    coincidence : `Coincidence`, optional
+        the Coincidence group for this Event, if any
 
     Attributes
     ----------
@@ -125,6 +127,9 @@ class Event(Base):
     origin = Column(String(255), nullable=False)
     time = Column(DateTime, nullable=True, default=None)
 
+    # Foreign keys
+    coincidence_id = Column(Integer, ForeignKey('alert.coincidences.id'), nullable=True)
+
     # Update timestamp
     ts = Column(DateTime, nullable=False, server_default=func.now())
 
@@ -133,6 +138,11 @@ class Event(Base):
         'Notice',
         order_by='Notice.db_id',
         back_populates='event',
+    )
+    coincidence = relationship(
+        'Coincidence',
+        order_by='Coincidence.db_id',
+        back_populates='events',
     )
 
     # Secondary relationships
@@ -265,6 +275,15 @@ class Notice(Base):
         ),
         viewonly=True,
     )
+    coincidence = relationship(
+        'Coincidence',
+        order_by='Coincidence.db_id',
+        secondary='alert.events',
+        primaryjoin='Event.db_id == Notice.event_id',
+        secondaryjoin='Coincidence.db_id == Event.coincidence_id',
+        back_populates='notices',
+        viewonly=True,
+    )
 
     def __repr__(self):
         strings = ['ivorn={}'.format(self.ivorn),
@@ -331,6 +350,63 @@ class Notice(Base):
             # Decode the bytes
             notice.skymap = SkyMap.from_fits(self.skymap)
         return notice
+
+
+class Coincidence(Base):
+    """A class to represent a coincidental link between multiple Events.
+
+    While Events are linked to a specific origin (e.g. LVC, Fermi, IceCube),
+    Coincidences are used to link multiple Events from different origins together.
+    For instance a GRB could be detected by multiple satellites (Fermi, Swift, GECAM, etc).
+
+    Attributes
+    ----------
+    db_id : int
+        primary database key
+        only populated when the instance is added to the database
+
+    Secondary relationships
+    -----------------------
+    events : list of `gtecs.alert.database.Event`
+        the Events relating to this Coincidence, if any
+    notices : list of `gtecs.alert.database.Notice`
+        the Notices relating to this Coincidence, if any
+
+    """
+
+    # Set corresponding SQL table name
+    __tablename__ = 'coincidences'
+    __table_args__ = {'schema': 'alert'}
+
+    # Primary key
+    db_id = Column('id', Integer, primary_key=True)
+
+    # Update timestamp
+    ts = Column(DateTime, nullable=False, server_default=func.now())
+
+    # Foreign relationships
+    events = relationship(
+        'Event',
+        order_by='Event.db_id',
+        back_populates='coincidence',
+    )
+
+    # Secondary relationships
+    notices = relationship(
+        'Notice',
+        order_by='Notice.db_id',
+        secondary='alert.events',
+        primaryjoin='Event.coincidence_id == Coincidence.db_id',
+        secondaryjoin='Notice.event_id == Event.db_id',
+        back_populates='coincidence',
+        viewonly=True,
+        uselist=True,
+    )
+
+    def __repr__(self):
+        strings = ['db_id={}'.format(self.db_id),
+                   ]
+        return 'Coincidence({})'.format(', '.join(strings))
 
 
 # Registries for other entities

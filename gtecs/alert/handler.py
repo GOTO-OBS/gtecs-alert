@@ -208,31 +208,96 @@ def check_coincident_events(notice, time_window=10, skymap_contour=0.95, time=No
         return False
     log.info(f'Found {len(coincident_events)} coincident events')
 
-    # There are matching events, now we want to go through and check if any of them
-    # are "better" than this one.
+    # There are matching events, great!
+    # Now we want to go through each of them and log the coincidence, then check if any of
+    # their notices are are "better" than this one.
     with alert_db.session_manager() as session:
-        found_better = False
-        for event_parameters in coincident_events:
-            # Get the event ID and parameters
-            db_event_id, time_diff, skymap_overlap, tile_overlap = event_parameters
+        # Get the event for the current notice
+        db_notice = session.query(alert_db.Notice).filter_by(ivorn=notice.ivorn).one()
+        db_event = db_notice.event
 
-            # Get the event ant latest notice from the database
-            db_event = session.query(alert_db.Event).filter_by(db_id=db_event_id).one()
-            event_notice = db_event.notices[-1].gcn
-            log.info(f'Coincident event: {db_event.name}')
-            log.info(f'Latest notice: {event_notice.ivorn}')
+        found_better = False
+        for matched_event_id, time_diff, skymap_overlap, tile_overlap in coincident_events:
+            # Get the event and latest notice from the database
+            matched_event = session.query(alert_db.Event).filter_by(db_id=matched_event_id).one()
+            log.info(f'Coincident event: {matched_event.name}')
+
+            # Create a Coincidence group for this Event, or add it to an existing one
+            if matched_event.coincidence is None and db_event.coincidence is None:
+                # Create a new Coincidence group
+                db_coincidence = alert_db.Coincidence()
+                session.add(db_coincidence)
+                session.commit()
+                # Link this old event and the new one to the new Coincidence group
+                matched_event.coincidence = db_coincidence
+                db_event.coincidence = db_coincidence
+                log.debug(f'Creating new Coincidence group {db_coincidence.db_id}')
+            elif db_event.coincidence is None:
+                # The matched Event is already part of a Coincidence group,
+                # so we just need to add our new event to it
+                db_event.coincidence = matched_event.coincidence
+                log.debug(f'Extending Coincidence group {matched_event.coincidence.db_id}')
+            else:
+                # Somehow our new Event is already in a Coincidence group.
+                # This could happen if we're looping through matched events, and we've just
+                # added or created a new group.
+                # Or this is an update notice for an already-existing event.
+                if matched_event.coincidence == db_event.coincidence:
+                    # That's fine, they're already in the same group.
+                    log.debug(f'Already in Coincidence group {db_event.coincidence.db_id}')
+                elif matched_event.coincidence is None:
+                    # The matched Event is not in a Coincidence group, so we can add it to ours.
+                    # This could happen if Event A and Event B weren't matched,
+                    # now Event C comes along and matches both. So we created a new group with
+                    # Event A, and now we backfill it onto Event B.
+                    matched_event.coincidence = db_event.coincidence
+                    log.debug(f'Backfilling Coincidence group {db_event.coincidence.db_id}')
+                else:
+                    # Here we have a problem, our new Event is in a different group
+                    # than this one that was matched to it.
+                    # This should be very uncommon, but it could happen e.g.
+                    # - Event A and B have identical timestamps and are grouped together,
+                    # - Event C and D have a different timestamp 11 seconds away from the first,
+                    #   so they're grouped together into a new group,
+                    # - Event E has appears in between the two times, so is matched to all 4.
+                    # (this is assuming all their skymaps all overlap).
+                    # The matched events should be sorted by time, so if we've already matched
+                    # this new event to a group then we should keep it and move this matched event
+                    # into it.
+                    log.warning('Multiple Coincidence groups detected!')
+                    msg = f'Merging {matched_event.coincidence.db_id}'
+                    msg += ' into {db_event.coincidence.db_id}'
+                    log.warning(msg)
+                    # Now we have a problem because there might be other events in the second
+                    # group which weren't matched to this new notice!
+                    # So we need to query for them and change their group too.
+                    query = session.query(alert_db.Event)
+                    query = query.filter(alert_db.Event.coincidence==matched_event.coincidence)
+                    query = query.filter(alert_db.Event!=matched_event)
+                    grouped_events = query.all()
+                    # Now replace the groups for these events
+                    log.debug(f'Backfilling Coincidence group {db_event.coincidence.db_id}')
+                    matched_event.coincidence = db_event.coincidence
+                    for grouped_event in grouped_events:
+                        log.debug(f'Backfilling secondary Event {db_event.name}')
+                        grouped_event.coincidence = db_event.coincidence
+                    # This will leave an empty Coincidence row, which is a bit awkward,
+                    # but without some many-to-many option of Events being part of multiple groups
+                    # there's no easier option.
 
             # Check if the notice has any targets
-            if len(db_event.notices[-1].targets) == 0:
+            if len(matched_event.notices[-1].targets) == 0:
                 # No targets for this notice (might have been below min_prob), so we can ignore it
                 log.info('Notice has no targets defined')
                 continue
 
+            # Now we can actually look at the matched notice
+            # TODO: ADD SLACK MESSAGE
+            matched_notice = matched_event.notices[-1].gcn
+            log.info(f'Latest notice: {matched_notice.ivorn}')
             log.debug(f'Time difference: {time_diff:.3f}s')
             log.debug(f'Skymap overlap: {skymap_overlap:.0%}')
             log.debug(f'Tile overlap: {tile_overlap:.0%}')
-
-            # TODO: ADD SLACK MESSAGE
 
             # Now we want to decide which notice is best to observe.
             # It's not actually that obvious. We could compare the size of the skymaps or
@@ -240,7 +305,7 @@ def check_coincident_events(notice, time_window=10, skymap_contour=0.95, time=No
             # case where a smaller skymap had more tiles added to the ObsDB.
             # Easiest is just to go with the skymap area for which event better localised and
             # therefore closer to the "real" position.
-            old_area = event_notice.skymap.get_contour_area(skymap_contour)
+            old_area = matched_notice.skymap.get_contour_area(skymap_contour)
             new_area = notice.skymap.get_contour_area(skymap_contour)
             log.debug(f'Old skymap area: {old_area:.2f} deg2')
             log.debug(f'New skymap area: {new_area:.2f} deg2')

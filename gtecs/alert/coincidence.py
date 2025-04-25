@@ -82,7 +82,7 @@ def find_coincident_events(
 
     Returns
     -------
-    matching_events : list of int or list of tuples
+    matched_event_ids : list of int or list of tuples
         If `return_parameters` is False, a list of database IDs for any matching events.
         If `return_parameters` is True, a list of tuples containing the database ID,
         time difference, skymap overlap, and tile overlap for each matching event.
@@ -100,27 +100,28 @@ def find_coincident_events(
         query = query.filter(alert_db.Event.name != notice.event_name) # Don't include this event!
         if type_limit:
             query = query.filter(alert_db.Event.type == notice.event_type)
-        db_events = query.all()
+        query = query.order_by(alert_db.Event.time)
+        matched_events = query.all()
 
         # Nothing within the time window
-        if len(db_events) == 0:
+        if len(matched_events) == 0:
             return []
 
         # We found some, but we want to check if any of them overlap with this notice's skymap
         # We want to check both the notice skymaps and the selected tiles,
         # as either overlapping should trigger a match.
-        matching_events = []
-        for db_event in db_events:
+        matched_event_ids = []
+        for matched_event in matched_events:
             # We only care about the latest notice for each event,
             # any previous ones should have already been deleted.
-            event_notice = db_event.notices[-1].gcn
-            time_diff = (event_notice.event_time - notice.event_time).value
+            matched_notice = matched_event.notices[-1].gcn
+            time_diff = (notice.event_time - matched_notice.event_time).to(u.second).value
 
             # Check if either of the notice skymaps or tilesets overlap
             skymap_overlap = get_skymap_overlap(
-                notice.skymap, event_notice.skymap, contour=skymap_contour
+                notice.skymap, matched_notice.skymap, contour=skymap_contour
             )
-            tile_overlap = get_tile_overlap(notice, event_notice)
+            tile_overlap = get_tile_overlap(notice, matched_notice)
             if tile_overlap == 0 and skymap_overlap == 0:
                 # Neither overlap, so the time must have been a coincidence
                 continue
@@ -128,14 +129,14 @@ def find_coincident_events(
             # We have a match!
             if return_parameters:
                 params = (
-                    db_event.db_id,
+                    matched_event.db_id,
                     time_diff,
                     skymap_overlap,
                     tile_overlap
                 )
-                matching_events.append(params)
+                matched_event_ids.append(params)
             else:
                 # Just append the event ID
-                matching_events.append(db_event.db_id)
+                matched_event_ids.append(matched_event.db_id)
 
-    return matching_events
+    return matched_event_ids
