@@ -315,7 +315,7 @@ def check_coincident_events(notice, time_window=10, skymap_contour=0.95, time=No
                 # If there are multiple previous Surveys then all but the latest should have already
                 # been deleted, but we might as well go through and check to be sure.
                 log.info('New notice skymap is smaller, deleting existing targets')
-                for db_survey in db_event.surveys:
+                for db_survey in matched_event.surveys:
                     delete_survey_targets(db_survey, time, log)
             else:
                 # The new notice is worse, so we want to ignore it and keep the existing targets.
@@ -323,6 +323,7 @@ def check_coincident_events(notice, time_window=10, skymap_contour=0.95, time=No
                 found_better = True
 
         return found_better
+
 
 def add_targets_to_database(notice, time=None, log=None):
     """Add Targets for the given notice to the observation database.
