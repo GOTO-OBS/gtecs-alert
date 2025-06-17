@@ -343,6 +343,9 @@ class Sentinel:
                         self.log.error(f'Error creating notice: {err}')
                         self.log.debug(f'Payload: {payload}')
                         self.log.debug('', exc_info=True)
+                        msg = 'Sentinel reports ERROR creating notice'
+                        msg += f' ("{err.__class__.__name__}: {err}")'
+                        send_slack_msg(msg)
                         # TODO: We could mark the message as unread if there's an error
                         # by using auto_commit=False.
                         # But the main processing is in the handler thread, so we won't know
