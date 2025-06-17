@@ -459,8 +459,8 @@ class Sentinel:
                     if notice.source == 'Fermi' and not notice.ivorn.endswith('_new_skymap'):
                         try:
                             # Check if the URL was valid
-                            urlopen(notice.skymap_url)
-                        except URLError:
+                            urlopen(notice.skymap_url, timeout=5)
+                        except (URLError, socket.timeout):
                             # The skymap hasn't been uploaded yet
                             self.log.debug('Starting Fermi skymap listener thread')
                             t = threading.Thread(
@@ -533,11 +533,11 @@ class Sentinel:
             timed_out = False
             while self.running and not found_skymap and not timed_out:
                 try:
-                    urlopen(notice.skymap_url)
+                    urlopen(notice.skymap_url, timeout=5)
                     notice = Notice.from_payload(notice.payload)
                     notice.ivorn = notice.ivorn + '_new_skymap'  # create a new ivorn for the DB
                     found_skymap = True
-                except URLError:
+                except (URLError, socket.timeout):
                     # if the link is not working yet, sleep for 30s
                     time.sleep(30)
                 if time.time() - start_time > timeout:

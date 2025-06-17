@@ -306,9 +306,9 @@ class Notice:
         return cls.from_payload(payload)
 
     @classmethod
-    def from_url(cls, url):
+    def from_url(cls, url, timeout=5):
         """Create a Notice (or appropriate subclass) by downloading from the given URL."""
-        with urlopen(url) as r:
+        with urlopen(url, timeout=timeout) as r:
             payload = r.read()
         return cls.from_payload(payload)
 
