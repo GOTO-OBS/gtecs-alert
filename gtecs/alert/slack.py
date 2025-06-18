@@ -182,9 +182,15 @@ def send_notice_report(notice, time=None):
     message_link = send_slack_msg(msg, filepath=filepath, channel=slack_channel, return_link=True)
 
     # If not sent to the default channel, send a copy there too
-    if slack_channel != params.SLACK_DEFAULT_CHANNEL:
-        forward_message = f'<{message_link}|Notice details>'
-        send_slack_msg(forward_message, channel=params.SLACK_DEFAULT_CHANNEL)
+    if slack_channel != params.SLACK_DEFAULT_CHANNEL and params.FORWARD_SLACK_MESSAGES:
+        forward_message = f'{notice.ivorn}: '
+        forward_message += f'Sent <{message_link}|Notice details> to <#{slack_channel}>'
+        send_slack_msg(
+            forward_message,
+            channel=params.SLACK_DEFAULT_CHANNEL,
+            unfurl_links=False,
+            unfurl_media=False,
+        )
 
     # Forward to the wakeup channel if requested
     if (notice.strategy_dict is not None and 'wakeup_alert' in notice.strategy_dict and
@@ -431,6 +437,12 @@ def send_observing_report(notice, time=None):
     message_link = send_slack_msg(msg, filepath=filepath, channel=slack_channel, return_link=True)
 
     # If not sent to the default channel, send a copy there too
-    if slack_channel != params.SLACK_DEFAULT_CHANNEL:
-        forward_message = f'<{message_link}|Observing details>'
-        send_slack_msg(forward_message, channel=params.SLACK_DEFAULT_CHANNEL)
+    if slack_channel != params.SLACK_DEFAULT_CHANNEL and params.FORWARD_SLACK_MESSAGES:
+        forward_message = f'{notice.ivorn}: '
+        forward_message += f'Sent <{message_link}|Observing details> to <#{slack_channel}>'
+        send_slack_msg(
+            forward_message,
+            channel=params.SLACK_DEFAULT_CHANNEL,
+            unfurl_links=False,
+            unfurl_media=False,
+        )
