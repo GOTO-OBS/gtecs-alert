@@ -8,7 +8,7 @@ from sqlalchemy import MetaData, create_engine
 
 from alembic import context
 from gtecs.alert import params
-from gtecs.alert.database import Base
+from gtecs.alert.database import Base, functions, triggers
 
 # This is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -18,6 +18,26 @@ if config.config_file_name is not None:
 
 # Get the table metadata from the Base, which includes all schemas
 target_metadata = Base.metadata
+
+# Automatically create and register alembic-utils entities for functions and triggers
+entities = []
+for func_info in functions.values():
+    pg_function = PGFunction(
+        schema=func_info["schema"],
+        signature=func_info["signature"],
+        definition=func_info["definition"],
+    )
+    entities.append(pg_function)
+for trigger_info in triggers.values():
+    pg_trigger = PGTrigger(
+        schema=trigger_info["schema"],
+        signature=trigger_info["signature"],
+        on_entity=trigger_info["on_entity"],
+        is_constraint=False,
+        definition=trigger_info["definition"],
+    )
+    entities.append(pg_trigger)
+register_entities(entities)
 
 
 def get_url() -> str:
