@@ -16,12 +16,8 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# Filter Base.metadata to only include tables in the 'alert' schema
-metadata = MetaData(schema="alert")
-for table in Base.metadata.tables.values():
-    if table.schema == "alert":
-        table.tometadata(metadata)
-target_metadata = metadata
+# Get the table metadata from the Base, which includes all schemas
+target_metadata = Base.metadata
 
 
 def get_url() -> str:
@@ -34,10 +30,7 @@ def get_url() -> str:
 
 def include_name(name, type_, parent_names):
     """Include only specific object types in autogenerate."""
-    if type_ == "schema":
-        # Exclude other schemas
-        return name == "alert"
-    elif type_ == "grant_table":
+    if type_ == "grant_table":
         # Exclude tracking grants
         return False
     else:
@@ -46,8 +39,12 @@ def include_name(name, type_, parent_names):
 
 def include_object(object, name, type_, reflected, compare_to):
     """Include only specific objects in autogenerate."""
-    if hasattr(object, "schema") and object.schema != "alert":
-        # Only include objects in the alert schema
+    # Only generate migration operations for alert schema objects
+    if hasattr(object, "schema"):
+        if object.schema != "alert":
+            return False
+    # For reflected objects (from database), only include alert schema
+    if reflected and hasattr(object, "schema") and object.schema != "alert":
         return False
     return True
 
