@@ -19,6 +19,16 @@ from . import params
 from .notices import Notice as EventNotice
 
 
+__all__ = [
+    'get_session',
+    'session_manager',
+    'Event',
+    'Notice',
+]
+
+SCHEMA = 'alert'
+
+
 def get_session(user=None, password=None, host=None, echo=None, pool_pre_ping=None):
     """Create a database connection session.
 
@@ -104,7 +114,7 @@ class Event(Base):
 
     # Set corresponding SQL table name
     __tablename__ = 'events'
-    __table_args__ = {'schema': 'alert'}
+    __table_args__ = {'schema': SCHEMA}
 
     # Primary key
     db_id = Column('id', Integer, primary_key=True)
@@ -126,7 +136,7 @@ class Event(Base):
     surveys = relationship(
         'Survey',
         order_by='Survey.db_id',
-        secondary='alert.notices',
+        secondary=f'{SCHEMA}.notices',
         primaryjoin='Notice.event_id == Event.db_id',
         secondaryjoin='Survey.db_id == Notice.survey_id',
         backref=backref(  # NB Use legacy backref to add corresponding relationship to Surveys
@@ -206,7 +216,7 @@ class Notice(Base):
 
     # Set corresponding SQL table name
     __tablename__ = 'notices'
-    __table_args__ = {'schema': 'alert'}
+    __table_args__ = {'schema': SCHEMA}
 
     # Primary key
     db_id = Column('id', Integer, primary_key=True)
@@ -218,7 +228,7 @@ class Notice(Base):
     skymap = Column(LargeBinary, nullable=True)
 
     # Foreign keys
-    event_id = Column(Integer, ForeignKey('alert.events.id'), nullable=True)
+    event_id = Column(Integer, ForeignKey(f'{SCHEMA}.events.id'), nullable=True)
     survey_id = Column(Integer, ForeignKey('obs.surveys.id'), nullable=True)
 
     # Foreign relationships
