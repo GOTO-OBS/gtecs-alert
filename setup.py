@@ -13,6 +13,10 @@ REQUIRES = ['numpy',
             'pandas',
             'requests',
             'setuptools',
+            'sqlalchemy>=2',
+            'psycopg2',
+            'alembic',
+            'alembic-utils',
             ]
 
 setup(name='gtecs-alert',
