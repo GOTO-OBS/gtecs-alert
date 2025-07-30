@@ -2,6 +2,7 @@
 """Prepare a blank alert database."""
 
 import argparse
+import getpass
 import sys
 
 from sqlalchemy import text
@@ -193,6 +194,10 @@ def run(overwrite=False, verbose=False):
         if not overwrite:
             print("ERROR: Database contains data.")
             print("       Use -o/--overwrite to clear existing data.")
+            sys.exit(1)
+        elif getpass.getuser() == 'goto':
+            print("ERROR: Attempting to clear GOTO database.")
+            print("       This is not allowed for safety reasons.")
             sys.exit(1)
         else:
             try:
