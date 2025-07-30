@@ -415,11 +415,16 @@ class Sentinel:
 
         while self.running:
             if len(self.notice_queue) > 0:
-                # We have received a new notice
-                self.received_notices += 1
-                notice = self.notice_queue.pop(0)
-                self.latest_notice = notice
-                self.log.debug('Processing new notice: {}'.format(notice.ivorn))
+                try:
+                    # We have received a new notice
+                    self.received_notices += 1
+                    notice = self.notice_queue.pop(0)
+                    self.latest_notice = notice
+                    self.log.debug('Processing new notice: {}'.format(notice.ivorn))
+                except:
+                    self.log.error('Error getting notice from queue')
+                    self.log.debug('', exc_info=True)
+                    continue
 
                 try:
                     # Check if we want to process or ignore it
