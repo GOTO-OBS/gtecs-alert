@@ -28,6 +28,16 @@ You should then be able to import the module from within Python.
 
 Several scripts from the `scripts` folder should also be added to your path, in particular the `sentinel` script which will listen for live GCN alerts (see **Usage** below).
 
+### Setting up the database
+
+You'll need to make sure PostgreSQL is installed and configured before setting up the database. The config file contains parameters for the user and password to use when interacting with the database, make sure you create this user with rights first (e.g. `sudo -u postgres createuser -edP gtecs`) (a useful hint from https://stackoverflow.com/a/26735105:  edit `/etc/postgresql/12/main/pg_hba.conf` to change `local all all peer` to ` local all all md5` to remove the annoying user bits, then restart `sudo service postgresql restart`).
+
+Then you can create the database with `createdb -O gtecs gtecs`, or just log into PostgreSQL as the `gtecs` user and run `CREATE DATABASE gtecs;`.
+
+Database migrations are handled using Alembic, which should be installed as part of the package. To create the initial database schema, run:
+
+    alembic upgrade head
+
 ### Configuration
 
 The module will look for a file named `.alert.conf` either in the user's home directory, the `gtecs` subdirectory, or a path specified by the `GTECS_CONF` environment variable. An example file is included in the base directory of this repository.

@@ -19,6 +19,16 @@ from . import params
 from .notices import Notice as EventNotice
 
 
+__all__ = [
+    'get_session',
+    'session_manager',
+    'Event',
+    'Notice',
+]
+
+SCHEMA = 'alert'
+
+
 def get_session(user=None, password=None, host=None, echo=None, pool_pre_ping=None):
     """Create a database connection session.
 
@@ -104,7 +114,7 @@ class Event(Base):
 
     # Set corresponding SQL table name
     __tablename__ = 'events'
-    __table_args__ = {'schema': 'alert'}
+    __table_args__ = {'schema': SCHEMA}
 
     # Primary key
     db_id = Column('id', Integer, primary_key=True)
@@ -114,6 +124,9 @@ class Event(Base):
     type = Column(String(255), nullable=False, index=True)  # noqa: A003
     origin = Column(String(255), nullable=False)
     time = Column(DateTime, nullable=True, default=None)
+
+    # Update timestamp
+    ts = Column(DateTime, nullable=False, server_default=func.now())
 
     # Foreign relationships
     notices = relationship(
@@ -126,7 +139,7 @@ class Event(Base):
     surveys = relationship(
         'Survey',
         order_by='Survey.db_id',
-        secondary='alert.notices',
+        secondary=f'{SCHEMA}.notices',
         primaryjoin='Notice.event_id == Event.db_id',
         secondaryjoin='Survey.db_id == Notice.survey_id',
         backref=backref(  # NB Use legacy backref to add corresponding relationship to Surveys
@@ -206,7 +219,7 @@ class Notice(Base):
 
     # Set corresponding SQL table name
     __tablename__ = 'notices'
-    __table_args__ = {'schema': 'alert'}
+    __table_args__ = {'schema': SCHEMA}
 
     # Primary key
     db_id = Column('id', Integer, primary_key=True)
@@ -218,8 +231,11 @@ class Notice(Base):
     skymap = Column(LargeBinary, nullable=True)
 
     # Foreign keys
-    event_id = Column(Integer, ForeignKey('alert.events.id'), nullable=True)
+    event_id = Column(Integer, ForeignKey(f'{SCHEMA}.events.id'), nullable=True)
     survey_id = Column(Integer, ForeignKey('obs.surveys.id'), nullable=True)
+
+    # Update timestamp
+    ts = Column(DateTime, nullable=False, server_default=func.now())
 
     # Foreign relationships
     event = relationship(
@@ -315,3 +331,41 @@ class Notice(Base):
             # Decode the bytes
             notice.skymap = SkyMap.from_fits(self.skymap)
         return notice
+
+
+# Registries for other entities
+# Note: These are created in the database via alembic-utils
+functions = {}
+triggers = {}
+
+# Define ts update function and triggers for tracking changes
+ts_function = 'update_ts()'
+ts_function_sql = """RETURNS TRIGGER
+LANGUAGE plpgsql AS
+$function$
+BEGIN
+    NEW.ts := now();
+    RETURN NEW;
+END
+$function$;
+"""
+functions[ts_function] = {
+    'schema': SCHEMA,
+    'signature': ts_function,
+    'definition': ts_function_sql,
+}
+tables_with_ts = [
+    table for table in Base.metadata.tables.values()
+    if table.schema == SCHEMA and 'ts' in table.columns
+]
+for table in tables_with_ts:
+    ts_trigger = f'trig_update_ts_{table.name}'
+    ts_trigger_sql = f"""BEFORE UPDATE ON {SCHEMA}.{table.name}
+    FOR EACH ROW EXECUTE FUNCTION {SCHEMA}.update_ts();
+    """
+    triggers[ts_trigger] = {
+        'schema': SCHEMA,
+        'signature': ts_trigger,
+        'on_entity': f"{SCHEMA}.{table.name}",
+        'definition': ts_trigger_sql,
+    }

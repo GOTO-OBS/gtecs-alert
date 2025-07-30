@@ -1,50 +1,241 @@
 #!/usr/bin/env python3
-"""Create a blank alert database."""
+"""Prepare a blank alert database."""
 
 import argparse
+import getpass
 import sys
 
+from sqlalchemy import text
+
+from gtecs.alert import database as db
 from gtecs.alert import params
 from gtecs.alert.database import Base
 from gtecs.common.database import create_database
 
 
+def check_database_connection():
+    """Check if we can connect to the database."""
+    try:
+        with db.session_manager() as session:
+            # Simple query to test database connection
+            session.execute(text("SELECT 1")).fetchone()
+            return True
+    except Exception:
+        raise
+        return False
+
+
+def check_schema_exists(schema_name):
+    """Check if the specified schema exists within the database."""
+    try:
+        with db.session_manager() as session:
+            # Try to query the information schema to see if our schema exists
+            result = session.execute(
+                text(
+                    f"SELECT schema_name FROM information_schema.schemata WHERE schema_name = '{schema_name}'"
+                )
+            ).fetchone()
+            return result is not None
+    except Exception:
+        return False
+
+
+def check_tables_exist(schema_name, base):
+    """Check if all expected tables exist in the specified schema."""
+    # Get expected table names from SQLAlchemy metadata
+    expected_tables = {
+        table.name
+        for table in base.metadata.tables.values()
+        if table.schema == schema_name
+    }
+
+    try:
+        with db.session_manager() as session:
+            # Query for all tables in the specified schema
+            result = session.execute(
+                text(
+                    f"SELECT table_name FROM information_schema.tables "
+                    f"WHERE table_schema = '{schema_name}' AND table_type = 'BASE TABLE'"
+                )
+            ).fetchall()
+
+            existing_tables = {row[0] for row in result}
+            missing_tables = expected_tables - existing_tables
+
+            return len(missing_tables) == 0, missing_tables
+    except Exception:
+        return False, expected_tables
+
+
+def check_database_empty(schema_name, base):
+    """Check if the database is empty (no data in any tables in the specified schema)."""
+    try:
+        with db.session_manager() as session:
+            # Check all tables for any data
+            for table in base.metadata.tables.values():
+                if table.schema == schema_name:
+                    result = session.execute(
+                        text(f"SELECT COUNT(*) FROM {schema_name}.{table.name}")
+                    ).scalar()
+                    if result > 0:
+                        return False
+            return True
+    except Exception:
+        return False
+
+
+def clear_database(schema_name, base, verbose=False):
+    """Clear all data from tables in the specified schema while preserving structure."""
+    # Get table names from metadata in reverse dependency order
+    # We need to delete in reverse order to avoid foreign key constraint issues
+    table_names = [
+        table.name
+        for table in reversed(base.metadata.sorted_tables)
+        if table.schema == schema_name
+    ]
+
+    try:
+        with db.session_manager() as session:
+            # Delete from tables in dependency order
+            for table_name in table_names:
+                result = session.execute(text(f"DELETE FROM {schema_name}.{table_name}"))
+                if result.rowcount > 0 and verbose:
+                    print(f"  Cleared {result.rowcount} rows from {table_name}")
+            session.commit()
+    except Exception as e:
+        session.rollback()
+
+        # Check if it's a foreign key violation
+        import psycopg2.errors
+        if isinstance(e.orig if hasattr(e, 'orig') else e, psycopg2.errors.ForeignKeyViolation):
+            error_msg = str(e)
+
+            # Extract both table names from the error message
+            referenced_table = None
+            referencing_table = None
+
+            if 'table "' in error_msg:
+                # Extract the referenced table (the one being deleted from)
+                start = error_msg.find('table "') + 7
+                end = error_msg.find('"', start)
+                referenced_table = error_msg[start:end]
+
+                # Extract the referencing table (the one with the foreign key)
+                if ' on table "' in error_msg:
+                    start = error_msg.find('" on table "') + 12
+                    end = error_msg.find('"', start)
+                    referencing_table = error_msg[start:end]
+
+            if referenced_table and referencing_table:
+                # Find schemas for both tables from metadata
+                referenced_schema = schema_name  # default to current schema
+                referencing_schema = 'public'   # default to public schema
+
+                for table in base.metadata.tables.values():
+                    if table.name == referenced_table:
+                        referenced_schema = table.schema or 'public'
+                    if table.name == referencing_table:
+                        referencing_schema = table.schema or 'public'
+
+                print(f"  ERROR clearing rows from {table_name} - foreign key violation.")
+                print(f"    Table {referencing_schema}.{referencing_table} has a foreign", end=' ')
+                print(f"key referencing {referenced_schema}.{referenced_table}.")
+                print(f"    Please clear the {referencing_schema} schema first.")
+            else:
+                print(f"ERROR: Foreign key violation: {error_msg}")
+        else:
+            print(f"ERROR: Failed to clear database: {e}")
+
+        sys.exit(1)
+
+
 def run(overwrite=False, verbose=False):
     """Create and fill the database."""
-    # Create a blank database
-    print('Creating blank database...')
-    try:
-        create_database(
-            Base,
-            name='alert',
-            description='Sentinel alert database',
-            user=params.DATABASE_USER,
-            password=params.DATABASE_PASSWORD,
-            host=params.DATABASE_HOST,
-            overwrite=overwrite,
-            verbose=verbose,
+
+    # Check if we can connect to the gtecs database
+    if not check_database_connection():
+        print('ERROR: Cannot connect to the "gtecs" database.')
+        print(
+            "       Please check your database configuration and ensure PostgreSQL is running."
         )
-    except ValueError as err:
-        if 'already exists' in str(err):
-            print('ERROR: Database already exists.')
-            print('       Rerun with -o/--overwrite to drop existing data.')
-            sys.exit()
+        print('       You may need to create the "gtecs" database first.')
+        sys.exit(1)
+
+    if verbose:
+        print('Successfully connected to "gtecs" database.')
+
+    # Check if the alert schema exists
+    if not check_schema_exists(schema_name="alert"):
+        print('ERROR: Schema "alert" does not exist in the gtecs database.')
+        print(
+            '       Please run "alembic upgrade head" to create the schema and tables.'
+        )
+        sys.exit(1)
+
+    if verbose:
+        print('Found existing schema "alert" in gtecs database.')
+
+    # Check if all expected tables exist
+    tables_exist, missing_tables = check_tables_exist(schema_name="alert", base=Base)
+    if not tables_exist:
+        print("ERROR: Schema exists but some tables are missing:")
+        for table in sorted(missing_tables):
+            print(f"       - {table}")
+        print('       Please run "alembic upgrade head" to create all required tables.')
+        sys.exit(1)
+
+    if verbose:
+        print("All expected tables found in database.")
+
+    # Check if the database is empty
+    is_empty = check_database_empty(schema_name="alert", base=Base)
+
+    if not is_empty:
+        if not overwrite:
+            print("ERROR: Database contains data.")
+            print("       Use -o/--overwrite to clear existing data.")
+            sys.exit(1)
+        elif getpass.getuser() == 'goto':
+            print("ERROR: Attempting to clear GOTO database.")
+            print("       This is not allowed for safety reasons.")
+            sys.exit(1)
         else:
-            raise
+            try:
+                print("Clearing existing data from database...")
+                clear_database(schema_name="alert", base=Base, verbose=verbose)
+                print("Database cleared successfully.")
+            except Exception as e:
+                print("ERROR: Failed to clear database.")
+                print(f"       {e}")
+                sys.exit(1)
+    else:
+        print("Database is empty.")
 
-    print('Done')
 
+if __name__ == "__main__":
+    description = """Setup the sentinel alert database.
 
-if __name__ == '__main__':
-    description = """Create the sentinel alert database."""
+    The database schema must already exist (created via alembic).
+    """
 
-    parser = argparse.ArgumentParser(description=description,
-                                     formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser = argparse.ArgumentParser(
+        description=description, formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
 
-    parser.add_argument('-v', '--verbose', action='store_true', default=False,
-                        help='Print SQL statements?')
-    parser.add_argument('-o', '--overwrite', action='store_true', default=False,
-                        help='Overwrite an existing database [WARNING: WILL LOSE DATA]?')
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        default=False,
+        help="Print verbose output",
+    )
+    parser.add_argument(
+        "-o",
+        "--overwrite",
+        action="store_true",
+        default=False,
+        help="Clear existing data [WARNING: WILL LOSE DATA]",
+    )
 
     args = parser.parse_args()
 
