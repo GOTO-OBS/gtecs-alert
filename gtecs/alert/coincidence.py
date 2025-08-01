@@ -94,9 +94,11 @@ def find_coincident_events(
     """
     with alert_db.session_manager() as session:
         # Get any Events from the database that have a matching event time
+        start_time = notice.event_time - time_window * u.second
+        end_time = notice.event_time + time_window * u.second
         query = session.query(alert_db.Event)
-        query = query.filter(alert_db.Event.time >= notice.event_time - time_window * u.second)
-        query = query.filter(alert_db.Event.time <= notice.event_time + time_window * u.second)
+        query = query.filter(alert_db.Event.time >= start_time.datetime)
+        query = query.filter(alert_db.Event.time <= end_time.datetime)
         query = query.filter(alert_db.Event.name != notice.event_name) # Don't include this event!
         if type_limit:
             query = query.filter(alert_db.Event.type == notice.event_type)
