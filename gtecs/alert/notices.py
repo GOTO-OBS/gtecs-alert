@@ -211,7 +211,10 @@ class Notice:
         if isinstance(self.message, VOEvent):
             self.source = self.message.ivorn.split('/')[3].split('#')[0]
             self.role = self.content['role']
-            self.time = Time(self.content['Who']['Date'])
+            date = self.content['Who']['Date']
+            if date.endswith('+00:00'): # SVOM notices add timezones which Astropy can't parse >:(
+                date = date[:-6]
+            self.time = Time(date)
         elif '$schema' in self.content:
             self.source = self.content['$schema'].split('/notices/')[-1].split('/')[0]
             self.role = 'observation'  # TODO: remove roles, have .test = True/False
@@ -303,9 +306,9 @@ class Notice:
         return cls.from_payload(payload)
 
     @classmethod
-    def from_url(cls, url):
+    def from_url(cls, url, timeout=5):
         """Create a Notice (or appropriate subclass) by downloading from the given URL."""
-        with urlopen(url) as r:
+        with urlopen(url, timeout=timeout) as r:
             payload = r.read()
         return cls.from_payload(payload)
 

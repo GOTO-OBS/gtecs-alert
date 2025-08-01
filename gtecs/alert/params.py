@@ -58,6 +58,7 @@ DATABASE_PRE_PING = bool(config['DATABASE_PRE_PING'])
 ENABLE_SLACK = bool(config['ENABLE_SLACK'])
 SLACK_BOT_TOKEN = config['SLACK_BOT_TOKEN']
 
+FORWARD_SLACK_MESSAGES = config['FORWARD_SLACK_MESSAGES']
 SLACK_DEFAULT_CHANNEL = config['SLACK_DEFAULT_CHANNEL']
 if SLACK_DEFAULT_CHANNEL == 'none':
     SLACK_DEFAULT_CHANNEL = None
@@ -71,3 +72,9 @@ SLACK_EVENT_CHANNELS = config['SLACK_EVENT_CHANNELS']
 for event_type in SLACK_EVENT_CHANNELS:
     if SLACK_EVENT_CHANNELS[event_type] == 'none':
         SLACK_EVENT_CHANNELS[event_type] = None
+
+############################################################
+# Check for any parameters in the config spec that have not been defined in this module
+unused_params = set(CONFIG_SPEC.keys()) - {name for name in locals() if name.isupper()}
+for key in unused_params:
+    print(f'Warning: {key} in the configspec is not defined in params')

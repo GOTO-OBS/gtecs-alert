@@ -343,6 +343,9 @@ class Sentinel:
                         self.log.error(f'Error creating notice: {err}')
                         self.log.debug(f'Payload: {payload}')
                         self.log.debug('', exc_info=True)
+                        msg = 'Sentinel reports ERROR creating notice'
+                        msg += f' ("{err.__class__.__name__}: {err}")'
+                        send_slack_msg(msg)
                         # TODO: We could mark the message as unread if there's an error
                         # by using auto_commit=False.
                         # But the main processing is in the handler thread, so we won't know
@@ -412,11 +415,16 @@ class Sentinel:
 
         while self.running:
             if len(self.notice_queue) > 0:
-                # We have received a new notice
-                self.received_notices += 1
-                notice = self.notice_queue.pop(0)
-                self.latest_notice = notice
-                self.log.debug('Processing new notice: {}'.format(notice.ivorn))
+                try:
+                    # We have received a new notice
+                    self.received_notices += 1
+                    notice = self.notice_queue.pop(0)
+                    self.latest_notice = notice
+                    self.log.debug('Processing new notice: {}'.format(notice.ivorn))
+                except:
+                    self.log.error('Error getting notice from queue')
+                    self.log.debug('', exc_info=True)
+                    continue
 
                 try:
                     # Check if we want to process or ignore it
@@ -459,8 +467,8 @@ class Sentinel:
                     if notice.source == 'Fermi' and not notice.ivorn.endswith('_new_skymap'):
                         try:
                             # Check if the URL was valid
-                            urlopen(notice.skymap_url)
-                        except URLError:
+                            urlopen(notice.skymap_url, timeout=5)
+                        except (URLError, socket.timeout):
                             # The skymap hasn't been uploaded yet
                             self.log.debug('Starting Fermi skymap listener thread')
                             t = threading.Thread(
@@ -533,11 +541,11 @@ class Sentinel:
             timed_out = False
             while self.running and not found_skymap and not timed_out:
                 try:
-                    urlopen(notice.skymap_url)
+                    urlopen(notice.skymap_url, timeout=5)
                     notice = Notice.from_payload(notice.payload)
                     notice.ivorn = notice.ivorn + '_new_skymap'  # create a new ivorn for the DB
                     found_skymap = True
-                except URLError:
+                except (URLError, socket.timeout):
                     # if the link is not working yet, sleep for 30s
                     time.sleep(30)
                 if time.time() - start_time > timeout:
