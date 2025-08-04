@@ -1,0 +1,81 @@
+#!/usr/bin/env python3
+"""Search the AlertDB for coincident events."""
+
+from gtecs.alert import database as db
+from gtecs.alert import notices
+from gtecs.alert.coincidence import find_coincident_events
+
+
+
+def run(time_window=10, skymap_contour=0.95):
+    with db.session_manager() as session:
+        # Get all GRB events from the database
+        db_events = session.query(db.Event).filter(db.Event.type == 'GRB').all()
+        db_events.sort(key=lambda x: x.time)
+        print('Found', len(db_events), 'GRB events')
+
+        # Loop through all events and find coincidences
+        for i, db_event in enumerate(db_events):
+            print(f'Processing event {i+1}/{len(db_events)}: {db_event.name} (db_id={db_event.db_id})')
+
+            # Check if we already have a coincidence group for this event
+            if db_event.coincidence is not None:
+                print(f'  - Already in Coincidence group {db_event.coincidence.db_id}')
+                continue
+
+            # Loop through all notices for this event
+            for db_notice in db_event.notices:
+                notice = db_notice.gcn
+                if type(notice) == notices.Notice:
+                    # Should be a subclass, must be invalid for some reason?
+                    # E.g. ivo://nasa.gsfc.gcn/SWIFT#BAT_GRB_Pos_1180055-466
+                    # is in the database but has a bad star lock
+                    print(f'  - Skipping notice (invalid type)')
+                    continue
+
+                # Find any coincident events
+                coincident_events = find_coincident_events(
+                    notice,
+                    time_window=time_window,
+                    skymap_contour=skymap_contour,
+                    return_parameters=False,
+                )
+                if len(coincident_events) == 0:
+                    continue
+
+                # We found a coincidence!
+                print(f'Found {len(coincident_events)} coincident events')
+
+                # What if this event is already in a group?
+                # We're looping through all notices, so we might have already
+                # added it from a previous notice.
+                if db_event.coincidence is not None:
+                    db_coincidence = db_event.coincidence
+                    print(f'  - Already in Coincidence group {db_coincidence.db_id}')
+                else:
+                    # Create a new Coincidence group
+                    print(f'  - Creating new Coincidence group')
+                    db_coincidence = db.Coincidence()
+                    session.add(db_coincidence)
+                    session.commit()
+
+                # Add the original and matched events to the group
+                db_event.coincidence = db_coincidence
+                for matched_id in coincident_events:
+                    matched_event = session.get(db.Event, matched_id)
+                    print(f'  - Adding {matched_event.name} to Coincidence group {db_coincidence.db_id}')
+                    matched_event.coincidence = db_coincidence
+
+                print(f'  - Coincidence group {db_coincidence.db_id} has {len(db_coincidence.events)} events')
+
+        # Now go through all Coincidence groups
+        db_coincidences = session.query(db.Coincidence).all()
+        print(f'Found {len(db_coincidences)} Coincidence groups')
+        for db_coincidence in db_coincidences:
+            print(f'Coincidence group {db_coincidence.db_id} has {len(db_coincidence.events)} events:')
+            for event in db_coincidence.events:
+                print(f'  - {event.name:<30} (db_id={event.db_id:>4}), {event.time}')
+
+
+if __name__ == "__main__":
+    run()
