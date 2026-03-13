@@ -442,7 +442,7 @@ def add_targets_to_database(notice, time=None, log=None):
         return [target.db_id for target in db_targets]
 
 
-def handle_notice(notice, send_messages=False, log=None, time=None):
+def handle_notice(notice, coincident_time_window=10, send_messages=False, log=None, time=None):
     """Handle a new transient notice.
 
     Parameters
@@ -450,6 +450,9 @@ def handle_notice(notice, send_messages=False, log=None, time=None):
     notice : `gtecs.alert.notices.Notice` or subclass
         The notice to handle
 
+    coincident_time_window : int, optional
+        Time window in seconds to check for coincident events.
+        Default is 10 s.
     send_messages : bool, optional
         If True, send Slack messages.
         Default is False.
@@ -511,7 +514,12 @@ def handle_notice(notice, send_messages=False, log=None, time=None):
     log.debug(f'Selected {len(selected_tiles)} tiles')
 
     # Now check for overlaps
-    found_better_event = check_coincident_events(notice, time=time, log=log)
+    found_better_event = check_coincident_events(
+        notice,
+        time_window=coincident_time_window,
+        time=time,
+        log=log,
+    )
     if found_better_event:
         # There was a matching event in the database that covers fewer tiles,
         # so we don't want to add this one.

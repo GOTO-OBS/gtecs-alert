@@ -439,7 +439,12 @@ class Sentinel:
                         continue
 
                     send_slack_msg(f'Sentinel processing new notice ({notice.ivorn})')
-                    handle_notice(notice, send_messages=params.ENABLE_SLACK, log=self.log)
+                    handle_notice(
+                        notice,
+                        coincident_time_window=params.COINCIDENT_TIME_WINDOW,
+                        send_messages=params.ENABLE_SLACK,
+                        log=self.log
+                    )
                     self.processed_notices += 1
                     send_slack_msg('Sentinel successfully processed notice')
 
