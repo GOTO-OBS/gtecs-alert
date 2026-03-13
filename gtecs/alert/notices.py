@@ -1551,7 +1551,7 @@ class EinsteinProbeNotice(Notice):
 
     def get_strategy(self):
         """Get the observing strategy key."""
-        return 'GRB_OTHER'
+        return 'GRB_SWIFT'
 
     @property
     def slack_details(self):
