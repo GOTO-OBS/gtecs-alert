@@ -41,7 +41,8 @@ KAFKA_BROKER = config['KAFKA_BROKER']
 KAFKA_GROUP_ID = config['KAFKA_GROUP_ID']
 KAFKA_BACKDATE = config['KAFKA_BACKDATE']
 
-# Filter parameters
+# Alert handling parameters
+COINCIDENT_TIME_WINDOW = config['COINCIDENT_TIME_WINDOW']
 # TODO: Couldn't this be a switchable flag within the sentinel?
 PROCESS_TEST_NOTICES = config['PROCESS_TEST_NOTICES']
 

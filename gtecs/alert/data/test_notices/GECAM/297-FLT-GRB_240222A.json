@@ -1,0 +1,150 @@
+{
+    "ivorn": "ivo://nasa.gsfc.gcn/GECAM#GND_Event_2024-02-22T885:53:14.88_000001-989",
+    "role": "observation",
+    "version": "2.0",
+    "Who": {
+        "AuthorIVORN": "ivo://nasa.gsfc.tan/gcn",
+        "Author": {
+            "shortName": "GECAM (via VO-GCN/TAN)",
+            "contactName": "Yue Huang",
+            "contactEmail": "huangyue@ihep.ac.cn"
+        },
+        "Date": "2024-02-22T09:10:38",
+        "Description": "This VOEvent message was created with GCN/TAN VOE version: 15.08 17jun22"
+    },
+    "What": {
+        "Param": [
+            {
+                "name": "Packet_Type",
+                "dataType": "int",
+                "value": "189"
+            },
+            {
+                "name": "Pkt_Ser_Num",
+                "dataType": "int",
+                "value": "1"
+            },
+            {
+                "name": "Trigger_Number",
+                "dataType": "int",
+                "value": "297",
+                "ucd": "meta.id"
+            },
+            {
+                "name": "MISSION",
+                "dataType": "string",
+                "value": "B",
+                "Description": "Which Mission."
+            },
+            {
+                "name": "EVENT_DATE",
+                "dataType": "int",
+                "value": "20362",
+                "unit": "days",
+                "ucd": "time",
+                "Description": "Trucated Julian day."
+            },
+            {
+                "name": "EVENT_TIME",
+                "datatype": "float",
+                "value": "31891.949",
+                "unit": "sec",
+                "ucd": "time",
+                "Description": "Seconds of the Day UT."
+            },
+            {
+                "name": "SRC_CLASS",
+                "dataType": "string",
+                "value": "GRB",
+                "Description": "The Event Type is a regular GRB."
+            },
+            {
+                "name": "BURST_INTEN",
+                "dataType": "int",
+                "value": "2152",
+                "unit": "[counts/sec]",
+                "Description": "Intensity of the burst in counts/sec."
+            },
+            {
+                "name": "BURST_DUR",
+                "dataType": "float",
+                "value": "1.000",
+                "unit": "[sec]",
+                "Description": "Duration of the event."
+            },
+            {
+                "name": "Phi",
+                "dataType": "float",
+                "value": "202.50",
+                "Description": "YET TO DO."
+            },
+            {
+                "name": "Theta",
+                "dataType": "float",
+                "value": "52.46",
+                "Description": "YET TO DO."
+            },
+            {
+                "name": "SC_LAT",
+                "dataType": "float",
+                "value": "-18.78",
+                "Description": "Spacecraft location."
+            },
+            {
+                "name": "SC_LONG",
+                "dataType": "float",
+                "value": "24.54",
+                "Description": "Spacecraft location."
+            }
+        ]
+    },
+    "WhereWhen": {
+        "ObsDataLocation": {
+            "ObservatoryLocation": {
+                "id": "GEOLUN"
+            },
+            "ObservationLocation": {
+                "AstroCoordSystem": {
+                    "id": "UTC-FK5-GEO"
+                },
+                "AstroCoords": {
+                    "coord_system_id": "UTC-FK5-GEO",
+                    "Time": {
+                        "unit": "s",
+                        "TimeInstant": {
+                            "ISOTime": "2024-02-22T08:51:31.95"
+                        }
+                    },
+                    "Position2D": {
+                        "unit": "deg",
+                        "Name1": "RA",
+                        "Name2": "Dec",
+                        "Value2": {
+                            "C1": "165.4300",
+                            "C2": "-68.6999"
+                        },
+                        "Error2Radius": "21.5500"
+                    }
+                }
+            }
+        },
+        "Description": "The RA,Dec coordinates are of the type: source_object."
+    },
+    "How": {
+        "Description": "GECAM GROUND",
+        "Reference": {
+            "uri": "http://gcn.gsfc.nasa.gov/gcn/gecam.html",
+            "type": "url"
+        }
+    },
+    "Why": {
+        "importance": "1.0",
+        "Inference": {
+            "probability": "1.0",
+            "Concept": "process.variation.burst;em"
+        }
+    },
+    "Citations": {},
+    "Description": null,
+    "Reference": {}
+}

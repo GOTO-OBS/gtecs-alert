@@ -98,10 +98,15 @@ def clear_database(schema_name, base, verbose=False):
         with db.session_manager() as session:
             # Delete from tables in dependency order
             for table_name in table_names:
-                result = session.execute(text(f"DELETE FROM {schema_name}.{table_name}"))
-                if result.rowcount > 0 and verbose:
-                    print(f"  Cleared {result.rowcount} rows from {table_name}")
+                # Count rows first for verbose output
+                if verbose:
+                    row_count = session.execute(text(f"SELECT COUNT(*) FROM {schema_name}.{table_name}")).scalar()
+                    if row_count > 0:
+                        print(f"  Clearing {row_count} rows from {table_name}")
+                # TRUNCATE automatically resets sequences with RESTART IDENTITY
+                session.execute(text(f"TRUNCATE TABLE {schema_name}.{table_name} RESTART IDENTITY CASCADE"))
             session.commit()
+
     except Exception as e:
         session.rollback()
 

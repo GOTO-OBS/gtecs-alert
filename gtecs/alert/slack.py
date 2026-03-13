@@ -245,6 +245,7 @@ def send_observing_report(notice, time=None):
     msg = f'*{notice.source} notice:* {notice.ivorn}\n'
 
     # Get info from the alert database
+    coincidence_events = {}
     with alert_db.session_manager() as session:
         # Query the Notice table for the matching entry
         query = session.query(alert_db.Notice).filter(alert_db.Notice.ivorn == notice.ivorn)
@@ -275,6 +276,24 @@ def send_observing_report(notice, time=None):
         if len(running) > 0:
             msg += f' ({len(running)} are currently being observed)'
         msg += '\n'
+
+        # Check if the event is part of a coincidence group
+        if db_event.coincidence is not None:
+            db_coincidence = db_event.coincidence
+            msg += '*Event is part of a coincidence group!*\n'
+            msg += f'Coincidence group (ID={db_coincidence.db_id})'
+            msg += f' contains {len(db_coincidence.events)} events:\n'
+            for matched_event in db_coincidence.events:
+                msg += f'- `{matched_event.name}`: '
+                scheduled = [
+                    t for survey in matched_event.surveys for t in survey.targets
+                    if t.scheduled_at_time(status_time)
+                ]
+                msg += f'{len(scheduled)} scheduled targets'
+                msg += f' (ID={matched_event.db_id})\n'
+                coincidence_events[matched_event.name] = len(scheduled)
+            if sum(scheduled != 0 for scheduled in coincidence_events.values()) > 1:
+                msg += '*ERROR: Multiple events in coincidence group have scheduled targets!*\n'
 
         # Look at the Survey this Notice is linked to (if any)
         db_survey = db_notice.survey
@@ -324,10 +343,13 @@ def send_observing_report(notice, time=None):
     if len(survey_tiles) == 0:
         # This might be because no tiles passed the filter
         if (notice.strategy_dict['min_tile_prob'] > 0 and
-                max(grid.prob) < notice.strategy_dict['min_tile_prob']):
+                max(grid.probs) < notice.strategy_dict['min_tile_prob']):
             msg += '- No tiles passed the probability limit '
             msg += f'({notice.strategy_dict["min_tile_prob"]:.1%}, '
-            msg += f'highest had {max(grid.prob):.1%})\n'
+            msg += f'highest had {max(grid.probs):.1%})\n'
+        # Or it might be because this event was matched to a better one already in the database
+        if len(coincidence_events) > 1 and coincidence_events[notice.event_name] == 0:
+            msg += '- Event was matched to a better existing event\n'
         else:
             # Uh-oh, something went wrong when inserting?
             msg += '- *ERROR: No targets found in database*\n'
