@@ -141,7 +141,7 @@
         "wakeup_alert": 1
     },
     "GW_RANK_3_WIDE": {
-        "rank": 33,
+        "rank": 133,
         "valid_hours": 72,
         "cadence": {
             "num_todo": 99,
@@ -172,7 +172,7 @@
         "max_tiles": 200
     },
     "GW_RANK_3_NARROW": {
-        "rank": 33,
+        "rank": 133,
         "valid_hours": 72,
         "cadence": {
             "num_todo": 99,
@@ -197,7 +197,7 @@
         "max_tiles": 200
     },
     "GW_RANK_4_WIDE": {
-        "rank": 344,
+        "rank": 1044,
         "valid_hours": 72,
         "cadence": {
             "num_todo": 12,
@@ -228,7 +228,7 @@
         "max_tiles": 200
     },
     "GW_RANK_4_NARROW": {
-        "rank": 344,
+        "rank": 1044,
         "valid_hours": 72,
         "cadence": {
             "num_todo": 12,
@@ -256,7 +256,7 @@
         "max_tiles": 200
     },
     "GRB_SWIFT": {
-        "rank": 207,
+        "rank": 107,
         "valid_hours": 2,
         "cadence": {
             "num_todo": 2,
