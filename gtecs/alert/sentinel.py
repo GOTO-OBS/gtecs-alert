@@ -592,15 +592,6 @@ class Sentinel:
         self.notice_queue.append(notice)
         return f'Notice {notice.ivorn} added to queue'
 
-    def ingest_from_ivorn(self, ivorn):
-        """Ingest a notice payload from its IVORN.
-
-        Will attempt to download the payload from the 4pisky VOEvent DB.
-        """
-        notice = Notice.from_ivorn(ivorn)
-        self.notice_queue.append(notice)
-        return f'Notice {notice.ivorn} added to queue'
-
     def get_kafka_topics(self):
         """Return a list of subscribed topics."""
         return self.kafka_all_topics, self.kafka_topics
