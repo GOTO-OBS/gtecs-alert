@@ -13,46 +13,18 @@ from gtecs.common import logging
 from gtecs.common.system import get_pid, make_pid_file
 from gtecs.obs import database as db
 
-import voeventdb.remote.apiv1 as vdb
 
 
 def get_skymap(log):
     """Try and get the LVC sky map."""
-    # 1) Check the archive for the latest notice
-    log.info('Checking for LVC notices in the 4pisky database...')
-    try:
-        notice_list = vdb.list_ivorn(
-            filters={vdb.FilterKeys.role: 'observation',
-                     vdb.FilterKeys.ivorn_contains: 'LVC',
-                     },
-            order=vdb.OrderValues.author_datetime_desc,
-            n_max=1,
-        )
-        log.info('VOEventDB returned: {}'.format(notice_list))
-    except Exception:
-        log.error('Failed to check VOEventDB', exc_info=True)
+    # Ask the user for the skymap URL
+    log.info('Please enter a url to the location where the skymap can be found.')
+    log.info('It should look something like')
+    log.info('https://gracedb.ligo.org/api/superevents/<XXXXXX>/files/bayestar.fits.gz')
+    skymap_url = input('Please enter the url: ')
+    log.debug('User entered "{}"'.format(skymap_url))
 
-    # 2) Get the payload, extract the skymap url (don't download yet)
-    try:
-        ivorn = notice_list[0]
-        log.info('Found the latest LVC notice: {}'.format(ivorn))
-        payload = vdb.packet_xml(ivorn)
-        notice = Notice.from_payload(payload)
-        skymap_url = notice.skymap_url
-        log.info('Extracted sky map url: {}'.format(skymap_url))
-    except Exception:
-        log.error('Failed to extract sky map url', exc_info=True)
-
-        # Fallback: Ask the user for the URL
-        while skymap_url is None:
-            log.warning('Failed to find skymap from VOEvent archive')
-            log.info('Backup: Please enter a url to the location where the skymap can be found.')
-            log.info('It should look something like')
-            log.info('https://gracedb.ligo.org/api/superevents/<XXXXXX>/files/bayestar.fits.gz')
-            skymap_url = input('Please enter the url: ')
-            log.debug('User entered "{}"'.format(skymap_url))
-
-    # 3) Create a GOTO-tile SkyMap instance
+    # Create a GOTO-tile SkyMap instance
     log.info('Creating GOTO-tile SkyMap from url {}'.format(skymap_url))
     try:
         skymap = SkyMap.from_fits(skymap_url)

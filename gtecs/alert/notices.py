@@ -24,8 +24,6 @@ import numpy as np
 
 import requests
 
-import voeventdb.remote.apiv1 as vdb
-
 
 # Load the strategy definitions
 with open(importlib.resources.files('gtecs.alert.data').joinpath('strategies.json')) as f:
@@ -95,7 +93,6 @@ class Notice:
     Use one of the following classmethods to to create the appropriate class:
         - Notice.from_file(filepath)
         - Notice.from_url(url)
-        - Notice.from_ivorn(ivorn)
         - Notice.from_payload(raw_payload)
     """
 
@@ -299,12 +296,6 @@ class Notice:
         # We need to try and deserialize the payload to get the correct message model
         message = deserialize(payload)
         return cls.from_message(message)
-
-    @classmethod
-    def from_ivorn(cls, ivorn):
-        """Create a Notice (or appropriate subclass) by querying the 4pisky VOEvent database."""
-        payload = vdb.packet_xml(ivorn)
-        return cls.from_payload(payload)
 
     @classmethod
     def from_url(cls, url, timeout=5):
