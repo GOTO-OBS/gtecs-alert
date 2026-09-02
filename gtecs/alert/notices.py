@@ -9,6 +9,7 @@ from base64 import b64decode
 from collections import Counter
 from urllib.parse import quote_plus
 from urllib.request import urlopen
+from urllib.error import HTTPError
 
 import astropy.units as u
 from astropy.coordinates import Angle, SkyCoord
@@ -866,50 +867,161 @@ class GWNotice(Notice):
 
     @classmethod
     def from_gracedb(cls, name, which_notice='last'):
-        """Create a GWNotice by downloading the VOEvent XML from GraceDB."""
-        # TODO: download Avro or JSON notices from GraceDB too
-        if not ((isinstance(which_notice, int) and which_notice > 0) or
+        """Create a GWNotice by downloading the VOEvent XML from GraceDB.
+
+        Arguments:
+            name (str):
+                Options are:
+                1) The event ID.
+                   Examples: 'S190510g' or 'MS260810o'.
+                   The exact notice fetched will depend on the `which_notice` argument.
+                2) The full XML notice name, containing the notice number and type.
+                   Examples: 'S230621ap-1-Preliminary' or 'MS260810o-3-Retraction'.
+                   In this case `which_notice` is ignored, and that exact notice will be downloaded,
+                   if it exists.
+                   Note since 2026 XML notices are no longer released for new events, so this
+                   option is not available for newer events.
+                3) The new IGWN notice name, the event ID followed by notice type.
+                   Examples: 'S230621ap-preliminary' or 'MS260810o-initial'.
+                   These notices don't contain the overall notice count number, and versions are
+                   stored separately. In this case `which_notice` will be used to determine which
+                   of the matching notices of that type to download.
+
+            which_notice (str or int):
+                Which notice to download. Can be "first", "last" or an integer.
+                Usage depends on which option is used for `name`:
+                1) If just the event ID is given, then all notices of that event will be checked,
+                   (regardless of type), sorted by time, and either the first, last or Nth notice
+                   will be returned.
+                   Note if an integer is given, it is 1-indexed, so "1" is the first notice,
+                   "2" is the second, etc, of any type, matching the old XML notice convention.
+                2) `which_notice` is ignored if the full XML notice name is given.
+                3) If the new IGWN notice name is given, then all notices of that type will be
+                   checked, sorted by time, and either the first, last or Nth notice will be
+                   returned depending on `which_notice`.
+                   Note in this case the integer refers to the 0-indexed version of that notice
+                   type, NOT the overall notice count as used to exist for XML notices.
+                   It is 0-indexed, so "0" is the first notice of that type, "1" is the second, etc.
+                   For example, `name="S230621ap-preliminary` and `which_notice=0` would give the
+                   first preliminary notice, what would might previously be called
+                   "S230621ap-1-Preliminary" in the old XML naming convention.
+                   On the other hand `name="S230621ap-initial` and `which_notice=0` is the first
+                   initial notice, which might previously be called "S230621ap-3-Initial" (assuming
+                   there were two earlier preliminary notices i.e. "1-Preliminary" and
+                   "2-Preliminary").
+
+            This is confusing, but the best way I could come up with to deal with IGWN
+            dropping the otherwise really helpful notice counter.
+
+        """
+        if not ((isinstance(which_notice, int) and which_notice >= 0) or
                 which_notice in ['first', 'last']):
             raise ValueError('which_notice must be "first", "last" or a positive integer')
 
-        template = re.compile(r'(.+)-(\d+)-(.+)')
-        if template.match(name):
-            # e.g. 'S230621ap-1-Preliminary'
-            # Direct match for a specific notice
-            event = template.match(name).groups()[0]
-            url = f'https://gracedb.ligo.org/api/superevents/{event}/files/{name}.xml,0'
-            if name == 'Retraction':
-                return GWRetractionNotice.from_url(url)
-            return cls.from_url(url)
+        # Extract the event ID
+        template = re.compile(r'([A-Z]+\d{6}[a-z]+)(.*)')
+        if not template.match(name):
+            raise ValueError(f'Invalid event name: {name}')
+        event_id, notice_type = template.match(name).groups()
 
-        template = re.compile(r'(.+)-(\d+)')
-        if template.match(name):
-            event, number = template.match(name).groups()
-            number = int(number)
-        elif which_notice == 'first':
-            event = name
-            number = 1
-        elif which_notice == 'last':
-            event = name
-            number = -1
-        else:
-            event = name
-            number = int(which_notice)
+        # First we can check if the notice type matches the classic XML format, in which case
+        # we can just download that exact notice from GraceDB.
+        template = re.compile(r'-\d+-[A-Za-z]+')
+        if template.match(notice_type):
+            notice_url = f'https://gracedb.ligo.org/api/superevents/{event_id}/files/{name}.xml,0'
+            try:
+                if 'retraction' in notice_url.lower():
+                    return GWRetractionNotice.from_url(notice_url)
+                return cls.from_url(notice_url)
+            except HTTPError as err:
+                if '404' in str(err):
+                    msg = f'Notice "{name}" not found in GraceDB (url={notice_url})'
+                    raise ValueError(msg) from err
+                else:
+                    raise
 
-        # Query the GraceDB API to get the VOEvent URL
-        url = f'https://gracedb.ligo.org/api/superevents/{event}/voevents/'
+        # Otherwise we're going to need to look at all the notices for this event.
+        # Start by getting the event logs.
+        url = f'https://gracedb.ligo.org/api/superevents/{event_id}/logs/'
         r = requests.get(url)
         data = json.loads(r.content.decode())
-        if 'voevents' not in data:
-            raise ValueError(f'Event {event} not found in GraceDB')
-        if number == -1:
-            number = len(data['voevents'])
-        if number > len(data['voevents']):
-            raise ValueError(f"Event {event} only has {len(data['voevents'])} notices")
-        url = data['voevents'][number - 1]['links']['file']
-        if 'Retraction' in url:
-            return GWRetractionNotice.from_url(url)
-        return cls.from_url(url)
+        if 'error' in data:
+            raise ValueError(f'Error getting logs for event {event_id}: {data["error"]}')
+        logs = data['log']
+
+        # There are two types of notices: the old XML notices, and the new IGWN notices which
+        # come in JSON and Avro formats. Older events will only have XML (e.g. S190928c),
+        # newer events will only have IGWN notices (e.g. any recent mock event),
+        # and some events will have both (e.g. S200215f).
+        xml_template = re.compile(rf'^{event_id}-\d+-[A-Za-z]+\.xml$')
+        igwn_template = re.compile(rf'^{event_id}-[A-Za-z]+\.json$')
+        xml_logs = sorted(
+            [l for l in logs if xml_template.match(l['filename'])],
+            key=lambda l: Time.strptime(l['created'], '%Y-%m-%d %H:%M:%S %Z'),
+        )
+        igwn_logs = sorted(
+            [l for l in logs if igwn_template.match(l['filename'])],
+            key=lambda l: Time.strptime(l['created'], '%Y-%m-%d %H:%M:%S %Z'),
+        )
+        if len(xml_logs) + len(igwn_logs) == 0:
+            raise ValueError(f'No notices found for event {event_id}')
+
+        if notice_type == '':
+            # 1) Just the event ID was given, so select from all the available notices.
+            # Default to XML, though it's a bit arbitrary.
+            if len(xml_logs) > 0:
+                logs = xml_logs
+            else:
+                logs = igwn_logs
+            if which_notice == 'first':
+                index = 0
+            elif which_notice == 'last':
+                index = -1
+            else:
+                # `which_notice` will be 1-indexed, matching the overall notice count
+                if which_notice > len(logs):
+                    msg = f"Event {event_id} only has {len(logs)} notices: "
+                    msg += f"[{', '.join([l['file'].split('/')[-1] for l in logs])}]"
+                    raise ValueError(msg)
+                index = which_notice - 1
+
+        else:
+            # This will be a request based on the notice type, e.g. "preliminary" or "initial".
+            # We'll need to use which_notice to select which one.
+            # This only applies to IGWN notices, since XML notices have the count in the filename.
+            if len(igwn_logs) == 0:
+                raise ValueError(f'No IGWN notices found for event {event_id}')
+            notice_type = notice_type.strip('-').lower()
+            logs = [l for l in igwn_logs if notice_type in l['filename']]
+            if len(logs) == 0:
+                msg = f'No notices of type "{notice_type}" found for event {event_id}'
+                raise ValueError(msg)
+            if which_notice == 'first':
+                index = 0
+            elif which_notice == 'last':
+                index = -1
+            else:
+                # `which_notice` will be 0-indexed, matching version numbers for each notice type
+                if which_notice > len(logs) - 1:
+                    msg = f"Event {event_id} only has {len(logs)} {notice_type} notices: "
+                    msg += f"[{', '.join([l['file'].split('/')[-1] for l in logs])}]"
+                    raise ValueError(msg)
+                index = which_notice
+
+        # Finally get the url and return the correct notice
+        notice_url = logs[index]['file']
+        try:
+            if 'retraction' in notice_url.lower():
+                return GWRetractionNotice.from_url(notice_url)
+            return cls.from_url(notice_url)
+        except HTTPError as err:
+            # This shouldn't really happen in this case, since we're using the URLs straight from
+            # the GraceDB logs. But good catch it anyway.
+            if '404' in str(err):
+                msg = f'Notice "{name}" not found in GraceDB (url={notice_url})'
+                raise ValueError(msg) from err
+            else:
+                raise
 
     @property
     def strategy(self):
@@ -949,7 +1061,7 @@ class GWNotice(Notice):
 
             Finally, if a notice is not significant we will still select it based on its
             GWSkyNet score. Currently this requires the GWSkyNet details to be downloaded
-            separately, which can take a while, especially for Kafka alerts which don't
+            separately, which can take a while, especially for early IGWN alerts which don't
             contain the skymap names (see get_gwskynet() for details).
 
             """
