@@ -24,6 +24,8 @@ import numpy as np
 
 import requests
 
+import xmltodict  # a dependency of hop-client
+
 
 # Load the strategy definitions
 with open(importlib.resources.files('gtecs.alert.data').joinpath('strategies.json')) as f:
@@ -60,7 +62,7 @@ def deserialize(raw_payload):
     # If it's valid JSON it might be a VOEvent, or else a generic JSONBlob
     try:
         return VOEvent.deserialize(raw_payload)
-    except TypeError:
+    except (TypeError, xml.parsers.expat.ExpatError):
         # Valid JSON, but not a VOEvent
         try:
             return JSONBlob.deserialize(raw_payload)
@@ -114,7 +116,14 @@ class Notice:
                     raise ValueError('Multiple contents found for message')
         else:
             # VOEvents don't store their raw content
-            self.content = json.loads(self.payload)
+            try:
+                # The payload is XML, so parse it to a dict
+                payload_dict = xmltodict.parse(self.payload, attr_prefix="")
+            except xml.parsers.expat.ExpatError:
+                # Older versions of hop-client converted the payload to JSON
+                payload_dict = json.loads(self.payload)
+            # Remove XML-specific namespaces (taken from hop-client)
+            self.content = {k: v for k, v in payload_dict["voe:VOEvent"].items() if ":" not in k}
 
         # Try to parse notice parameters for VOEvents
         if isinstance(self.message, VOEvent):
