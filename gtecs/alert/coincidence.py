@@ -114,10 +114,16 @@ def find_coincident_events(
         # as either overlapping should trigger a match.
         matched_event_ids = []
         for matched_event in matched_events:
-            # We only care about the latest notice for each event,
-            # any previous ones should have already been deleted.
-            matched_notice = matched_event.notices[-1].gcn
-            time_diff = (notice.event_time - matched_notice.event_time).to(u.second).value
+            # We only care about the most recent notice for each event,
+            # any previous tiles should have already been deleted.
+            # Sort just to be sure.
+            matched_notices = sorted(matched_event.notices, key=lambda n: n.received)
+            matched_notice = matched_notices[-1].gcn
+
+            # For GW events it's possible the most recent notice was a retraction.
+            # In which case we'll ignore this event for coincidence checking.
+            if matched_notice.type == 'RETRACTION':
+                continue
 
             # Check if either of the notice skymaps or tilesets overlap
             skymap_overlap = get_skymap_overlap(
@@ -130,6 +136,7 @@ def find_coincident_events(
 
             # We have a match!
             if return_parameters:
+                time_diff = (notice.event_time - matched_notice.event_time).to(u.second).value
                 params = (
                     matched_event.db_id,
                     time_diff,
