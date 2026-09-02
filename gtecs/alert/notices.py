@@ -203,8 +203,13 @@ class Notice:
         elif 'superevent_id' in self.content:
             # It's a new-style IGWN JSON notice
             # Sadly we can't recreate the old gwnet IVORNs because they don't include the
-            # number of this notice. So we'll have to use the date instead, that should be
-            # unique.
+            # number of this notice.
+            # I did try getting the number of notices from the GraceDB logs, but it's slow, and
+            # won't work if we don't have a connection or for e.g. old mock events where the logs
+            # have been removed.
+            # Also the notice and log times don't match, and they're in different formats...
+            # We'll just use the date instead, that should hopefully be unique.
+            # As above, we should remove IVORNs anyway.
             event_id = self.content['superevent_id']
             notice_type = self.content['alert_type']
             notice_time = self.content['time_created']
@@ -311,14 +316,18 @@ class Notice:
         """Create a Notice (or appropriate subclass) by downloading from the given URL."""
         with urlopen(url, timeout=timeout) as r:
             payload = r.read()
-        return cls.from_payload(payload)
+        notice = cls.from_payload(payload)
+        notice.url = url  # store the URL for reference
+        return notice
 
     @classmethod
     def from_file(cls, filepath):
         """Create a Notice (or appropriate subclass) from a file."""
         with open(filepath, 'rb') as f:
             payload = f.read()
-        return cls.from_payload(payload)
+        notice = cls.from_payload(payload)
+        notice.filepath = filepath  # store the file path for reference
+        return notice
 
     @property
     def event_name(self):
@@ -367,6 +376,7 @@ class Notice:
                     # Maybe it's a local file?
                     skymap_file = self.skymap_url
                 self.skymap = SkyMap.from_fits(skymap_file)
+                self.skymap.header['filename'] = skymap_file
                 self.skymap_file = skymap_file
             except Exception:
                 # Some error meant we can't download the skymap
@@ -625,7 +635,7 @@ class GWNotice(Notice):
             except KeyError:
                 self.external = None
         else:
-            # New Kafka format
+            # New IGWN Kafka format
             self.type = self.content['alert_type'].upper()
             self.event_id = self.content['superevent_id']
             self.gracedb_url = self.content['urls']['gracedb']
@@ -643,6 +653,9 @@ class GWNotice(Notice):
             self.event_time = Time(self.content['event']['time'])
             # Load the embedded skymap
             self.skymap = self._decode_skymap(self.content['event']['skymap'])
+            if 'skymap_filename' in self.content['event']:
+                # Newer IGWN alerts include the filename
+                self.skymap.header['filename'] = self.content['event']['skymap_filename']
             del self.content['event']['skymap']  # It's still stored in the payload if needed
             # Get external coincidence, if any
             if self.content['external_coinc'] is not None:
@@ -650,15 +663,18 @@ class GWNotice(Notice):
                 # Override the original skymap with the combined skymap
                 self.skymap_original = self.skymap.copy()
                 self.skymap = self._decode_skymap(self.external['combined_skymap'])
+                if 'combined_skymap_filename' in self.external:
+                    self.skymap.header['filename'] = self.external['combined_skymap_filename']
                 del self.content['external_coinc']['combined_skymap']
                 del self.external['combined_skymap']
             else:
                 self.external = None
 
-    def _decode_skymap(self, skymap_bytes):
+    @staticmethod
+    def _decode_skymap(skymap_bytes):
         """Decode the embedded skymap data."""
         if isinstance(skymap_bytes, str):
-            # IGWN JSON skymaps are base46-encoded
+            # IGWN JSON skymaps are base64-encoded
             # https://emfollow.docs.ligo.org/userguide/tutorial/receiving/gcn.html
             try:
                 skymap_bytes = b64decode(skymap_bytes)
@@ -689,8 +705,8 @@ class GWNotice(Notice):
     @property
     def _filename(self):
         """Reproduce the notice filename."""
-        # Note we can't include the GraceDB version number for Kafka alerts,
-        # since that's not included in the message
+        # Note we can't include the GraceDB version number (the ',0' at the end) for IGWN alerts,
+        # since that's not included in the message payload.
         if isinstance(self.message, VOEvent):
             filename = self.attrib['ivorn'].split("#")[-1] + '.xml'
         elif isinstance(self.message, JSONBlob):
@@ -706,7 +722,7 @@ class GWNotice(Notice):
         # Check the logs for the notices released around the same time
         gracedb_logs = self.get_gracedb_logs()
 
-        # We can't just check the filename, because Kafka notices of the same alert type share
+        # We can't just check the filename, because IGWN notices of the same alert type share
         # the same filename (just adding the version number afterwards) and we don't know
         # which version this is.
         # So we need to match the name and the time.
@@ -720,9 +736,11 @@ class GWNotice(Notice):
                     abs(log_time - self.time).to('second').value < 5):
                 matched_logs.append(log)
         if len(matched_logs) == 0:
-            raise ValueError("No matching log line found")
+            # Since 2026, VOEvents are no longer being produced for IGWN alerts
+            # So it's likely that this will fail.
+            raise ValueError("No matching notice found")
         if len(matched_logs) > 1:
-            raise ValueError("Multiple matching log lines found")
+            raise ValueError("Multiple matching notices found")
         notice_log = matched_logs[0]
 
         # Now we can get the file URL from the log and download it
@@ -730,7 +748,7 @@ class GWNotice(Notice):
         return GWNotice.from_url(notice_url)
 
     def _get_voevent(self):
-        """Get the corresponding VOEvent notice for this Kafka notice from GraceDB."""
+        """Get the corresponding VOEvent notice for this IGWN notice from GraceDB."""
         if hasattr(self, '_matching_xml'):
             return self._matching_xml
         self._matching_xml = self._get_matching_notice('xml')
@@ -769,86 +787,71 @@ class GWNotice(Notice):
         # Right now that's really awkward...
         # First off there's no way to know which gwskynet.json file is the correct one,
         # without downloading them all and checking the skymap name.
-        # But also Kafka notices don't even include the name of skymap file!
-        # So we have to get the matching VOEvent notice, then get the skymap name from that,
+        # But originally IGWN notices don't even include the name of skymap file!
+        # So we had to get the matching VOEvent notice, then get the skymap name from that,
         # then get the matching GWSkyNet file.
         # This is also very time consuming with all the downloads and queries, so we really don't
         # want to do it unless we have to.
         # However, there's a shortcut: we can read the event logs and get the GWSkyNet params from
         # there. It's hacky, and they only log to 3 dp, but it's a lot quicker.
 
-        # First, we check if the skymap was generated by BAYESTAR, since GWSkyNet is only run
-        # ont those for now.
-        if self.skymap_url is not None and 'bayestar' not in self.skymap_url:
-            # For now only bayestar skymaps have GWSkyNet files
+        # First we'll get the log files from GraceDB, and check if there are any GWSkyNet files.
+        # This is an initial check to save time, we'd have to get the logs later anyway
+        # but if there aren't any files we might as well return None now.
+        try:
+            gracedb_logs = self.get_gracedb_logs()
+        except requests.exceptions.HTTPError:
+            # If we can't get the logs, it might be an old test notice and the logs are deleted
             return None
-        if (self.skymap is not None and
-                ('creator' not in self.skymap.header or
-                 ('creator' in self.skymap.header and
-                  self.skymap.header['creator'].lower() != 'bayestar'
-                  ))):
-            # As above, but for embedded skymaps
-            # Apparently not all skymaps have a CREATOR card, e.g.
-            # https://gracedb.ligo.org/api/superevents/S241216gg/files/mly.multiorder.fits,0
-            # But BAYESTAR skymaps should always have one (and it should be 'BAYESTAR', obviously)
-            return None
-
-        # Now we'll get the log files from GraceDB, and check if there are any
-        # GWSkyNet files. This is an initial check to save time, we'd have to
-        # get the logs anyway but if there aren't any files we might as well
-        # return None now before getting the VOEvent for Kafka alerts.
-        # And the logs are cached so this doesn't waste time.
-        gracedb_logs = self.get_gracedb_logs()
         if not any(['gwskynet' in log['filename'] for log in gracedb_logs]):
+            # No GWSkyNet files in the logs for this event, so no point continuing.
             return None
 
-        # We need the skymap name to find the correct GWSkyNet file,
-        # and for Kafka notices we have to download the VOEvent notice to get it.
-        # This should be cached, so we only have to do it once, plus it also caches the
-        # GraceDB logs for when we use them below.
+        # We need the skymap name to find the correct GWSkyNet file.
+        # VOEvent notices always included the skymap URL, which had the filename in it.
+        # For old IGWN notices we have to download the VOEvent notice to get it.
+        # Thankfully, newer IGWN notices have started to include the filename.
         if self.skymap_url is not None:
             skymap_name = self.skymap_url.split('/')[-1]
+        elif 'filename' in self.skymap.header:
+            skymap_name = self.skymap.header['filename']
         else:
+            # Try getting the corresponding VOEvent notice
             voevent_notice = self._get_voevent()
             skymap_name = voevent_notice.skymap_url.split('/')[-1]
-        if 'bayestar' not in skymap_name:
-            return None
 
         # Now look through the GraceDB logs for the GWSkyNet log that matches the skymap name
         # We can get the skymap and the score values (to 3dp) from the log without having to
         # download the file, but it takes a bit of parsing...
-        def get_gwskynet_from_log(log):
-            """Extract the GWSkyNet score and skymap name from the log comment."""
-            comment = log['comment']
-            url_pattern = r'href="([^"]+)"'
-            url_match = re.search(url_pattern, comment)
-            scores_pattern = r'score:\s*([\d.]+),.*?FAP:\s*([\d.]+),.*?FNP:\s*([\d.]+)\.'
-            scores_match = re.search(scores_pattern, comment)
-            if url_match and scores_match:
-                data = {
-                    'url': log['file'],
-                    'created': Time.strptime(log['created'], '%Y-%m-%d %H:%M:%S %Z'),
-                    'skymap': url_match.group(1).split('/')[-1],
-                    'skymap_url': 'https://gracedb.ligo.org' + url_match.group(1),
-                    'score': float(scores_match.group(1)),
-                    'fap': float(scores_match.group(2)),
-                    'fnp': float(scores_match.group(3)),
-                }
-                return data
-            else:
-                return None
-
-        gracedb_logs = self.get_gracedb_logs()
-        matched_logs = []
+        gwskynet_logs = []
         for log in gracedb_logs:
-            if log['filename'] == 'gwskynet.json' and log['comment'].startswith(
-                'GWSkyNet annotation'
+            if (
+                log['filename'] == 'gwskynet.json'
+                and log['comment'].startswith('GWSkyNet annotation')
             ):
-                gwskynet_data = get_gwskynet_from_log(log)
-                if gwskynet_data is None:
-                    continue
-                if gwskynet_data['skymap'] == skymap_name:
-                    matched_logs.append(gwskynet_data)
+                # Extract the GWSkyNet score and skymap name from the log comment.
+                url_pattern = r'href="([^"]+)"'
+                url_match = re.search(url_pattern,  log['comment'])
+                scores_pattern = r'score:\s*([\d.]+),.*?FAP:\s*([\d.]+),.*?FNP:\s*([\d.]+)\.'
+                scores_match = re.search(scores_pattern,  log['comment'])
+                if url_match and scores_match:
+                    data = {
+                        'url': log['file'],
+                        'created': Time.strptime(log['created'], '%Y-%m-%d %H:%M:%S %Z'),
+                        'skymap': url_match.group(1).split('/')[-1],
+                        'skymap_url': 'https://gracedb.ligo.org' + url_match.group(1),
+                        'score': float(scores_match.group(1)),
+                        'fap': float(scores_match.group(2)),
+                        'fnp': float(scores_match.group(3)),
+                    }
+                    gwskynet_logs.append(data)
+        if len(gwskynet_logs) == 0:
+            return None
+        # Filter to only the logs that match the skymap name, and sort by creation time.
+        matched_logs = sorted(
+            [l for l in gwskynet_logs if l['skymap'] == skymap_name],
+            key=lambda x: x['created'],
+        )
         if len(matched_logs) == 0:
             return None
         if len(matched_logs) > 1:
