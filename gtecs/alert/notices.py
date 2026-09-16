@@ -229,7 +229,7 @@ class Notice:
             self.time = Time(date)
         elif '$schema' in self.content:
             self.source = self.content['$schema'].split('/notices/')[-1].split('/')[0]
-            self.role = 'observation'  # TODO: remove roles, have .test = True/False
+            self.role = 'observation'  # Default, might be changed by subclasses e.g. tests
             self.time = Time(self.content['trigger_time'])
         elif 'superevent_id' in self.content:
             self.source = 'LVC'  # Backwards compatibility with GCNs, IGWN (or LVK) would be better
@@ -643,6 +643,7 @@ class GWNotice(Notice):
         else:
             # New IGWN Kafka format
             self.type = self.content['alert_type'].upper()
+            self.role = 'test' if self.content['superevent_id'].startswith('M') else 'observation'
             self.event_id = self.content['superevent_id']
             self.gracedb_url = self.content['urls']['gracedb']
             self.instruments = self.content['event']['instruments']
@@ -1316,6 +1317,7 @@ class GWRetractionNotice(Notice):
             self.gracedb_url = self.top_params['EventPage']['value']
         else:
             # New Kafka format
+            self.role = 'test' if self.content['superevent_id'].startswith('M') else 'observation'
             self.event_id = self.content['superevent_id']
             self.gracedb_url = self.content['urls']['gracedb']
 
