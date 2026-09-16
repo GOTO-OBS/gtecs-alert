@@ -257,6 +257,11 @@ class Notice:
     def __repr__(self):
         return '{}(ivorn={})'.format(self.__class__.__name__, self.ivorn)
 
+    def __eq__(self, other):
+        if not isinstance(other, Notice):
+            return NotImplemented
+        return self.message == other.message
+
     @staticmethod
     def _get_subclass(message):
         """Get the correct class of notice by trying each subclass."""
