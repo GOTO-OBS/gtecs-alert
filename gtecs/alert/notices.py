@@ -668,12 +668,13 @@ class GWNotice(Notice):
             if self.content['external_coinc'] is not None:
                 self.external = self.content['external_coinc'].copy()
                 # Override the original skymap with the combined skymap
-                self.skymap_original = self.skymap.copy()
-                self.skymap = self._decode_skymap(self.external['combined_skymap'])
-                if 'combined_skymap_filename' in self.external:
-                    self.skymap.header['filename'] = self.external['combined_skymap_filename']
-                del self.content['external_coinc']['combined_skymap']
-                del self.external['combined_skymap']
+                if 'combined_skymap' in self.external:
+                    self.skymap_original = self.skymap.copy()
+                    self.skymap = self._decode_skymap(self.external['combined_skymap'])
+                    if 'combined_skymap_filename' in self.external:
+                        self.skymap.header['filename'] = self.external['combined_skymap_filename']
+                    del self.content['external_coinc']['combined_skymap']
+                    del self.external['combined_skymap']
             else:
                 self.external = None
 
