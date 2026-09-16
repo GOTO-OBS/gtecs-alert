@@ -315,12 +315,26 @@ class Notice(Base):
         """Create a database-linked Notice entry from a transient notice message."""
         if notice.skymap is None:
             notice.get_skymap()
+
         if notice.skymap is None:
             # Can't raise an error, it could be a retraction
             skymap_bytes = None
+        elif notice.source == 'LVC' and notice.skymap_url is None:
+            # IGWN JSON/Avro alerts contain the encoded skymap embedded in the payload.
+            # We don't want to save it twice, so leave the 'skymap' column blank.
+            # (The alternative is to remove the skymap from the payload and save it under the
+            # 'skymap' column, but then it gets complicated re-creating the Notice from the
+            # database. If we split off a separate table for supplementary files like skymaps,
+            # then we could revisit it.)
+            # (Also combined skymaps for external coincidences are also embedded, so that
+            # gets extra complicated.)
+            skymap_bytes = None
         else:
+            # TODO: Base64 encode the FITS file, like the IGWN alerts do
+            # TODO: Actually, it would be better to have a separate table for supplementary files
+            #       like skymaps and GWSkyNet files.
             if notice.skymap_file is None:
-                # We created our own Skymap
+                # We created our own Skymap (probably a Gaussian)
                 # So we have to save it to a file and read it back in, which is awkward..
                 path = f'/tmp/skymap_{Time.now().isot}.fits'
                 notice.skymap.save(path)
@@ -346,8 +360,7 @@ class Notice(Base):
     def gcn(self):
         """Create a gtecs.alert.notices.Notice class (or subclass) from this Notice."""
         notice = EventNotice.from_payload(self.payload)
-        if self.skymap is not None:
-            # Decode the bytes
+        if self.skymap is not None and notice.skymap is None:
             notice.skymap = SkyMap.from_fits(self.skymap)
         return notice
 

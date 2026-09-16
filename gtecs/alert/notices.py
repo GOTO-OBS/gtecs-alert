@@ -9,6 +9,7 @@ from base64 import b64decode
 from collections import Counter
 from urllib.parse import quote_plus
 from urllib.request import urlopen
+from urllib.error import HTTPError
 
 import astropy.units as u
 from astropy.coordinates import Angle, SkyCoord
@@ -23,6 +24,8 @@ from hop.models import AvroBlob, JSONBlob, VOEvent
 import numpy as np
 
 import requests
+
+import xmltodict  # a dependency of hop-client
 
 
 # Load the strategy definitions
@@ -60,7 +63,7 @@ def deserialize(raw_payload):
     # If it's valid JSON it might be a VOEvent, or else a generic JSONBlob
     try:
         return VOEvent.deserialize(raw_payload)
-    except TypeError:
+    except (TypeError, xml.parsers.expat.ExpatError):
         # Valid JSON, but not a VOEvent
         try:
             return JSONBlob.deserialize(raw_payload)
@@ -114,7 +117,14 @@ class Notice:
                     raise ValueError('Multiple contents found for message')
         else:
             # VOEvents don't store their raw content
-            self.content = json.loads(self.payload)
+            try:
+                # The payload is XML, so parse it to a dict
+                payload_dict = xmltodict.parse(self.payload, attr_prefix="")
+            except xml.parsers.expat.ExpatError:
+                # Older versions of hop-client converted the payload to JSON
+                payload_dict = json.loads(self.payload)
+            # Remove XML-specific namespaces (taken from hop-client)
+            self.content = {k: v for k, v in payload_dict["voe:VOEvent"].items() if ":" not in k}
 
         # Try to parse notice parameters for VOEvents
         if isinstance(self.message, VOEvent):
@@ -194,8 +204,13 @@ class Notice:
         elif 'superevent_id' in self.content:
             # It's a new-style IGWN JSON notice
             # Sadly we can't recreate the old gwnet IVORNs because they don't include the
-            # number of this notice. So we'll have to use the date instead, that should be
-            # unique.
+            # number of this notice.
+            # I did try getting the number of notices from the GraceDB logs, but it's slow, and
+            # won't work if we don't have a connection or for e.g. old mock events where the logs
+            # have been removed.
+            # Also the notice and log times don't match, and they're in different formats...
+            # We'll just use the date instead, that should hopefully be unique.
+            # As above, we should remove IVORNs anyway.
             event_id = self.content['superevent_id']
             notice_type = self.content['alert_type']
             notice_time = self.content['time_created']
@@ -214,7 +229,7 @@ class Notice:
             self.time = Time(date)
         elif '$schema' in self.content:
             self.source = self.content['$schema'].split('/notices/')[-1].split('/')[0]
-            self.role = 'observation'  # TODO: remove roles, have .test = True/False
+            self.role = 'observation'  # Default, might be changed by subclasses e.g. tests
             self.time = Time(self.content['trigger_time'])
         elif 'superevent_id' in self.content:
             self.source = 'LVC'  # Backwards compatibility with GCNs, IGWN (or LVK) would be better
@@ -241,6 +256,11 @@ class Notice:
 
     def __repr__(self):
         return '{}(ivorn={})'.format(self.__class__.__name__, self.ivorn)
+
+    def __eq__(self, other):
+        if not isinstance(other, Notice):
+            return NotImplemented
+        return self.message == other.message
 
     @staticmethod
     def _get_subclass(message):
@@ -302,14 +322,18 @@ class Notice:
         """Create a Notice (or appropriate subclass) by downloading from the given URL."""
         with urlopen(url, timeout=timeout) as r:
             payload = r.read()
-        return cls.from_payload(payload)
+        notice = cls.from_payload(payload)
+        notice.url = url  # store the URL for reference
+        return notice
 
     @classmethod
     def from_file(cls, filepath):
         """Create a Notice (or appropriate subclass) from a file."""
         with open(filepath, 'rb') as f:
             payload = f.read()
-        return cls.from_payload(payload)
+        notice = cls.from_payload(payload)
+        notice.filepath = filepath  # store the file path for reference
+        return notice
 
     @property
     def event_name(self):
@@ -358,6 +382,7 @@ class Notice:
                     # Maybe it's a local file?
                     skymap_file = self.skymap_url
                 self.skymap = SkyMap.from_fits(skymap_file)
+                self.skymap.header['filename'] = skymap_file
                 self.skymap_file = skymap_file
             except Exception:
                 # Some error meant we can't download the skymap
@@ -616,8 +641,9 @@ class GWNotice(Notice):
             except KeyError:
                 self.external = None
         else:
-            # New Kafka format
+            # New IGWN Kafka format
             self.type = self.content['alert_type'].upper()
+            self.role = 'test' if self.content['superevent_id'].startswith('M') else 'observation'
             self.event_id = self.content['superevent_id']
             self.gracedb_url = self.content['urls']['gracedb']
             self.instruments = self.content['event']['instruments']
@@ -634,22 +660,29 @@ class GWNotice(Notice):
             self.event_time = Time(self.content['event']['time'])
             # Load the embedded skymap
             self.skymap = self._decode_skymap(self.content['event']['skymap'])
+            if 'skymap_filename' in self.content['event']:
+                # Newer IGWN alerts include the filename
+                self.skymap.header['filename'] = self.content['event']['skymap_filename']
             del self.content['event']['skymap']  # It's still stored in the payload if needed
             # Get external coincidence, if any
             if self.content['external_coinc'] is not None:
                 self.external = self.content['external_coinc'].copy()
                 # Override the original skymap with the combined skymap
-                self.skymap_original = self.skymap.copy()
-                self.skymap = self._decode_skymap(self.external['combined_skymap'])
-                del self.content['external_coinc']['combined_skymap']
-                del self.external['combined_skymap']
+                if 'combined_skymap' in self.external:
+                    self.skymap_original = self.skymap.copy()
+                    self.skymap = self._decode_skymap(self.external['combined_skymap'])
+                    if 'combined_skymap_filename' in self.external:
+                        self.skymap.header['filename'] = self.external['combined_skymap_filename']
+                    del self.content['external_coinc']['combined_skymap']
+                    del self.external['combined_skymap']
             else:
                 self.external = None
 
-    def _decode_skymap(self, skymap_bytes):
+    @staticmethod
+    def _decode_skymap(skymap_bytes):
         """Decode the embedded skymap data."""
         if isinstance(skymap_bytes, str):
-            # IGWN JSON skymaps are base46-encoded
+            # IGWN JSON skymaps are base64-encoded
             # https://emfollow.docs.ligo.org/userguide/tutorial/receiving/gcn.html
             try:
                 skymap_bytes = b64decode(skymap_bytes)
@@ -680,8 +713,8 @@ class GWNotice(Notice):
     @property
     def _filename(self):
         """Reproduce the notice filename."""
-        # Note we can't include the GraceDB version number for Kafka alerts,
-        # since that's not included in the message
+        # Note we can't include the GraceDB version number (the ',0' at the end) for IGWN alerts,
+        # since that's not included in the message payload.
         if isinstance(self.message, VOEvent):
             filename = self.attrib['ivorn'].split("#")[-1] + '.xml'
         elif isinstance(self.message, JSONBlob):
@@ -697,7 +730,7 @@ class GWNotice(Notice):
         # Check the logs for the notices released around the same time
         gracedb_logs = self.get_gracedb_logs()
 
-        # We can't just check the filename, because Kafka notices of the same alert type share
+        # We can't just check the filename, because IGWN notices of the same alert type share
         # the same filename (just adding the version number afterwards) and we don't know
         # which version this is.
         # So we need to match the name and the time.
@@ -711,9 +744,11 @@ class GWNotice(Notice):
                     abs(log_time - self.time).to('second').value < 5):
                 matched_logs.append(log)
         if len(matched_logs) == 0:
-            raise ValueError("No matching log line found")
+            # Since 2026, VOEvents are no longer being produced for IGWN alerts
+            # So it's likely that this will fail.
+            raise ValueError("No matching notice found")
         if len(matched_logs) > 1:
-            raise ValueError("Multiple matching log lines found")
+            raise ValueError("Multiple matching notices found")
         notice_log = matched_logs[0]
 
         # Now we can get the file URL from the log and download it
@@ -721,7 +756,7 @@ class GWNotice(Notice):
         return GWNotice.from_url(notice_url)
 
     def _get_voevent(self):
-        """Get the corresponding VOEvent notice for this Kafka notice from GraceDB."""
+        """Get the corresponding VOEvent notice for this IGWN notice from GraceDB."""
         if hasattr(self, '_matching_xml'):
             return self._matching_xml
         self._matching_xml = self._get_matching_notice('xml')
@@ -760,86 +795,71 @@ class GWNotice(Notice):
         # Right now that's really awkward...
         # First off there's no way to know which gwskynet.json file is the correct one,
         # without downloading them all and checking the skymap name.
-        # But also Kafka notices don't even include the name of skymap file!
-        # So we have to get the matching VOEvent notice, then get the skymap name from that,
+        # But originally IGWN notices don't even include the name of skymap file!
+        # So we had to get the matching VOEvent notice, then get the skymap name from that,
         # then get the matching GWSkyNet file.
         # This is also very time consuming with all the downloads and queries, so we really don't
         # want to do it unless we have to.
         # However, there's a shortcut: we can read the event logs and get the GWSkyNet params from
         # there. It's hacky, and they only log to 3 dp, but it's a lot quicker.
 
-        # First, we check if the skymap was generated by BAYESTAR, since GWSkyNet is only run
-        # ont those for now.
-        if self.skymap_url is not None and 'bayestar' not in self.skymap_url:
-            # For now only bayestar skymaps have GWSkyNet files
+        # First we'll get the log files from GraceDB, and check if there are any GWSkyNet files.
+        # This is an initial check to save time, we'd have to get the logs later anyway
+        # but if there aren't any files we might as well return None now.
+        try:
+            gracedb_logs = self.get_gracedb_logs()
+        except requests.exceptions.HTTPError:
+            # If we can't get the logs, it might be an old test notice and the logs are deleted
             return None
-        if (self.skymap is not None and
-                ('creator' not in self.skymap.header or
-                 ('creator' in self.skymap.header and
-                  self.skymap.header['creator'].lower() != 'bayestar'
-                  ))):
-            # As above, but for embedded skymaps
-            # Apparently not all skymaps have a CREATOR card, e.g.
-            # https://gracedb.ligo.org/api/superevents/S241216gg/files/mly.multiorder.fits,0
-            # But BAYESTAR skymaps should always have one (and it should be 'BAYESTAR', obviously)
-            return None
-
-        # Now we'll get the log files from GraceDB, and check if there are any
-        # GWSkyNet files. This is an initial check to save time, we'd have to
-        # get the logs anyway but if there aren't any files we might as well
-        # return None now before getting the VOEvent for Kafka alerts.
-        # And the logs are cached so this doesn't waste time.
-        gracedb_logs = self.get_gracedb_logs()
         if not any(['gwskynet' in log['filename'] for log in gracedb_logs]):
+            # No GWSkyNet files in the logs for this event, so no point continuing.
             return None
 
-        # We need the skymap name to find the correct GWSkyNet file,
-        # and for Kafka notices we have to download the VOEvent notice to get it.
-        # This should be cached, so we only have to do it once, plus it also caches the
-        # GraceDB logs for when we use them below.
+        # We need the skymap name to find the correct GWSkyNet file.
+        # VOEvent notices always included the skymap URL, which had the filename in it.
+        # For old IGWN notices we have to download the VOEvent notice to get it.
+        # Thankfully, newer IGWN notices have started to include the filename.
         if self.skymap_url is not None:
             skymap_name = self.skymap_url.split('/')[-1]
+        elif 'filename' in self.skymap.header:
+            skymap_name = self.skymap.header['filename']
         else:
+            # Try getting the corresponding VOEvent notice
             voevent_notice = self._get_voevent()
             skymap_name = voevent_notice.skymap_url.split('/')[-1]
-        if 'bayestar' not in skymap_name:
-            return None
 
         # Now look through the GraceDB logs for the GWSkyNet log that matches the skymap name
         # We can get the skymap and the score values (to 3dp) from the log without having to
         # download the file, but it takes a bit of parsing...
-        def get_gwskynet_from_log(log):
-            """Extract the GWSkyNet score and skymap name from the log comment."""
-            comment = log['comment']
-            url_pattern = r'href="([^"]+)"'
-            url_match = re.search(url_pattern, comment)
-            scores_pattern = r'score:\s*([\d.]+),.*?FAP:\s*([\d.]+),.*?FNP:\s*([\d.]+)\.'
-            scores_match = re.search(scores_pattern, comment)
-            if url_match and scores_match:
-                data = {
-                    'url': log['file'],
-                    'created': Time.strptime(log['created'], '%Y-%m-%d %H:%M:%S %Z'),
-                    'skymap': url_match.group(1).split('/')[-1],
-                    'skymap_url': 'https://gracedb.ligo.org' + url_match.group(1),
-                    'score': float(scores_match.group(1)),
-                    'fap': float(scores_match.group(2)),
-                    'fnp': float(scores_match.group(3)),
-                }
-                return data
-            else:
-                return None
-
-        gracedb_logs = self.get_gracedb_logs()
-        matched_logs = []
+        gwskynet_logs = []
         for log in gracedb_logs:
-            if log['filename'] == 'gwskynet.json' and log['comment'].startswith(
-                'GWSkyNet annotation'
+            if (
+                log['filename'] == 'gwskynet.json'
+                and log['comment'].startswith('GWSkyNet annotation')
             ):
-                gwskynet_data = get_gwskynet_from_log(log)
-                if gwskynet_data is None:
-                    continue
-                if gwskynet_data['skymap'] == skymap_name:
-                    matched_logs.append(gwskynet_data)
+                # Extract the GWSkyNet score and skymap name from the log comment.
+                url_pattern = r'href="([^"]+)"'
+                url_match = re.search(url_pattern,  log['comment'])
+                scores_pattern = r'score:\s*([\d.]+),.*?FAP:\s*([\d.]+),.*?FNP:\s*([\d.]+)\.'
+                scores_match = re.search(scores_pattern,  log['comment'])
+                if url_match and scores_match:
+                    data = {
+                        'url': log['file'],
+                        'created': Time.strptime(log['created'], '%Y-%m-%d %H:%M:%S %Z'),
+                        'skymap': url_match.group(1).split('/')[-1],
+                        'skymap_url': 'https://gracedb.ligo.org' + url_match.group(1),
+                        'score': float(scores_match.group(1)),
+                        'fap': float(scores_match.group(2)),
+                        'fnp': float(scores_match.group(3)),
+                    }
+                    gwskynet_logs.append(data)
+        if len(gwskynet_logs) == 0:
+            return None
+        # Filter to only the logs that match the skymap name, and sort by creation time.
+        matched_logs = sorted(
+            [l for l in gwskynet_logs if l['skymap'] == skymap_name],
+            key=lambda x: x['created'],
+        )
         if len(matched_logs) == 0:
             return None
         if len(matched_logs) > 1:
@@ -854,50 +874,161 @@ class GWNotice(Notice):
 
     @classmethod
     def from_gracedb(cls, name, which_notice='last'):
-        """Create a GWNotice by downloading the VOEvent XML from GraceDB."""
-        # TODO: download Avro or JSON notices from GraceDB too
-        if not ((isinstance(which_notice, int) and which_notice > 0) or
+        """Create a GWNotice by downloading the VOEvent XML from GraceDB.
+
+        Arguments:
+            name (str):
+                Options are:
+                1) The event ID.
+                   Examples: 'S190510g' or 'MS260810o'.
+                   The exact notice fetched will depend on the `which_notice` argument.
+                2) The full XML notice name, containing the notice number and type.
+                   Examples: 'S230621ap-1-Preliminary' or 'MS260810o-3-Retraction'.
+                   In this case `which_notice` is ignored, and that exact notice will be downloaded,
+                   if it exists.
+                   Note since 2026 XML notices are no longer released for new events, so this
+                   option is not available for newer events.
+                3) The new IGWN notice name, the event ID followed by notice type.
+                   Examples: 'S230621ap-preliminary' or 'MS260810o-initial'.
+                   These notices don't contain the overall notice count number, and versions are
+                   stored separately. In this case `which_notice` will be used to determine which
+                   of the matching notices of that type to download.
+
+            which_notice (str or int):
+                Which notice to download. Can be "first", "last" or an integer.
+                Usage depends on which option is used for `name`:
+                1) If just the event ID is given, then all notices of that event will be checked,
+                   (regardless of type), sorted by time, and either the first, last or Nth notice
+                   will be returned.
+                   Note if an integer is given, it is 1-indexed, so "1" is the first notice,
+                   "2" is the second, etc, of any type, matching the old XML notice convention.
+                2) `which_notice` is ignored if the full XML notice name is given.
+                3) If the new IGWN notice name is given, then all notices of that type will be
+                   checked, sorted by time, and either the first, last or Nth notice will be
+                   returned depending on `which_notice`.
+                   Note in this case the integer refers to the 0-indexed version of that notice
+                   type, NOT the overall notice count as used to exist for XML notices.
+                   It is 0-indexed, so "0" is the first notice of that type, "1" is the second, etc.
+                   For example, `name="S230621ap-preliminary` and `which_notice=0` would give the
+                   first preliminary notice, what would might previously be called
+                   "S230621ap-1-Preliminary" in the old XML naming convention.
+                   On the other hand `name="S230621ap-initial` and `which_notice=0` is the first
+                   initial notice, which might previously be called "S230621ap-3-Initial" (assuming
+                   there were two earlier preliminary notices i.e. "1-Preliminary" and
+                   "2-Preliminary").
+
+            This is confusing, but the best way I could come up with to deal with IGWN
+            dropping the otherwise really helpful notice counter.
+
+        """
+        if not ((isinstance(which_notice, int) and which_notice >= 0) or
                 which_notice in ['first', 'last']):
             raise ValueError('which_notice must be "first", "last" or a positive integer')
 
-        template = re.compile(r'(.+)-(\d+)-(.+)')
-        if template.match(name):
-            # e.g. 'S230621ap-1-Preliminary'
-            # Direct match for a specific notice
-            event = template.match(name).groups()[0]
-            url = f'https://gracedb.ligo.org/api/superevents/{event}/files/{name}.xml,0'
-            if name == 'Retraction':
-                return GWRetractionNotice.from_url(url)
-            return cls.from_url(url)
+        # Extract the event ID
+        template = re.compile(r'([A-Z]+\d{6}[a-z]+)(.*)')
+        if not template.match(name):
+            raise ValueError(f'Invalid event name: {name}')
+        event_id, notice_type = template.match(name).groups()
 
-        template = re.compile(r'(.+)-(\d+)')
-        if template.match(name):
-            event, number = template.match(name).groups()
-            number = int(number)
-        elif which_notice == 'first':
-            event = name
-            number = 1
-        elif which_notice == 'last':
-            event = name
-            number = -1
-        else:
-            event = name
-            number = int(which_notice)
+        # First we can check if the notice type matches the classic XML format, in which case
+        # we can just download that exact notice from GraceDB.
+        template = re.compile(r'-\d+-[A-Za-z]+')
+        if template.match(notice_type):
+            notice_url = f'https://gracedb.ligo.org/api/superevents/{event_id}/files/{name}.xml,0'
+            try:
+                if 'retraction' in notice_url.lower():
+                    return GWRetractionNotice.from_url(notice_url)
+                return cls.from_url(notice_url)
+            except HTTPError as err:
+                if '404' in str(err):
+                    msg = f'Notice "{name}" not found in GraceDB (url={notice_url})'
+                    raise ValueError(msg) from err
+                else:
+                    raise
 
-        # Query the GraceDB API to get the VOEvent URL
-        url = f'https://gracedb.ligo.org/api/superevents/{event}/voevents/'
+        # Otherwise we're going to need to look at all the notices for this event.
+        # Start by getting the event logs.
+        url = f'https://gracedb.ligo.org/api/superevents/{event_id}/logs/'
         r = requests.get(url)
         data = json.loads(r.content.decode())
-        if 'voevents' not in data:
-            raise ValueError(f'Event {event} not found in GraceDB')
-        if number == -1:
-            number = len(data['voevents'])
-        if number > len(data['voevents']):
-            raise ValueError(f"Event {event} only has {len(data['voevents'])} notices")
-        url = data['voevents'][number - 1]['links']['file']
-        if 'Retraction' in url:
-            return GWRetractionNotice.from_url(url)
-        return cls.from_url(url)
+        if 'error' in data:
+            raise ValueError(f'Error getting logs for event {event_id}: {data["error"]}')
+        logs = data['log']
+
+        # There are two types of notices: the old XML notices, and the new IGWN notices which
+        # come in JSON and Avro formats. Older events will only have XML (e.g. S190928c),
+        # newer events will only have IGWN notices (e.g. any recent mock event),
+        # and some events will have both (e.g. S200215f).
+        xml_template = re.compile(rf'^{event_id}-\d+-[A-Za-z]+\.xml$')
+        igwn_template = re.compile(rf'^{event_id}-[A-Za-z]+\.json$')
+        xml_logs = sorted(
+            [l for l in logs if xml_template.match(l['filename'])],
+            key=lambda l: Time.strptime(l['created'], '%Y-%m-%d %H:%M:%S %Z'),
+        )
+        igwn_logs = sorted(
+            [l for l in logs if igwn_template.match(l['filename'])],
+            key=lambda l: Time.strptime(l['created'], '%Y-%m-%d %H:%M:%S %Z'),
+        )
+        if len(xml_logs) + len(igwn_logs) == 0:
+            raise ValueError(f'No notices found for event {event_id}')
+
+        if notice_type == '':
+            # 1) Just the event ID was given, so select from all the available notices.
+            # Default to XML, though it's a bit arbitrary.
+            if len(xml_logs) > 0:
+                logs = xml_logs
+            else:
+                logs = igwn_logs
+            if which_notice == 'first':
+                index = 0
+            elif which_notice == 'last':
+                index = -1
+            else:
+                # `which_notice` will be 1-indexed, matching the overall notice count
+                if which_notice > len(logs):
+                    msg = f"Event {event_id} only has {len(logs)} notices: "
+                    msg += f"[{', '.join([l['file'].split('/')[-1] for l in logs])}]"
+                    raise ValueError(msg)
+                index = which_notice - 1
+
+        else:
+            # This will be a request based on the notice type, e.g. "preliminary" or "initial".
+            # We'll need to use which_notice to select which one.
+            # This only applies to IGWN notices, since XML notices have the count in the filename.
+            if len(igwn_logs) == 0:
+                raise ValueError(f'No IGWN notices found for event {event_id}')
+            notice_type = notice_type.strip('-').lower()
+            logs = [l for l in igwn_logs if notice_type in l['filename']]
+            if len(logs) == 0:
+                msg = f'No notices of type "{notice_type}" found for event {event_id}'
+                raise ValueError(msg)
+            if which_notice == 'first':
+                index = 0
+            elif which_notice == 'last':
+                index = -1
+            else:
+                # `which_notice` will be 0-indexed, matching version numbers for each notice type
+                if which_notice > len(logs) - 1:
+                    msg = f"Event {event_id} only has {len(logs)} {notice_type} notices: "
+                    msg += f"[{', '.join([l['file'].split('/')[-1] for l in logs])}]"
+                    raise ValueError(msg)
+                index = which_notice
+
+        # Finally get the url and return the correct notice
+        notice_url = logs[index]['file']
+        try:
+            if 'retraction' in notice_url.lower():
+                return GWRetractionNotice.from_url(notice_url)
+            return cls.from_url(notice_url)
+        except HTTPError as err:
+            # This shouldn't really happen in this case, since we're using the URLs straight from
+            # the GraceDB logs. But good catch it anyway.
+            if '404' in str(err):
+                msg = f'Notice "{name}" not found in GraceDB (url={notice_url})'
+                raise ValueError(msg) from err
+            else:
+                raise
 
     @property
     def strategy(self):
@@ -937,7 +1068,7 @@ class GWNotice(Notice):
 
             Finally, if a notice is not significant we will still select it based on its
             GWSkyNet score. Currently this requires the GWSkyNet details to be downloaded
-            separately, which can take a while, especially for Kafka alerts which don't
+            separately, which can take a while, especially for early IGWN alerts which don't
             contain the skymap names (see get_gwskynet() for details).
 
             """
@@ -1187,6 +1318,7 @@ class GWRetractionNotice(Notice):
             self.gracedb_url = self.top_params['EventPage']['value']
         else:
             # New Kafka format
+            self.role = 'test' if self.content['superevent_id'].startswith('M') else 'observation'
             self.event_id = self.content['superevent_id']
             self.gracedb_url = self.content['urls']['gracedb']
 
