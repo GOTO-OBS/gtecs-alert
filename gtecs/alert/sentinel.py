@@ -220,14 +220,9 @@ class Sentinel:
             broker_url = 'kafka://kafka.gcn.nasa.gov/'
             # Subscribe only to the topics we're interested in
             topics = []
-            # LVC notices (classic only)
-            # New IGWN alerts are under 'igwn.gwalert', but we'll stick to the classic ones for now
+            # LVC/IGWN notices
             topics += [
-                'gcn.classic.voevent.LVC_EARLY_WARNING',
-                'gcn.classic.voevent.LVC_INITIAL',
-                'gcn.classic.voevent.LVC_PRELIMINARY',
-                'gcn.classic.voevent.LVC_UPDATE',
-                'gcn.classic.voevent.LVC_RETRACTION',
+                'igwn.gwalert',
             ]
             # Fermi notices
             # We only process the final positions for now
