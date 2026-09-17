@@ -120,11 +120,14 @@ class Notice:
             try:
                 # The payload is XML, so parse it to a dict
                 payload_dict = xmltodict.parse(self.payload, attr_prefix="")
+                # Remove XML-specific namespaces (taken from hop-client)
+                self.content = {
+                    k: v for k, v in payload_dict["voe:VOEvent"].items() if ":" not in k
+                }
             except xml.parsers.expat.ExpatError:
-                # Older versions of hop-client converted the payload to JSON
-                payload_dict = json.loads(self.payload)
-            # Remove XML-specific namespaces (taken from hop-client)
-            self.content = {k: v for k, v in payload_dict["voe:VOEvent"].items() if ":" not in k}
+                # Older versions of hop-client converted the payload to JSON from XML,
+                # and filtered out XML namespaces as above
+                self.content = json.loads(self.payload)
 
         # Try to parse notice parameters for VOEvents
         if isinstance(self.message, VOEvent):
