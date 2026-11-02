@@ -227,7 +227,8 @@ def run():
     log.info('Done')
 
 
-if __name__ == '__main__':
+def main():
+    """Main entry point for the script."""
     pid = get_pid('backstop')
     if pid:
         print(f'ERROR: Script is already running (PID={pid})')

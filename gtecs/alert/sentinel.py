@@ -8,18 +8,16 @@ import time
 import traceback
 from urllib.request import URLError, urlopen
 
-import Pyro4
-
 import gcn.voeventclient as pygcn
-
+import Pyro4
 from gtecs.common import logging
-
+from gtecs.common.system import execute_long_command, get_pid, kill_process, make_pid_file
 from hop.auth import Auth, SASLMethod
 from hop.io import StartPosition, Stream
 
 from . import params
-from .notices import Notice
 from .handler import already_in_database, handle_notice
+from .notices import Notice
 from .slack import send_slack_msg
 
 
@@ -606,24 +604,136 @@ class Sentinel:
         return queue_length
 
 
-def run():
-    """Start the sentinel."""
-    try:
-        send_slack_msg('Sentinel started')
-        sentinel = Sentinel()
-        sentinel.run(params.PYRO_HOST, params.PYRO_PORT, params.PYRO_TIMEOUT)
-    except Exception:
-        print('Error detected, shutting down')
-        traceback.print_exc()
-    except KeyboardInterrupt:
-        print('Interrupt detected, shutting down')
-    finally:
+def print_instructions():
+    """Print instructions for using the script."""
+    print(
+        'Usage: sentinel [command] [options]',
+        'The sentinel listens for alerts and inserts them into the database.',
+        '',
+        'Commands:',
+        '   start                  start the sentinel',
+        '   ping                   check if the sentinel is running',
+        '   shutdown               shut down the sentinel',
+        '   ingest [path|ivorn]    add the given notice to the queue',
+        '   queue                  print the notices currently in the queue',
+        '   queue clear            clear all notices currently in the queue',
+        '   topics                 print all subscribed Kafka topics',
+        '   log [tail args]        print sentinel log (alias for tail)',
+        '   help                   print these instructions',
+        sep='\n',
+    )
+
+
+def query(command, args):
+    """Process a query."""
+    # Command functions
+    if command in ['help', '?']:
+        print_instructions()
+
+    # Primary control
+    elif command == 'start':
         try:
-            sentinel.shutdown()
-        except UnboundLocalError:
-            # class was never created
-            pass
-        time.sleep(1)  # wait to stop threads
-        send_slack_msg('Sentinel shutdown')
-        print('Sentinel done')
-        sys.exit(0)
+            with Pyro4.Proxy(params.PYRO_URI) as proxy:
+                uri = proxy.uri
+            pid = get_pid('sentinel')
+            print('Sentinel is already running ({}, PID={})'.format(uri, pid))
+        except Pyro4.errors.CommunicationError:
+            with make_pid_file('sentinel'):
+                try:
+                    send_slack_msg('Sentinel started')
+                    sentinel = Sentinel()
+                    sentinel.run(params.PYRO_HOST, params.PYRO_PORT, params.PYRO_TIMEOUT)
+                except Exception:
+                    print('Error detected, shutting down')
+                    traceback.print_exc()
+                except KeyboardInterrupt:
+                    print('Interrupt detected, shutting down')
+                finally:
+                    try:
+                        sentinel.shutdown()
+                    except UnboundLocalError:
+                        # class was never created
+                        pass
+                    time.sleep(1)  # wait to stop threads
+                    send_slack_msg('Sentinel shutdown')
+                    print('Sentinel done')
+                    sys.exit(0)
+
+    elif command == 'ping':
+        try:
+            with Pyro4.Proxy(params.PYRO_URI) as proxy:
+                uri = proxy.uri
+            pid = get_pid('sentinel')
+            print('Sentinel is running ({}, PID={})'.format(uri, pid))
+        except Pyro4.errors.CommunicationError:
+            print('Sentinel is not running')
+
+    elif command == 'shutdown':
+        try:
+            with Pyro4.Proxy(params.PYRO_URI) as proxy:
+                proxy.shutdown()
+                print('Sentinel shutdown')
+        except Pyro4.errors.CommunicationError:
+            print('Sentinel is not running')
+
+    elif command == 'kill':
+        if not get_pid('sentinel'):
+            print('Sentinel is not running')
+        kill_process('sentinel')
+
+    elif command in ['log', 'tail']:
+        log_file = 'sentinel.log'
+        log_path = logging.get_log_path() / log_file
+        tail_command = 'tail {} {}'.format(log_path, ' '.join(args))
+
+        execute_long_command(tail_command)
+
+    # Sentinel commands
+    elif command == 'ingest':
+        if len(args) != 1:
+            raise ValueError('Invalid arguments: sentinel ingest [path]')
+        with Pyro4.Proxy(params.PYRO_URI) as proxy:
+            try:
+                print(proxy.ingest_from_file(args[0]))
+            except FileNotFoundError:
+                try:
+                    print(proxy.ingest_from_url(args[0]))
+                except Exception:
+                    print('Cound not find file or URL for {}'.format(args[0]))
+                    raise
+
+    elif command == 'queue':
+        if len(args) == 0:
+            with Pyro4.Proxy(params.PYRO_URI) as proxy:
+                queue = proxy.get_queue()
+            print(f'There are {len(queue)} notices currently in the queue')
+            for i, ivorn in enumerate(queue):
+                print(i, ivorn)
+        elif len(args) == 1 and args[0] == 'clear':
+            with Pyro4.Proxy(params.PYRO_URI) as proxy:
+                queue_length = proxy.clear_queue()
+                print(f'Cleared {queue_length} notices from the queue')
+        else:
+            print('ERROR: Invalid arguments for "queue" command')
+            print('Usage: sentinel queue [clear]')
+
+    elif command == 'topics':
+        with Pyro4.Proxy(params.PYRO_URI) as proxy:
+            available, requested = proxy.get_kafka_topics()
+        for topic in available:
+            print(topic + (' (subscribed)' if topic in requested else ''))
+
+    else:
+        print('ERROR: Unrecognized command "{}"'.format(command))
+        print_instructions()
+
+
+def main():
+    """Main entry point for the script."""
+    if len(sys.argv) == 1:
+        # No command: print help and exit
+        print_instructions()
+        sys.exit()
+
+    command, *args = sys.argv[1:]
+    query(command, args)

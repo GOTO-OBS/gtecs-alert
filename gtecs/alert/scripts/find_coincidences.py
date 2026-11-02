@@ -77,5 +77,6 @@ def run(time_window=10, skymap_contour=0.95):
                 print(f'  - {event.name:<30} (db_id={event.db_id:>4}), {event.time}')
 
 
-if __name__ == "__main__":
+def main():
+    """Main entry point for the script."""
     run()

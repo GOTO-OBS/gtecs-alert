@@ -1,0 +1,96 @@
+# Build Configuration
+
+[build-system]
+build-backend = "setuptools.build_meta"
+requires = ["setuptools>=61.0", "wheel"]
+
+# Project Configuration
+
+[project]
+name = "gtecs-alert"
+version = "0.1.0"
+description = "G-TeCS functions for handling transient alerts"
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "MIT" }
+authors = [
+    { name = "Martin Dyer", email = "martin.dyer@sheffield.ac.uk" },
+]
+maintainers = [
+    { name = "Martin Dyer", email = "martin.dyer@sheffield.ac.uk" },
+]
+dependencies = [
+    "numpy",
+    "astropy",
+    "astroplan",
+    "astroquery",
+    "pygcn>=1.1.1",
+    "hop-client>=0.9.0",
+    "pandas",
+    "requests",
+    "setuptools",
+    "sqlalchemy>=2",
+    "psycopg2-binary",
+    "alembic",
+    "alembic-utils",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Scientific/Engineering :: Astronomy",
+]
+keywords = [
+    "astronomy",
+    "telescope",
+    "control",
+    "GOTO",
+]
+
+[project.scripts]
+# daemon control
+sentinel = "gtecs.alert.sentinel:main"
+# other scripts
+find_coincidences = "gtecs.alert.scripts.find_coincidences:main"
+gw_backup = "gtecs.alert.scripts.gw_backup:main"
+setup_alertdb = "gtecs.alert.scripts.setup_alertdb:main"
+
+[project.urls]
+homepage = "http://github.com/GOTO-OBS/gtecs-alert"
+documentation = "http://github.com/GOTO-OBS/gtecs-alert"
+repository = "http://github.com/GOTO-OBS/gtecs-alert"
+issues = "http://github.com/GOTO-OBS/gtecs-alert/issues"
+
+# Package Configuration
+
+[tool.setuptools]
+zip-safe = false
+
+[tool.setuptools.packages.find]
+include = ["gtecs*"]
+
+[tool.setuptools.package-data]
+gtecs = ["alert/data/*"]
+
+# Tool Configuration
+
+## Ruff (optional - for code formatting and linting)
+[tool.ruff]
+line-length = 100
+target-version = "py38"
+
+### Ruff linter
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+ignore = []
+
+### Ruff formatter
+[tool.ruff.format]
+quote-style = "single"
+indent-style = "space"

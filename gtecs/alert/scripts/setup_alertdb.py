@@ -217,7 +217,8 @@ def run(overwrite=False, verbose=False):
         print("Database is empty.")
 
 
-if __name__ == "__main__":
+def main():
+    """Main entry point for the script."""
     description = """Setup the sentinel alert database.
 
     The database schema must already exist (created via alembic).
