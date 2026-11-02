@@ -11,7 +11,13 @@ from urllib.request import URLError, urlopen
 import gcn.voeventclient as pygcn
 import Pyro4
 from gtecs.common import logging
-from gtecs.common.system import execute_long_command, get_pid, kill_process, make_pid_file
+from gtecs.common.system import (
+    NeatCloser,
+    execute_long_command,
+    get_pid,
+    kill_process,
+    make_pid_file,
+)
 from hop.auth import Auth, SASLMethod
 from hop.io import StartPosition, Stream
 
@@ -624,6 +630,18 @@ def print_instructions():
     )
 
 
+class ShutdownCloser(NeatCloser):
+    """A class to neatly handle shutdown requests."""
+
+    def __init__(self, daemon):
+        super().__init__('Script')
+        self.daemon = daemon
+
+    def tidy_up(self):
+        """Shutdown the daemon."""
+        self.daemon.shutdown()
+
+
 def query(command, args):
     """Process a query."""
     # Command functions
@@ -642,6 +660,7 @@ def query(command, args):
                 try:
                     send_slack_msg('Sentinel started')
                     sentinel = Sentinel()
+                    ShutdownCloser(sentinel)
                     sentinel.run(params.PYRO_HOST, params.PYRO_PORT, params.PYRO_TIMEOUT)
                 except Exception:
                     print('Error detected, shutting down')
