@@ -29,6 +29,7 @@ dependencies = [
     "pandas",
     "requests",
     "setuptools",
+    "Pyro4",
     "sqlalchemy>=2",
     "psycopg2-binary",
     "alembic",
