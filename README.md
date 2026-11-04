@@ -50,17 +50,22 @@ After installing the module, you can test it works correctly using the included 
 
 ## Usage
 
-To run the sentinel alert listener after the package is installed the script can be started with.
+The sentinel alert listener is designed to run as a systemd service. To install it, edit the `sentinel.service` file to add your username (the default is `goto`, note you need to edit both the `User=` and `ExecStart=` entries), then copy it to the right location with
+
+    sudo cp sentinel.service /etc/systemd/system/
+    sudo systemctl daemon-reload
+
+Then enable it to start on boot with
+
+    sudo systemctl enable sentinel
+
+Once installed the `sentinel` script can be used to control the service (using `sudo systemctl`, unless `SYSTEMD_SUDO` is set to `False` in the config file):
 
     sentinel start
+    sentinel stop
+    sentinel restart
+    sentinel status
 
 For a list of arguments use `sentinel help`.
 
-To have the sentinel run continuously as a system service edit the `sentinel.service` file to add your username (the default is `goto`, note you need to edit both the `User=` and `ExecStart=` entries), then copy it to the right location with
-
-    sudo cp sentinel.service /etc/systemd/system/
-
-Then enable and start the service with
-
-    sudo systemctl enable sentinel
-    sudo systemctl start sentinel
+The service itself runs `sentinel run`. You can also use that command to run the sentinel directly in a terminal, e.g. for testing, but make sure the service is stopped first (`sentinel stop`).

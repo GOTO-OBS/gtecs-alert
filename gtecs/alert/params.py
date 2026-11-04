@@ -6,7 +6,6 @@ from gtecs.common import config as pkg_config
 from gtecs.common.package import get_package_version, load_config
 from gtecs.common.system import get_local_ip
 
-
 ############################################################
 # Load and validate config file
 config, CONFIG_SPEC, CONFIG_FILE = load_config('alert', '.alert.conf')
@@ -32,6 +31,7 @@ if PYRO_HOST == 'localhost':
 PYRO_PORT = config['PYRO_PORT']
 PYRO_URI = 'PYRO:sentinel@{}:{}'.format(PYRO_HOST, PYRO_PORT)
 PYRO_TIMEOUT = config['PYRO_TIMEOUT']
+SYSTEMD_SUDO = config['SYSTEMD_SUDO']
 LOCAL_IVO = config['LOCAL_IVO']
 VOSERVER_HOST = config['VOSERVER_HOST']
 VOSERVER_PORT = config['VOSERVER_PORT']

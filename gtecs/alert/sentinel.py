@@ -1,22 +1,28 @@
 """Class for listening for transient alert notices."""
 
 import itertools
+import os
 import socket
 import sys
 import threading
 import time
 import traceback
-from urllib.request import URLError, urlopen
+from urllib.error import URLError
+from urllib.request import urlopen
 
 import gcn.voeventclient as pygcn
 import Pyro4
 from gtecs.common import logging
-from gtecs.common.system import (
-    NeatCloser,
-    execute_long_command,
-    get_pid,
-    kill_process,
-    make_pid_file,
+from gtecs.common.pyro import get_uri, wait_for_uri
+from gtecs.common.system import execute_long_command, get_pid, kill_process, make_pid_file
+from gtecs.common.systemd import (
+    SystemctlError,
+    get_service,
+    get_service_pid,
+    kill_service,
+    restart_service,
+    start_service,
+    stop_service,
 )
 from hop.auth import Auth, SASLMethod
 from hop.io import StartPosition, Stream
@@ -102,7 +108,7 @@ class Sentinel:
 
         # Loop has closed
         self.log.info('Pyro daemon successfully shut down')
-        time.sleep(1.)
+        time.sleep(1.0)
 
     def is_running(self):
         """Check if the daemon is running or not.
@@ -160,10 +166,12 @@ class Sentinel:
         while self.running:
             # Create the socket, using the odd itertools loop PyGCN needs
             host_port = pygcn._validate_host_port(params.VOSERVER_HOST, params.VOSERVER_PORT)
-            vo_socket = pygcn._open_socket(itertools.cycle(zip(*host_port)),
-                                           log=self.log,
-                                           iamalive_timeout=90,
-                                           max_reconnect_timeout=8)
+            vo_socket = pygcn._open_socket(
+                itertools.cycle(zip(*host_port)),
+                log=self.log,
+                iamalive_timeout=90,
+                max_reconnect_timeout=8,
+            )
 
             # Launch the listener within a new thread
             listener = threading.Thread(target=_listen, args=(vo_socket, _handler))
@@ -196,12 +204,12 @@ class Sentinel:
         self.log.info('Alert listener thread stopped')
 
     def _kafka_listener_thread(
-            self,
-            user,
-            password,
-            broker='SCIMMA',
-            group_id=None,
-            backdate=False,
+        self,
+        user,
+        password,
+        broker='SCIMMA',
+        group_id=None,
+        backdate=False,
     ):
         """Connect to a Kafka server via SCiMMA HOPSKOTCH and listen for notices.
 
@@ -420,7 +428,7 @@ class Sentinel:
                     notice = self.notice_queue.pop(0)
                     self.latest_notice = notice
                     self.log.debug('Processing new notice: {}'.format(notice.ivorn))
-                except:
+                except Exception:
                     self.log.error('Error getting notice from queue')
                     self.log.debug('', exc_info=True)
                     continue
@@ -442,7 +450,7 @@ class Sentinel:
                         notice,
                         coincident_time_window=params.COINCIDENT_TIME_WINDOW,
                         send_messages=params.ENABLE_SLACK,
-                        log=self.log
+                        log=self.log,
                     )
                     self.processed_notices += 1
                     send_slack_msg('Sentinel successfully processed notice')
@@ -451,18 +459,21 @@ class Sentinel:
                     # Note we only check if the notice was already ignored
                     # (which also filters out RETRACTIONs) and has no GWSkyNet scores yet.
                     # It's also only valid for BAYESTAR skymaps (for now).
-                    if (notice.source == 'LVC' and not notice.ivorn.endswith('_gwskynet') and
-                            notice.strategy == 'IGNORE' and
-                            notice.gwskynet is None and
-                            notice.skymap is not None and  # it should always be there by now?
-                            'creator' in notice.skymap.header and
-                            notice.skymap.header['creator'].lower() == 'bayestar'):
+                    if (
+                        notice.source == 'LVC'
+                        and not notice.ivorn.endswith('_gwskynet')
+                        and notice.strategy == 'IGNORE'
+                        and notice.gwskynet is None
+                        and notice.skymap is not None  # it should always be there by now?
+                        and 'creator' in notice.skymap.header
+                        and notice.skymap.header['creator'].lower() == 'bayestar'
+                    ):
                         # The scores haven't been uploaded yet,
                         # but once they are it could be promoted
                         self.log.debug('Starting GWSkyNet listener thread')
                         t = threading.Thread(
                             target=self._gwskynet_thread,
-                            args=[notice, 300]  # 5 mins should be enough
+                            args=[notice, 300],  # 5 mins should be enough
                         )
                         t.daemon = True
                         t.start()
@@ -476,8 +487,7 @@ class Sentinel:
                             # The skymap hasn't been uploaded yet
                             self.log.debug('Starting Fermi skymap listener thread')
                             t = threading.Thread(
-                                target=self._fermi_skymap_thread,
-                                args=[notice, 600]
+                                target=self._fermi_skymap_thread, args=[notice, 600]
                             )
                             t.daemon = True
                             t.start()
@@ -613,33 +623,27 @@ class Sentinel:
 def print_instructions():
     """Print instructions for using the script."""
     print(
-        'Usage: sentinel [command] [options]',
         'The sentinel listens for alerts and inserts them into the database.',
         '',
-        'Commands:',
-        '   start                  start the sentinel',
-        '   ping                   check if the sentinel is running',
-        '   shutdown               shut down the sentinel',
+        'Usage: sentinel [command] [options]',
+        '',
+        'Sentinel commands:',
         '   ingest [path|ivorn]    add the given notice to the queue',
         '   queue                  print the notices currently in the queue',
         '   queue clear            clear all notices currently in the queue',
         '   topics                 print all subscribed Kafka topics',
+        '',
+        'System commands:',
+        '   start                  start the sentinel systemd service',
+        '   stop/shutdown          stop the sentinel systemd service',
+        '   restart                restart the sentinel systemd service',
+        '   kill                   kill the sentinel systemd service (systemd may restart it)',
+        '   ping/status            check if the sentinel is running',
+        '   run                    run the sentinel in this terminal (useful for debugging)',
         '   log [tail args]        print sentinel log (alias for tail)',
         '   help                   print these instructions',
         sep='\n',
     )
-
-
-class ShutdownCloser(NeatCloser):
-    """A class to neatly handle shutdown requests."""
-
-    def __init__(self, daemon):
-        super().__init__('Script')
-        self.daemon = daemon
-
-    def tidy_up(self):
-        """Shutdown the daemon."""
-        self.daemon.shutdown()
 
 
 def query(command, args):
@@ -649,45 +653,92 @@ def query(command, args):
         print_instructions()
 
     # Primary control
-    elif command == 'start':
-        try:
-            with Pyro4.Proxy(params.PYRO_URI) as proxy:
-                uri = proxy.uri
-            pid = get_pid('sentinel')
-            print('Sentinel is already running ({}, PID={})'.format(uri, pid))
-        except Pyro4.errors.CommunicationError:
-            with make_pid_file('sentinel'):
+    elif command == 'run':
+        service = get_service('sentinel')
+
+        # Check the systemd service is already running
+        if service is not None and service['active'] and service['pid'] != os.getpid():
+            print(f'The sentinel service is already running (PID={service["pid"]})')
+            print('Use "sentinel stop" to stop it before running the sentinel locally')
+            return
+
+        # Check if the Pyro URI is already registered
+        uri = get_uri(params.PYRO_URI)
+        if uri is not None:
+            pid = get_service_pid('sentinel', 'sentinel')
+            print(f'Sentinel is already running ({uri}, PID={pid})')
+            return
+
+        exit_code = 0
+        with make_pid_file('sentinel'):
+            try:
+                send_slack_msg('Sentinel started')
+                sentinel = Sentinel()
+                sentinel.run(params.PYRO_HOST, params.PYRO_PORT, params.PYRO_TIMEOUT)
+            except Exception:
+                print('Error detected, shutting down')
+                traceback.print_exc()
+                exit_code = 1
+            except (KeyboardInterrupt, SystemExit):
+                # SIGINT raises a KeyboardInterrupt, and make_pid_file makes SIGTERM raise
+                # a SystemExit (which is how systemd stops the service),
+                # so both are normal ways to stop.
+                print('Interrupt detected, shutting down')
+            finally:
                 try:
-                    send_slack_msg('Sentinel started')
-                    sentinel = Sentinel()
-                    ShutdownCloser(sentinel)
-                    sentinel.run(params.PYRO_HOST, params.PYRO_PORT, params.PYRO_TIMEOUT)
-                except Exception:
-                    print('Error detected, shutting down')
-                    traceback.print_exc()
-                except KeyboardInterrupt:
-                    print('Interrupt detected, shutting down')
-                finally:
-                    try:
-                        sentinel.shutdown()
-                    except UnboundLocalError:
-                        # class was never created
-                        pass
-                    time.sleep(1)  # wait to stop threads
-                    send_slack_msg('Sentinel shutdown')
-                    print('Sentinel done')
-                    sys.exit(0)
+                    sentinel.shutdown()
+                except UnboundLocalError:
+                    # class was never created
+                    pass
+                time.sleep(1)  # wait to stop threads
+                send_slack_msg('Sentinel shutdown')
+                print('Sentinel done')
 
-    elif command == 'ping':
-        try:
-            with Pyro4.Proxy(params.PYRO_URI) as proxy:
-                uri = proxy.uri
-            pid = get_pid('sentinel')
-            print('Sentinel is running ({}, PID={})'.format(uri, pid))
-        except Pyro4.errors.CommunicationError:
-            print('Sentinel is not running')
+            sys.exit(exit_code)
 
-    elif command == 'shutdown':
+    elif command == 'start':
+        service = get_service('sentinel')
+
+        # Check if the systemd service is set up
+        if service is None:
+            print('ERROR: Cannot connect to the systemd service, or it is not installed')
+            print('Use "sentinel run" to run the sentinel in this terminal instead')
+            return
+
+        # Check if the Pyro URI is already registered
+        uri = get_uri(params.PYRO_URI)
+        if uri is not None:
+            pid = get_service_pid('sentinel', 'sentinel')
+            print('Sentinel is already running ({}, PID={})'.format(uri, pid))
+            return
+
+        start_service('sentinel', sudo=params.SYSTEMD_SUDO)
+
+        # Check if the service is now running
+        uri = wait_for_uri(params.PYRO_URI)
+        if uri is None:
+            print('ERROR: Sentinel service started, but the sentinel is not responding')
+            print('Check the service with "systemctl status {}"'.format('sentinel'))
+        else:
+            pid = get_service_pid('sentinel', 'sentinel')
+            print('Sentinel started ({}, PID={})'.format(uri, pid))
+
+    elif command in ['shutdown', 'stop']:
+        service = get_service('sentinel')
+
+        # Check if the systemd service is set up
+        if service is None:
+            print('ERROR: Cannot connect to the systemd service, or it is not installed')
+            return
+
+        if service['active']:
+            # The service is running through systemd, so shut it down through systemd
+            stop_service('sentinel', sudo=params.SYSTEMD_SUDO)
+            print('Sentinel shutdown')
+            return
+
+        # It might might be running independently in a terminal,
+        # so try shutting down though Pyro
         try:
             with Pyro4.Proxy(params.PYRO_URI) as proxy:
                 proxy.shutdown()
@@ -695,10 +746,52 @@ def query(command, args):
         except Pyro4.errors.CommunicationError:
             print('Sentinel is not running')
 
+    elif command == 'restart':
+        service = get_service('sentinel')
+
+        # Check if the systemd service is set up
+        if service is None:
+            print('ERROR: Cannot connect to the systemd service, or it is not installed')
+            return
+
+        restart_service('sentinel', sudo=params.SYSTEMD_SUDO)
+
+        # Check if the service is now running
+        uri = wait_for_uri(params.PYRO_URI)
+        if uri is None:
+            print('ERROR: Sentinel service restarted, but the sentinel is not responding')
+            print('Check the service with "systemctl status {}"'.format('sentinel'))
+        else:
+            pid = get_service_pid('sentinel', 'sentinel')
+            print('Sentinel restarted ({}, PID={})'.format(uri, pid))
+
     elif command == 'kill':
-        if not get_pid('sentinel'):
+        service = get_service('sentinel')
+        if service is not None and service['active']:
+            # The service is running through systemd, so we need to kill it through systemd
+            kill_service('sentinel', sudo=params.SYSTEMD_SUDO)
+            print('Sentinel killed (note systemd may restart it)')
+            return
+
+        if get_pid('sentinel'):
+            # It might might be running independently in a terminal,
+            # so try killing it directly
+            kill_process('sentinel')
+            return
+
+        print('Sentinel is not running')
+
+    elif command in ['ping', 'status']:
+        uri = get_uri(params.PYRO_URI)
+        if uri is not None:
+            pid = get_service_pid('sentinel', 'sentinel')
+            print('Sentinel is running ({}, PID={})'.format(uri, pid))
+        else:
             print('Sentinel is not running')
-        kill_process('sentinel')
+
+        service = get_service('sentinel')
+        if service is not None:
+            print('Service state: {} ({})'.format(service['active_state'], service['sub_state']))
 
     elif command in ['log', 'tail']:
         log_file = 'sentinel.log'
@@ -755,4 +848,8 @@ def main():
         sys.exit()
 
     command, *args = sys.argv[1:]
-    query(command, args)
+    try:
+        query(command, args)
+    except (SystemctlError, ConnectionError) as err:
+        print(f'ERROR: {err}')
+        sys.exit(1)
