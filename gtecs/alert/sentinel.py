@@ -620,40 +620,10 @@ class Sentinel:
         return queue_length
 
 
-def print_instructions():
-    """Print instructions for using the script."""
-    print(
-        'The sentinel listens for alerts and inserts them into the database.',
-        '',
-        'Usage: sentinel [command] [options]',
-        '',
-        'Sentinel commands:',
-        '   ingest [path|ivorn]    add the given notice to the queue',
-        '   queue                  print the notices currently in the queue',
-        '   queue clear            clear all notices currently in the queue',
-        '   topics                 print all subscribed Kafka topics',
-        '',
-        'System commands:',
-        '   start                  start the sentinel systemd service',
-        '   stop/shutdown          stop the sentinel systemd service',
-        '   restart                restart the sentinel systemd service',
-        '   kill                   kill the sentinel systemd service (systemd may restart it)',
-        '   ping/status            check if the sentinel is running',
-        '   run                    run the sentinel in this terminal (useful for debugging)',
-        '   log [tail args]        print sentinel log (alias for tail)',
-        '   help                   print these instructions',
-        sep='\n',
-    )
-
-
 def query(command, args):
     """Process a query."""
-    # Command functions
-    if command in ['help', '?']:
-        print_instructions()
-
-    # Primary control
-    elif command == 'run':
+    # Primary control commands
+    if command == 'run':
         service = get_service('sentinel')
 
         # Check the systemd service is already running
@@ -695,8 +665,9 @@ def query(command, args):
                 print('Sentinel done')
 
             sys.exit(exit_code)
+        return
 
-    elif command == 'start':
+    if command == 'start':
         service = get_service('sentinel')
 
         # Check if the systemd service is set up
@@ -709,7 +680,7 @@ def query(command, args):
         uri = get_uri(params.PYRO_URI)
         if uri is not None:
             pid = get_service_pid('sentinel', 'sentinel')
-            print('Sentinel is already running ({}, PID={})'.format(uri, pid))
+            print(f'Sentinel is already running ({uri}, PID={pid})')
             return
 
         start_service('sentinel', sudo=params.SYSTEMD_SUDO)
@@ -717,13 +688,14 @@ def query(command, args):
         # Check if the service is now running
         uri = wait_for_uri(params.PYRO_URI)
         if uri is None:
-            print('ERROR: Sentinel service started, but the sentinel is not responding')
-            print('Check the service with "systemctl status {}"'.format('sentinel'))
+            print('ERROR: The sentinel service started, but it is not responding')
+            print('Check the service with "systemctl status sentinel"')
         else:
             pid = get_service_pid('sentinel', 'sentinel')
-            print('Sentinel started ({}, PID={})'.format(uri, pid))
+            print(f'Sentinel started ({uri}, PID={pid})')
+        return
 
-    elif command in ['shutdown', 'stop']:
+    if command in ['shutdown', 'stop']:
         service = get_service('sentinel')
 
         # Check if the systemd service is set up
@@ -745,8 +717,9 @@ def query(command, args):
                 print('Sentinel shutdown')
         except Pyro4.errors.CommunicationError:
             print('Sentinel is not running')
+        return
 
-    elif command == 'restart':
+    if command == 'restart':
         service = get_service('sentinel')
 
         # Check if the systemd service is set up
@@ -759,13 +732,14 @@ def query(command, args):
         # Check if the service is now running
         uri = wait_for_uri(params.PYRO_URI)
         if uri is None:
-            print('ERROR: Sentinel service restarted, but the sentinel is not responding')
-            print('Check the service with "systemctl status {}"'.format('sentinel'))
+            print('ERROR: The sentinel service restarted, but it is not responding')
+            print('Check the service with "systemctl status sentinel"')
         else:
             pid = get_service_pid('sentinel', 'sentinel')
-            print('Sentinel restarted ({}, PID={})'.format(uri, pid))
+            print(f'Sentinel restarted ({uri}, PID={pid})')
+        return
 
-    elif command == 'kill':
+    if command == 'kill':
         service = get_service('sentinel')
         if service is not None and service['active']:
             # The service is running through systemd, so we need to kill it through systemd
@@ -780,28 +754,34 @@ def query(command, args):
             return
 
         print('Sentinel is not running')
+        return
 
-    elif command in ['ping', 'status']:
+    if command in ['ping', 'status']:
         uri = get_uri(params.PYRO_URI)
         if uri is not None:
             pid = get_service_pid('sentinel', 'sentinel')
-            print('Sentinel is running ({}, PID={})'.format(uri, pid))
+            print(f'Sentinel is running ({uri}, PID={pid})')
+            with Pyro4.Proxy(params.PYRO_URI) as proxy:
+                start_time = proxy.start_time
+            print(f'Uptime: {time.time() - start_time:.1f}s')
         else:
             print('Sentinel is not running')
 
         service = get_service('sentinel')
         if service is not None:
             print('Service state: {} ({})'.format(service['active_state'], service['sub_state']))
+        return
 
-    elif command in ['log', 'tail']:
+    if command in ['log', 'tail']:
         log_file = 'sentinel.log'
         log_path = logging.get_log_path() / log_file
         tail_command = 'tail {} {}'.format(log_path, ' '.join(args))
 
         execute_long_command(tail_command)
+        return
 
     # Sentinel commands
-    elif command == 'ingest':
+    if command == 'ingest':
         if len(args) != 1:
             raise ValueError('Invalid arguments: sentinel ingest [path]')
         with Pyro4.Proxy(params.PYRO_URI) as proxy:
@@ -811,10 +791,11 @@ def query(command, args):
                 try:
                     print(proxy.ingest_from_url(args[0]))
                 except Exception:
-                    print('Cound not find file or URL for {}'.format(args[0]))
+                    print(f'Cound not find file or URL for {args[0]}')
                     raise
+        return
 
-    elif command == 'queue':
+    if command == 'queue':
         if len(args) == 0:
             with Pyro4.Proxy(params.PYRO_URI) as proxy:
                 queue = proxy.get_queue()
@@ -828,26 +809,45 @@ def query(command, args):
         else:
             print('ERROR: Invalid arguments for "queue" command')
             print('Usage: sentinel queue [clear]')
+        return
 
-    elif command == 'topics':
+    if command == 'topics':
         with Pyro4.Proxy(params.PYRO_URI) as proxy:
             available, requested = proxy.get_kafka_topics()
         for topic in available:
             print(topic + (' (subscribed)' if topic in requested else ''))
+        return
 
+    # Help or unknown command - print instructions
+    if command in ['help', '?']:
+        print('The sentinel listens for alerts and inserts them into the database.\n')
     else:
-        print('ERROR: Unrecognized command "{}"'.format(command))
-        print_instructions()
+        print(f'ERROR: Unrecognized command "{command}"\n')
+    print('Usage: sentinel [command] [options]\n')
+    print('Sentinel commands:')
+    print('   ingest [path|ivorn]    add the given notice to the queue')
+    print('   queue                  print the notices currently in the queue')
+    print('   queue clear            clear all notices currently in the queue')
+    print('   topics                 print all subscribed Kafka topics')
+    print('Control commands:')
+    print('   start                  start the sentinel systemd service')
+    print('   stop/shutdown          stop the sentinel systemd service')
+    print('   restart                restart the sentinel systemd service')
+    print('   kill                   kill the sentinel systemd service (systemd may restart it)')
+    print('   run                    run the sentinel daemon locally in this terminal')
+    print('   ping/status            check if the sentinel daemon or service is running')
+    print('   log [tail args]        print log file contents (alias for tail)')
+    print('   help                   print these instructions')
 
 
 def main():
     """Main entry point for the script."""
-    if len(sys.argv) == 1:
-        # No command: print help and exit
-        print_instructions()
-        sys.exit()
+    if len(sys.argv) > 1:
+        command, *args = sys.argv[1:]
+    else:
+        # Interpret no arguments as a request for help
+        command, args = 'help', []
 
-    command, *args = sys.argv[1:]
     try:
         query(command, args)
     except (SystemctlError, ConnectionError) as err:
