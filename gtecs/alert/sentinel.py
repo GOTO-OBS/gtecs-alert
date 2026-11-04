@@ -13,6 +13,7 @@ from urllib.request import urlopen
 import gcn.voeventclient as pygcn
 import Pyro4
 from gtecs.common import logging
+from gtecs.common.daemon import BaseDaemon
 from gtecs.common.pyro import get_uri, wait_for_uri
 from gtecs.common.system import execute_long_command, get_pid, kill_process, make_pid_file
 from gtecs.common.systemd import (
@@ -34,16 +35,16 @@ from .slack import send_slack_msg
 
 
 @Pyro4.expose
-class Sentinel:
+class SentinelDaemon(BaseDaemon):
     """Sentinel alerts daemon class."""
 
-    def __init__(self):
-        # get a logger for the sentinel
-        self.log = logging.get_logger('sentinel')
-        self.log.info('Sentinel started')
+    name = 'sentinel'
 
-        # sentinel variables
-        self.running = False
+    def __init__(self):
+        """Initialize the sentinel daemon."""
+        super().__init__()
+
+        # Sentinel properties
         self.latest_message_time = time.time()
         self.notice_queue = []
         self.latest_notice = None
@@ -53,13 +54,8 @@ class Sentinel:
         if not params.PROCESS_TEST_NOTICES:  # TODO: could be an off/on switch?
             self.ignored_roles.append('test')
 
-    def __del__(self):
-        self.shutdown()
-
     def run(self, host, port, timeout=5):
         """Run the sentinel as a Pyro daemon."""
-        self.running = True
-
         # Start listener and handler threads
         listener_mode = 'KAFKA'  # TODO: params (or have both?)
         if listener_mode == 'SOCKET':
@@ -89,46 +85,12 @@ class Sentinel:
         handler_thread.daemon = True
         handler_thread.start()
 
-        # Check the Pyro address is available
-        try:
-            pyro_daemon = Pyro4.Daemon(host, port)
-        except Exception:
-            raise
-        else:
-            pyro_daemon.close()
+        # Start the daemon, will block until shutdown
+        self.run_daemon(host, port, timeout=timeout)
 
-        # Start the daemon
-        with Pyro4.Daemon(host, port) as pyro_daemon:
-            self._uri = pyro_daemon.register(self, objectId='sentinel')
-            Pyro4.config.COMMTIMEOUT = timeout
-
-            # Start request loop
-            self.log.info('Pyro daemon registered to {}'.format(self._uri))
-            pyro_daemon.requestLoop(loopCondition=self.is_running)
-
-        # Loop has closed
-        self.log.info('Pyro daemon successfully shut down')
+        # If we reached here the loop has exited
+        # Sleep for a second to make sure the threads have time to close
         time.sleep(1.0)
-
-    def is_running(self):
-        """Check if the daemon is running or not.
-
-        Used for the Pyro loop condition, it needs a function so you can't just
-        give it self.running.
-        """
-        return self.running
-
-    @property
-    def uri(self):
-        """Return the Pyro URI."""
-        if hasattr(self, '_uri'):
-            return self._uri
-        else:
-            return None
-
-    def shutdown(self):
-        """Shut down the running threads."""
-        self.running = False
 
     # Internal threads
     def _socket_listener_thread(self):
@@ -643,8 +605,8 @@ def query(command, args):
         with make_pid_file('sentinel'):
             try:
                 send_slack_msg('Sentinel started')
-                sentinel = Sentinel()
-                sentinel.run(params.PYRO_HOST, params.PYRO_PORT, params.PYRO_TIMEOUT)
+                daemon = SentinelDaemon()
+                daemon.run(params.PYRO_HOST, params.PYRO_PORT, params.PYRO_TIMEOUT)
             except Exception:
                 print('Error detected, shutting down')
                 traceback.print_exc()
@@ -656,7 +618,7 @@ def query(command, args):
                 print('Interrupt detected, shutting down')
             finally:
                 try:
-                    sentinel.shutdown()
+                    daemon.shutdown()
                 except UnboundLocalError:
                     # class was never created
                     pass
