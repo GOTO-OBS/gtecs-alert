@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """A backup script for processing gravitational-wave events."""
 
 import sys

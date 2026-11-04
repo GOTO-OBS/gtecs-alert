@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Prepare a blank alert database."""
 
 import argparse

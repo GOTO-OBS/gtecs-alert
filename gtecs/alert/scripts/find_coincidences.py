@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Search the AlertDB for coincident events."""
 
 from gtecs.alert import database as db
