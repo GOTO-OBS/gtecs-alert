@@ -198,11 +198,6 @@ class Notice:
         # TODO: Scrap IVORNs entirely, use source and event time to check uniqueness.
         if isinstance(self.message, VOEvent):
             self.ivorn = self.message.ivorn
-        elif '$schema' in self.content:
-            # It's a GCN using the Unified schema
-            publisher, *rest = self.content['$schema'].split('/notices/')[-1].split('/')
-            title = '_'.join(rest).strip('.schema.json')
-            title += '_' + self.content['trigger_time']
             self.ivorn = f'ivo://nasa.gsfc.gcn/{publisher}#{title}'
         elif 'superevent_id' in self.content:
             # It's a new-style IGWN JSON notice
@@ -218,6 +213,11 @@ class Notice:
             notice_type = self.content['alert_type']
             notice_time = self.content['time_created']
             self.ivorn = f'ivo://gwnet/LVC#{event_id}_{notice_type}_{notice_time}'
+        elif '$schema' in self.content:
+            # It's a GCN using the Unified schema
+            publisher, *rest = self.content['$schema'].split('/notices/')[-1].split('/')
+            title = '_'.join(rest).strip('.schema.json')
+            title += '_' + self.content['trigger_time']
         else:
             # Some other type we don't know the format for?
             self.ivorn = 'ivo://unknown/unknown#unknown'
@@ -230,14 +230,14 @@ class Notice:
             if date.endswith('+00:00'): # SVOM notices add timezones which Astropy can't parse >:(
                 date = date[:-6]
             self.time = Time(date)
-        elif '$schema' in self.content:
-            self.source = self.content['$schema'].split('/notices/')[-1].split('/')[0]
-            self.role = 'observation'  # Default, might be changed by subclasses e.g. tests
-            self.time = Time(self.content['trigger_time'])
         elif 'superevent_id' in self.content:
             self.source = 'LVC'  # Backwards compatibility with GCNs, IGWN (or LVK) would be better
             self.role = 'observation'
             self.time = Time(self.content['time_created'])
+        elif '$schema' in self.content:
+            self.source = self.content['$schema'].split('/notices/')[-1].split('/')[0]
+            self.role = 'observation'  # Default, might be changed by subclasses e.g. tests
+            self.time = Time(self.content['trigger_time'])
         else:
             self.source = 'unknown'
             self.role = 'unknown'
