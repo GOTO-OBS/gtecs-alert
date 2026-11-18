@@ -198,7 +198,6 @@ class Notice:
         # TODO: Scrap IVORNs entirely, use source and event time to check uniqueness.
         if isinstance(self.message, VOEvent):
             self.ivorn = self.message.ivorn
-            self.ivorn = f'ivo://nasa.gsfc.gcn/{publisher}#{title}'
         elif 'superevent_id' in self.content:
             # It's a new-style IGWN JSON notice
             # Sadly we can't recreate the old gwnet IVORNs because they don't include the
@@ -218,6 +217,7 @@ class Notice:
             publisher, *rest = self.content['$schema'].split('/notices/')[-1].split('/')
             title = '_'.join(rest).strip('.schema.json')
             title += '_' + self.content['trigger_time']
+            self.ivorn = f'ivo://nasa.gsfc.gcn/{publisher}#{title}'
         else:
             # Some other type we don't know the format for?
             self.ivorn = 'ivo://unknown/unknown#unknown'
